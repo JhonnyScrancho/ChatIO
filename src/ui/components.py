@@ -21,6 +21,12 @@ class FileExplorer:
     def __init__(self):
         self.session = SessionManager()
         self.file_manager = FileManager()
+        # Aggiungiamo icone per i vari tipi di file
+        self.file_icons = {
+            '.py': '🐍', '.js': '📜', '.html': '🌐', '.css': '🎨',
+            '.md': '📝', '.txt': '📄', '.json': '📋',
+            'folder': '📁', 'default': '📄'
+        }
     
     def process_single_file(self, uploaded_file) -> Optional[Dict[str, Any]]:
         """
@@ -45,6 +51,42 @@ class FileExplorer:
             Dict[str, Dict[str, Any]]: Mappa dei file processati
         """
         return self.file_manager.process_zip(zip_file)
+
+    def render_tree(self, files: Dict[str, Any], base_path: str = ""):
+        """
+        Renderizza l'albero dei file in modo ricorsivo.
+        
+        Args:
+            files: Dizionario dei file/cartelle
+            base_path: Percorso base per il livello corrente
+        """
+        # Separa cartelle e file
+        folders = {}
+        direct_files = {}
+        
+        for name, content in files.items():
+            if isinstance(content, dict) and 'content' not in content:
+                folders[name] = content
+            else:
+                direct_files[name] = content
+        
+        # Renderizza prima le cartelle
+        for folder_name, folder_content in folders.items():
+            with st.expander(f"{self.file_icons['folder']} {folder_name}", expanded=True):
+                self.render_tree(folder_content, os.path.join(base_path, folder_name))
+        
+        # Poi renderizza i file
+        for file_name, file_info in direct_files.items():
+            ext = os.path.splitext(file_name)[1].lower()
+            icon = self.file_icons.get(ext, self.file_icons['default'])
+            
+            col1, col2 = st.columns([6, 1])
+            with col1:
+                if st.button(f"{icon} {file_name}", key=f"file_{base_path}_{file_name}"):
+                    self.session.set_current_file(file_name)
+            with col2:
+                if isinstance(file_info, dict) and 'size' in file_info:
+                    st.text(f"{file_info['size'] // 1024}KB")
     
     def render(self):
         """Renderizza il componente FileExplorer."""
@@ -70,13 +112,13 @@ class FileExplorer:
                         if result:
                             self.session.add_file(file.name, result)
             
-            # Show file tree
+            # Mostra l'albero dei file usando il nuovo metodo
             files = self.session.get_all_files()
             if files:
                 st.markdown("### 📂 Files")
-                for filename, file_info in files.items():
-                    if st.button(f"📄 {filename}", key=f"file_{filename}"):
-                        self.session.set_current_file(filename)
+                tree = self.file_manager.create_file_tree(files)
+                self.render_tree(tree)
+
 
 class ChatInterface:
     """Component per l'interfaccia chat."""
@@ -87,50 +129,65 @@ class ChatInterface:
     
     def render(self):
         """Renderizza l'interfaccia chat."""
+        # Stile per fissare l'input in basso
+        st.markdown(
+            """
+            <style>
+                section[data-testid="stSidebar"] {
+                    width: 300px;
+                }
+                .main > .block-container {
+                    padding-bottom: 100px;
+                }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        
         # Chat history container
         chat_container = st.container()
-        
-        # Input area
-        prompt = st.text_area("Ask about your code...", key="chat_input")
-        if st.button("Send", key="send_button"):
-            if prompt:
-                # Add user message to history
-                self.session.add_to_chat_history({
-                    "role": "user",
-                    "content": prompt
-                })
-                
-                # Get current file context
-                current_file = self.session.get_current_file()
-                file_content = None
-                context = None
-                if current_file:
-                    file_info = self.session.get_file(current_file)
-                    if file_info:
-                        file_content = file_info['content']
-                        context = f"File: {current_file} ({file_info['language']})"
-                
-                # Process response
-                with st.spinner("Thinking..."):
-                    response = ""
-                    for chunk in self.llm.process_request(
-                        prompt=prompt,
-                        file_content=file_content,
-                        context=context
-                    ):
-                        response += chunk
-                        
-                    # Add assistant response to history
-                    self.session.add_to_chat_history({
-                        "role": "assistant",
-                        "content": response
-                    })
         
         # Display chat history
         with chat_container:
             for msg in self.session.get_chat_history():
                 with st.chat_message(msg["role"]):
                     st.markdown(msg["content"])
+        
+        # Input area fixed at bottom with native Streamlit chat input
+        prompt = st.chat_input("Ask about your code...")
+        
+        if prompt:
+            # Add user message to history
+            self.session.add_to_chat_history({
+                "role": "user",
+                "content": prompt
+            })
+            
+            # Get current file context
+            current_file = self.session.get_current_file()
+            file_content = None
+            context = None
+            if current_file:
+                file_info = self.session.get_file(current_file)
+                if file_info:
+                    file_content = file_info['content']
+                    context = f"File: {current_file} ({file_info['language']})"
+            
+            # Process response
+            with st.spinner("Thinking..."):
+                response = ""
+                for chunk in self.llm.process_request(
+                    prompt=prompt,
+                    file_content=file_content,
+                    context=context
+                ):
+                    response += chunk
+                    
+                # Add assistant response to history
+                self.session.add_to_chat_history({
+                    "role": "assistant",
+                    "content": response
+                })
 
 class CodeViewer:
     """Component per la visualizzazione del codice."""
