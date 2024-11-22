@@ -203,6 +203,100 @@ def load_custom_css():
             visibility: visible;
             opacity: 1;
         }
+        <style>
+        /* Header e Titolo */
+        .stApp > header {
+            background-color: transparent;
+        }
+        
+        .main-header {
+            display: flex;
+            align-items: center;
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+        }
+        
+        .main-header h1 {
+            font-size: 2.5rem;
+            line-height: 1.2;
+            margin: 0;
+            padding: 0;
+        }
+        
+        /* Metriche nell'header */
+        [data-testid="metric-container"] {
+            background-color: #1E1E1E;
+            padding: 10px 15px;
+            border-radius: 8px;
+            width: auto;
+            border: 1px solid #333;
+        }
+        
+        [data-testid="metric-container"] > div {
+            width: auto;
+        }
+        
+        [data-testid="metric-container"] label {
+            color: #CCC;
+            font-size: 0.875rem;
+            display: block;
+            margin-bottom: 4px;
+        }
+        
+        [data-testid="metric-container"] div[data-testid="metric-value"] {
+            color: white;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        
+        /* Bottoni migliorati */
+        .stButton > button {
+            border-radius: 6px;
+            padding: 0.5rem 1rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border: 1px solid rgba(250, 250, 250, 0.2);
+            background-color: #2E2E2E;
+        }
+        
+        .stButton > button:hover {
+            background-color: #404040;
+            border-color: rgba(250, 250, 250, 0.3);
+            transform: translateY(-1px);
+        }
+        
+        /* Bottoni specifici */
+        [data-testid="baseButton-secondary"] {
+            background-color: transparent !important;
+            border-color: #4CAF50 !important;
+            color: #4CAF50 !important;
+        }
+        
+        [data-testid="baseButton-secondary"]:hover {
+            background-color: rgba(76, 175, 80, 0.1) !important;
+        }
+        
+        /* Layout della chat */
+        .main .block-container {
+            padding-top: 0 !important;
+            max-width: 100% !important;
+        }
+        
+        /* Stili per il selettore della chat */
+        .stSelectbox {
+            min-width: 200px;
+        }
+        
+        .stSelectbox > div > div {
+            background-color: #2E2E2E;
+            border: 1px solid rgba(250, 250, 250, 0.2);
+            border-radius: 6px;
+        }
+        
+        /* Fix line-height per titoli */
+        h1, h2, h3 {
+            line-height: 1.2 !important;
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -258,6 +352,35 @@ def render_main_layout():
                 z-index: 999999;
                 width: 100%;
             }
+
+            /* Header metrics */
+            [data-testid="metric-container"] {
+                background-color: #1E1E1E;
+                padding: 10px 15px;
+                border-radius: 8px;
+                width: auto;
+                border: 1px solid #333;
+            }
+            
+            [data-testid="metric-container"] label {
+                color: #CCC;
+                font-size: 0.875rem;
+                display: block;
+                margin-bottom: 4px;
+            }
+            
+            [data-testid="metric-container"] div[data-testid="metric-value"] {
+                color: white;
+                font-size: 1.25rem;
+                font-weight: 600;
+            }
+
+            /* Title area */
+            .main-header h1 {
+                margin: 0;
+                padding: 0;
+                line-height: 1.2;
+            }
         </style>
     """, unsafe_allow_html=True)
     
@@ -265,14 +388,16 @@ def render_main_layout():
     clients = init_clients()
     clients['session'].init_session()
     
-    # Title Area con Stats
-    col1, col2, col3 = st.columns([4, 1, 1])
-    with col1:
-        st.title("👲🏿 Allegro IO")
-    with col2:
-        st.metric("Tokens Used", f"{st.session_state.get('token_count', 0):,}")
-    with col3:
-        st.metric("Cost ($)", f"${st.session_state.get('cost', 0):.3f}")
+    # Header Area con Title e Metrics
+    header_container = st.container()
+    with header_container:
+        cols = st.columns([4, 2, 2])
+        with cols[0]:
+            st.markdown('<div class="main-header"><h1>👲🏿 Allegro IO</h1></div>', unsafe_allow_html=True)
+        with cols[1]:
+            st.metric(label="Tokens Used", value=f"{st.session_state.get('token_count', 0):,}")
+        with cols[2]:
+            st.metric(label="Cost ($)", value=f"${st.session_state.get('cost', 0):.3f}")
     
     # Sidebar con File Manager e Model Selector
     with st.sidebar:
