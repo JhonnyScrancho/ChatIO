@@ -158,49 +158,63 @@ class ChatInterface:
 
     def render(self):
         """Renderizza l'interfaccia chat."""
-        # Creiamo un contenitore principale con altezza fissa
-        main_container = st.container()
+        # CSS per fissare l'input in basso
+        st.markdown("""
+            <style>
+                /* Nasconde il footer standard di Streamlit */
+                footer {display: none !important;}
+                
+                /* Contenitore principale della chat */
+                .stChatFloatingInputContainer, .stChatInputContainer {
+                    position: fixed !important;
+                    bottom: 0 !important;
+                    background: white !important;
+                    padding: 1rem !important;
+                    border-top: 1px solid #ddd !important;
+                    z-index: 999999 !important;
+                    left: 18rem !important; /* Larghezza della sidebar */
+                    right: 0 !important;
+                }
+                
+                /* Aggiunge spazio in fondo per evitare che i messaggi vengano nascosti dall'input */
+                [data-testid="stChatMessageContainer"] {
+                    padding-bottom: 100px !important;
+                }
+                
+                .main .block-container {
+                    padding-bottom: 100px !important;
+                }
+                
+                /* Stile per i messaggi della chat */
+                .stChatMessage {
+                    background: white !important;
+                    border: 1px solid #ddd !important;
+                    border-radius: 5px !important;
+                    margin-bottom: 0.5rem !important;
+                    padding: 0.5rem !important;
+                }
+            </style>
+        """, unsafe_allow_html=True)
         
-        # Creiamo il contenitore per l'input in basso
+        # Contenitore per i messaggi con padding extra in fondo
+        messages_container = st.container()
+        
+        # Input container separato che verrà fissato dal CSS
         input_container = st.container()
         
-        # Aggiungiamo padding sotto il contenitore principale per far spazio all'input
-        st.markdown(
-            """
-            <style>
-            .main {
-                padding-bottom: 100px;
-            }
-            div[data-testid="stVerticalBlock"] > div:has(div.stChatInputContainer) {
-                position: fixed;
-                bottom: 0;
-                left: 18rem;  /* Sidebar width */
-                right: 0;
-                background: white;
-                padding: 1rem 2rem;
-                z-index: 1000;
-            }
-            .stChatInputContainer {
-                padding-bottom: 1rem;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
+        # Renderizza i messaggi
+        with messages_container:
+            for message in st.session_state.messages:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
         
-        # Renderizziamo l'input nel contenitore fisso
+        # Renderizza l'input
         with input_container:
             if prompt := st.chat_input("Ask about your code...", key="chat_input"):
                 st.session_state.messages.append({"role": "user", "content": prompt})
                 with st.spinner("Processing..."):
                     response = self._process_response(prompt)
                     st.session_state.messages.append({"role": "assistant", "content": response})
-        
-        # Mostriamo i messaggi nel contenitore principale
-        with main_container:
-            for message in st.session_state.messages:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
