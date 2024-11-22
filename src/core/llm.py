@@ -22,6 +22,18 @@ class LLMManager:
             'o1-mini': {'input': 0.001, 'output': 0.002},
             'claude-3-5-sonnet': {'input': 0.008, 'output': 0.024}
         }
+        
+        # Template di sistema per diversi tipi di analisi
+        self.system_templates = {
+            'code_review': """You are a senior software engineer performing a code review. 
+                            Focus on: code quality, patterns, potential issues, and suggestions for improvement.""",
+            'architecture': """You are a software architect analyzing code structure. 
+                            Focus on: architectural patterns, SOLID principles, and scalability concerns.""",
+            'security': """You are a security expert reviewing code for vulnerabilities. 
+                         Focus on: security issues, best practices, and potential risks.""",
+            'performance': """You are a performance optimization expert. 
+                            Focus on: performance bottlenecks, optimization opportunities, and efficiency improvements."""
+        }
     
     def select_model(self, task_type: str, content_length: int) -> str:
         """
@@ -44,37 +56,43 @@ class LLMManager:
         else:
             return "o1-mini"
     
-    def _prepare_messages(self, prompt: str, content: Optional[str] = None,
-                         context: Optional[str] = None) -> list:
+    def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
+                      file_content: Optional[str] = None, context: Optional[str] = None) -> str:
         """
-        Prepara i messaggi per l'API.
+        Prepara il prompt completo.
         
         Args:
-            prompt: Il prompt dell'utente
-            content: Contenuto da analizzare (opzionale)
-            context: Contesto aggiuntivo (opzionale)
-        
-        Returns:
-            list: Lista di messaggi formattati
-        """
-        message = prompt
-        
-        if content:
-            message += f"\n\nCONTENT TO ANALYZE:\n```\n{content}\n```"
+            prompt: Il prompt base dell'utente
+            analysis_type: Tipo di analisi richiesta
+            file_content: Contenuto del file da analizzare
+            context: Contesto aggiuntivo
             
-        if context:
-            message += f"\n\nADDITIONAL CONTEXT:\n{context}"
+        Returns:
+            str: Prompt completo formattato
+        """
+        # Aggiungi il template di sistema se specificato
+        final_prompt = self.system_templates.get(analysis_type, "") + "\n\n" if analysis_type else ""
         
-        return [{"role": "user", "content": message}]
+        # Aggiungi il prompt base
+        final_prompt += prompt
+        
+        # Aggiungi il contenuto del file se presente
+        if file_content:
+            final_prompt += f"\n\nFile content:\n```\n{file_content}\n```"
+            
+        # Aggiungi il contesto se presente
+        if context:
+            final_prompt += f"\n\nAdditional context:\n{context}"
+            
+        return final_prompt
     
-    def _call_openai(self, messages: list, model: str, max_completion_tokens: Optional[int] = None) -> Generator[str, None, None]:
+    def _call_openai(self, prompt: str, model: str) -> Generator[str, None, None]:
         """
         Effettua una chiamata streaming ai modelli OpenAI.
         
         Args:
-            messages: Lista di messaggi
+            prompt: Prompt completo
             model: Nome del modello
-            max_completion_tokens: Limite massimo di token per la risposta
             
         Yields:
             str: Chunks della risposta
@@ -82,9 +100,9 @@ class LLMManager:
         try:
             completion = self.openai_client.chat.completions.create(
                 model=model,
-                messages=messages,
+                messages=[{"role": "user", "content": prompt}],
                 stream=True,
-                max_completion_tokens=max_completion_tokens or 32768
+                max_completion_tokens=32768
             )
             
             for chunk in completion:
@@ -95,12 +113,12 @@ class LLMManager:
             st.error(f"Errore OpenAI: {str(e)}")
             yield "Mi dispiace, si è verificato un errore durante l'elaborazione."
     
-    def _call_anthropic(self, messages: list) -> Generator[str, None, None]:
+    def _call_anthropic(self, prompt: str) -> Generator[str, None, None]:
         """
         Effettua una chiamata streaming ai modelli Anthropic.
         
         Args:
-            messages: Lista di messaggi
+            prompt: Prompt completo
             
         Yields:
             str: Chunks della risposta
@@ -109,7 +127,7 @@ class LLMManager:
             message = self.anthropic_client.messages.create(
                 model="claude-3-5-sonnet",
                 max_tokens=1024,
-                messages=messages,
+                messages=[{"role": "user", "content": prompt}],
                 stream=True
             )
             
@@ -121,31 +139,34 @@ class LLMManager:
             st.error(f"Errore Anthropic: {str(e)}")
             yield "Mi dispiace, si è verificato un errore durante l'elaborazione."
     
-    def process_request(self, prompt: str, content: Optional[str] = None,
-                       context: Optional[str] = None, task_type: Optional[str] = None) -> Generator[str, None, None]:
+    def process_request(self, prompt: str, analysis_type: Optional[str] = None,
+                       file_content: Optional[str] = None, context: Optional[str] = None) -> Generator[str, None, None]:
         """
         Processa una richiesta completa.
         
         Args:
             prompt: Il prompt dell'utente
-            content: Contenuto da analizzare (opzionale)
-            context: Contesto aggiuntivo (opzionale)
-            task_type: Tipo di task per la selezione del modello
+            analysis_type: Tipo di analisi richiesta
+            file_content: Contenuto del file da analizzare
+            context: Contesto aggiuntivo
             
         Yields:
             str: Chunks della risposta
         """
-        # Seleziona il modello appropriato
-        model = self.select_model(task_type, len(content)) if task_type and content else st.session_state.current_model
+        # Prepara il prompt completo
+        final_prompt = self.prepare_prompt(prompt, analysis_type, file_content, context)
         
-        # Prepara i messaggi
-        messages = self._prepare_messages(prompt, content, context)
+        # Seleziona il modello appropriato
+        if analysis_type and file_content:
+            model = self.select_model(analysis_type, len(file_content))
+        else:
+            model = st.session_state.current_model
         
         # Effettua la chiamata al modello appropriato
         if model.startswith('o1'):
-            yield from self._call_openai(messages, model)
+            yield from self._call_openai(final_prompt, model)
         else:
-            yield from self._call_anthropic(messages)
+            yield from self._call_anthropic(final_prompt)
     
     def _calculate_cost(self, model: str, tokens: int) -> float:
         """
