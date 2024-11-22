@@ -74,6 +74,8 @@ def load_custom_css():
         /* Spazio per l'input fisso */
         [data-testid="stChatMessageContainer"] {
             padding-bottom: 80px !important;
+            position: fixed;
+            bottom: 0;
         }
         
         /* Code viewer */
@@ -243,7 +245,7 @@ def render_main_layout():
     # Title Area con Stats
     col1, col2, col3 = st.columns([4, 1, 1])
     with col1:
-        st.title("🎯 Allegro IO - Code Assistant")
+        st.title(" 👲🏿 Allegro IO")
     with col2:
         st.metric("Tokens Used", f"{st.session_state.get('token_count', 0):,}")
     with col3:
@@ -261,7 +263,7 @@ def render_main_layout():
     col1, col2 = st.columns([3, 2])
     
     with col1:
-        st.markdown("### 💬 Chat Interface")
+        st.markdown("### 💬 Chat")
         ChatInterface().render()
     
     with col2:
