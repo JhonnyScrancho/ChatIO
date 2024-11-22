@@ -158,27 +158,49 @@ class ChatInterface:
 
     def render(self):
         """Renderizza l'interfaccia chat."""
-        # Container per la cronologia messaggi
-        chat_container = st.container()
+        # Creiamo un contenitore principale con altezza fissa
+        main_container = st.container()
         
-        # Input container fisso in basso
-        with st.container():
+        # Creiamo il contenitore per l'input in basso
+        input_container = st.container()
+        
+        # Aggiungiamo padding sotto il contenitore principale per far spazio all'input
+        st.markdown(
+            """
+            <style>
+            .main {
+                padding-bottom: 100px;
+            }
+            div[data-testid="stVerticalBlock"] > div:has(div.stChatInputContainer) {
+                position: fixed;
+                bottom: 0;
+                left: 18rem;  /* Sidebar width */
+                right: 0;
+                background: white;
+                padding: 1rem 2rem;
+                z-index: 1000;
+            }
+            .stChatInputContainer {
+                padding-bottom: 1rem;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        # Renderizziamo l'input nel contenitore fisso
+        with input_container:
             if prompt := st.chat_input("Ask about your code...", key="chat_input"):
                 st.session_state.messages.append({"role": "user", "content": prompt})
-
-                # Mostra il loader durante l'elaborazione
                 with st.spinner("Processing..."):
                     response = self._process_response(prompt)
                     st.session_state.messages.append({"role": "assistant", "content": response})
-
-        # Mostra la cronologia dei messaggi
-        with chat_container:
+        
+        # Mostriamo i messaggi nel contenitore principale
+        with main_container:
             for message in st.session_state.messages:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
-
-            # Spazio per l'input fisso
-            st.markdown("<div style='height: 80px'></div>", unsafe_allow_html=True)
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
