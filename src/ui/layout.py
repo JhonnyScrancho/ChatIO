@@ -2,9 +2,16 @@
 Main layout management for Allegro IO Code Assistant.
 """
 
+import streamlit as st
 from src.ui.components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay
 from src.core.session import SessionManager
-import streamlit as st
+
+# Configurazione della pagina - DEVE essere la prima chiamata Streamlit
+st.set_page_config(
+    page_title="Allegro IO - Code Assistant",
+    page_icon="🎯",
+    layout="wide"
+)
 
 def render_main_layout():
     """Renderizza il layout principale dell'applicazione."""
@@ -12,13 +19,6 @@ def render_main_layout():
     # Setup iniziale della sessione
     session = SessionManager()
     session.init_session()
-    
-    # Header
-    st.set_page_config(
-        page_title="Allegro IO - Code Assistant",
-        page_icon="🎯",
-        layout="wide"
-    )
     
     # Title Area
     col1, col2 = st.columns([3, 1])
