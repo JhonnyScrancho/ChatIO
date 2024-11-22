@@ -18,7 +18,7 @@ class LLMManager:
     def __init__(self):
         """Inizializza le connessioni API e le configurazioni."""
         self.openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-        self.anthropic_client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+        self.anthropic_client = Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
         
         # Costi per 1K tokens (in USD)
         self.cost_map = {
