@@ -3,6 +3,7 @@ UI components for Allegro IO Code Assistant.
 """
 
 import streamlit as st
+from datetime import datetime
 from src.core.session import SessionManager
 from src.core.files import FileManager
 from src.core.llm import LLMManager
