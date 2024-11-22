@@ -2,8 +2,10 @@
 UI components for Allegro IO Code Assistant.
 """
 
+from src.core.session import SessionManager
+from src.core.files import FileManager
+from src.core.llm import LLMManager
 import streamlit as st
-from ..core import SessionManager, FileManager, LLMManager
 
 class FileExplorer:
     """Component per l'esplorazione e l'upload dei file."""

@@ -2,9 +2,9 @@
 Main layout management for Allegro IO Code Assistant.
 """
 
-import streamlit as st
 from .components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay
-from ..core import SessionManager
+from src.core.session import SessionManager
+import streamlit as st
 
 def render_main_layout():
     """Renderizza il layout principale dell'applicazione."""

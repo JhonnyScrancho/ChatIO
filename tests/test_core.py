@@ -2,10 +2,9 @@
 Test suite for core functionality of Allegro IO Code Assistant.
 """
 
-import pytest
-import streamlit as st
-from unittest.mock import MagicMock, patch
-from src.core import SessionManager, LLMManager, FileManager
+from src.core.session import SessionManager
+from src.core.llm import LLMManager
+from src.core.files import FileManager
 
 # Setup per i test che usano st.session_state
 @pytest.fixture(autouse=True)

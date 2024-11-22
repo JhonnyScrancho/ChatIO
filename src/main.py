@@ -3,7 +3,11 @@ Allegro IO Code Assistant - Main Application
 Streamlit-based interface for code analysis using LLMs.
 """
 
-import os
+from src.core.session import SessionManager
+from src.core.llm import LLMManager
+from src.core.files import FileManager
+from src.ui.layout import render_main_layout
+from src.utils.config import load_config
 import streamlit as st
 from dotenv import load_dotenv
 from pathlib import Path
