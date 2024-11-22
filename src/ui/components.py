@@ -208,7 +208,7 @@ class ChatInterface:
         with col1:
             # Selettore chat corrente
             current_chat = st.selectbox(
-                "",
+                "Seleziona chat",
                 options=list(st.session_state.chats.keys()),
                 index=list(st.session_state.chats.keys()).index(st.session_state.current_chat)
             )

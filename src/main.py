@@ -203,6 +203,35 @@ def load_custom_css():
             visibility: visible;
             opacity: 1;
         }
+                
+        [data-testid="stSidebar"] {
+        background-color: var(--surface-container);  /* Usa la variabile del tema corrente */
+        }
+
+        /* Adatta il colore del testo nella sidebar al tema */
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+            color: var(--text-color);
+        }
+
+        /* Bottoni e input nella sidebar */
+        [data-testid="stSidebar"] button {
+            background-color: var(--surface-container-highest) !important;
+            color: var(--text-color) !important;
+        }
+
+        [data-testid="stSidebar"] input {
+            background-color: var(--surface-container-highest) !important;
+            color: var(--text-color) !important;
+        }
+
+        /* File explorer nella sidebar */
+        [data-testid="stSidebar"] .file-tree button {
+            color: var(--text-color) !important;
+        }
+
+        [data-testid="stSidebar"] .file-tree button:hover {
+            background-color: var(--surface-container-highest) !important;
+        }        
         </style>
     """, unsafe_allow_html=True)
 
