@@ -98,7 +98,7 @@ class FileExplorer:
             "Drag and drop files here",
             type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
             accept_multiple_files=True,
-            key="file_uploader"
+            key="file_uploader"  # Added unique key for uploader
         )
 
         if uploaded_files:
@@ -185,48 +185,58 @@ class ChatInterface:
             }
             st.session_state.current_chat = 'Chat principale'
 
-    def _build_file_context(self) -> str:
-        """Costruisce il contesto dai file caricati."""
-        context = []
-        uploaded_files = st.session_state.get('uploaded_files', {})
-        
-        if not uploaded_files:
-            return ""
+    def _format_file_preview(self, file_info):
+        """Formatta l'anteprima del file per la chat."""
+        return f"""
+```{file_info['language']}
+{file_info['content'][:200]}... 
+```
+[File completo: {file_info['name']}]
+"""
+
+    def _get_files_context(self):
+        """Recupera il contesto dei file per la chat."""
+        if not st.session_state.get('uploaded_files'):
+            return None
             
-        for filename, file_info in uploaded_files.items():
-            context.append(f"\nFile: {filename}")
-            context.append(f"```{file_info['language']}")
-            context.append(file_info['content'])
-            context.append("```\n")
-        
-        return "\n".join(context)
+        files_preview = []
+        for filename, file_info in st.session_state.uploaded_files.items():
+            files_preview.append(self._format_file_preview(file_info))
+            
+        return "\n".join([
+            "📁 **Files caricati:**",
+            *files_preview
+        ])
 
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
         try:
-            # Costruisci il contesto dai file
-            file_context = self._build_file_context()
+            # Recupera il contesto dei file
+            files_context = self._get_files_context()
             
-            if not file_context:
-                return "Non ci sono file caricati. Carica alcuni file per permettermi di analizzarli."
+            # Se ci sono file, aggiungi il contesto alla chat
+            if files_context and not any(
+                msg.get('content', '').startswith('📁 **Files caricati:**') 
+                for msg in st.session_state.chats[st.session_state.current_chat]['messages'][-3:]
+            ):
+                self.session.add_message_to_current_chat({
+                    "role": "assistant",
+                    "content": files_context
+                })
 
-            # Aggiungi info sui file al prompt
-            enhanced_prompt = f"""
-Contesto dei file caricati:
-{file_context}
+            # Prepara il contesto completo per l'LLM
+            context = ""
+            for filename, file_info in st.session_state.uploaded_files.items():
+                context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
 
-Richiesta dell'utente:
-{prompt}
-"""
-            
+            # Processa la risposta
             response = ""
             with st.spinner("Analyzing code..."):
                 for chunk in self.llm.process_request(
-                    prompt=enhanced_prompt,
-                    context=file_context
+                    prompt=prompt,
+                    context=context
                 ):
                     response += chunk
-                    st.write(chunk)  # Mostra la risposta in tempo reale
             return response
             
         except Exception as e:
@@ -250,7 +260,6 @@ Richiesta dell'utente:
         col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
         
         with col1:
-            # Selettore chat corrente
             current_chat = st.selectbox(
                 "Seleziona chat",
                 options=list(st.session_state.chats.keys()),
@@ -260,7 +269,6 @@ Richiesta dell'utente:
                 st.session_state.current_chat = current_chat
 
         with col2:
-            # Pulsante nuova chat
             if st.button("🆕 Nuova", use_container_width=True):
                 new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
                 st.session_state.chats[new_chat_name] = {
@@ -271,71 +279,31 @@ Richiesta dell'utente:
                 st.rerun()
 
         with col3:
-            # Pulsante rinomina
             if st.button("✏️ Rinomina", use_container_width=True):
                 st.session_state.renaming = True
                 st.rerun()
 
         with col4:
-            # Pulsante elimina
             if len(st.session_state.chats) > 1 and st.button("🗑️ Elimina", use_container_width=True):
                 if st.session_state.current_chat in st.session_state.chats:
                     del st.session_state.chats[st.session_state.current_chat]
                     st.session_state.current_chat = list(st.session_state.chats.keys())[0]
                     st.rerun()
 
-        # Dialog per rinominare la chat
-        if getattr(st.session_state, 'renaming', False):
-            with st.form("rename_chat"):
-                new_name = st.text_input("Nuovo nome", value=st.session_state.current_chat)
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.form_submit_button("Salva"):
-                        if new_name and new_name != st.session_state.current_chat:
-                            # Rinomina la chat
-                            st.session_state.chats[new_name] = st.session_state.chats.pop(st.session_state.current_chat)
-                            st.session_state.current_chat = new_name
-                        st.session_state.renaming = False
-                        st.rerun()
-                with col2:
-                    if st.form_submit_button("Annulla"):
-                        st.session_state.renaming = False
-                        st.rerun()    
-
     def render(self):
         """Renderizza l'interfaccia chat."""
         # Renderizza i controlli delle chat
         self.render_chat_controls()
         
-        # Container per i messaggi della chat corrente
+        # Container per i messaggi della chat
         messages_container = st.container()
         
-        # Mostra i messaggi esistenti
+        # Mostra i messaggi della chat corrente
         current_chat = st.session_state.chats[st.session_state.current_chat]
         with messages_container:
             for message in current_chat['messages']:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
-        
-        # Input per il messaggio
-        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
-            # Aggiungi il messaggio dell'utente
-            st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                "role": "user",
-                "content": prompt
-            })
-            
-            # Processa la risposta
-            response = self._process_response(prompt)
-            
-            # Aggiungi la risposta dell'assistente
-            st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                "role": "assistant",
-                "content": response
-            })
-            
-            # Forza il refresh della UI
-            st.rerun()
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
