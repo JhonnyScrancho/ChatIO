@@ -238,6 +238,48 @@ def init_clients():
 
 def render_main_layout():
     """Renderizza il layout principale dell'applicazione."""
+    # CSS per il footer
+    st.markdown("""
+        <style>
+            /* Layout principale */
+            .main > .block-container {
+                padding-bottom: 6rem !important;
+            }
+            
+            /* Footer globale */
+            .footer-container {
+                position: fixed !important;
+                bottom: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                height: auto !important;
+                background-color: #ffffff !important;
+                border-top: 1px solid #e0e0e0 !important;
+                padding: 1rem !important;
+                z-index: 9999 !important;
+            }
+
+            /* Adatta il contenuto della sidebar */
+            [data-testid="stSidebar"] {
+                padding-bottom: 6rem !important;
+            }
+            
+            /* Nascondi il footer di default di Streamlit */
+            footer {display: none !important;}
+            
+            /* Rendi lo sfondo del footer un po' più opaco */
+            .footer-container::before {
+                content: "";
+                position: absolute;
+                top: -10px;
+                left: 0;
+                right: 0;
+                height: 10px;
+                background: linear-gradient(transparent, rgba(255,255,255,0.9));
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    
     # Setup iniziale della sessione
     clients = init_clients()
     clients['session'].init_session()
@@ -269,6 +311,20 @@ def render_main_layout():
     with col2:
         st.markdown("### 📝 Code Viewer")
         CodeViewer().render()
+    
+    # Footer globale con input chat
+    footer = st.container()
+    with footer:
+        st.markdown('<div class="footer-container">', unsafe_allow_html=True)
+        # Crea tre colonne nel footer: una vuota a sinistra per la sidebar, una per l'input, una vuota a destra
+        foot_col1, foot_col2 = st.columns([1, 5])
+        with foot_col2:
+            if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="footer_chat_input"):
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                with st.spinner("Elaborazione in corso..."):
+                    response = clients['llm'].process_request(prompt)
+                    st.session_state.messages.append({"role": "assistant", "content": "".join(response)})
+        st.markdown('</div>', unsafe_allow_html=True)
 
 def main():
     """Funzione principale dell'applicazione."""

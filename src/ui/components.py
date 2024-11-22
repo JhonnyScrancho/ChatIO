@@ -158,71 +158,14 @@ class ChatInterface:
 
     def render(self):
         """Renderizza l'interfaccia chat."""
-        # CSS migliorato per il footer fisso
-        st.markdown("""
-            <style>
-                /* Footer container fisso */
-                .chat-footer {
-                    position: fixed !important;
-                    bottom: 0 !important;
-                    left: 15.5rem !important; /* Aggiustato per la sidebar */
-                    right: 0 !important;
-                    height: auto !important;
-                    background-color: #ffffff !important;
-                    padding: 1rem 2rem !important;
-                    border-top: 1px solid #e0e0e0 !important;
-                    z-index: 9999 !important;
-                }
-                
-                /* Aggiungi padding al contenitore dei messaggi per evitare che il contenuto finisca sotto il footer */
-                [data-testid="stChatMessageContainer"] {
-                    margin-bottom: 5rem !important;
-                    padding-bottom: 1rem !important;
-                }
-
-                /* Nascondi il footer di Streamlit */
-                footer {
-                    display: none !important;
-                }
-
-                /* Assicura che il contenuto principale non finisca sotto il footer */
-                .main .block-container {
-                    padding-bottom: 5rem !important;
-                }
-
-                /* Stile per i messaggi della chat */
-                .stChatMessage {
-                    background: white !important;
-                    border: 1px solid #f0f0f0 !important;
-                    border-radius: 8px !important;
-                    margin-bottom: 0.5rem !important;
-                    padding: 0.75rem !important;
-                }
-            </style>
-        """, unsafe_allow_html=True)
+        # Container per i messaggi
+        messages_container = st.container()
         
-        # Container per i messaggi della chat
-        chat_container = st.container()
-        
-        # Container per il footer con l'input
-        footer_container = st.container()
-        
-        # Renderizza i messaggi nel container principale
-        with chat_container:
+        # Renderizza i messaggi
+        with messages_container:
             for message in st.session_state.messages:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
-        
-        # Renderizza l'input nel footer
-        with footer_container:
-            # Aggiunge la classe CSS al container del footer
-            st.markdown('<div class="chat-footer">', unsafe_allow_html=True)
-            if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
-                st.session_state.messages.append({"role": "user", "content": prompt})
-                with st.spinner("Elaborazione in corso..."):
-                    response = self._process_response(prompt)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
-            st.markdown('</div>', unsafe_allow_html=True)
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
