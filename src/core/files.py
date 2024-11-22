@@ -29,7 +29,6 @@ class FileManager:
         """Inizializza il FileManager."""
         self.current_path = None
     
-    @st.cache_data
     def process_file(self, uploaded_file) -> Optional[Dict]:
         """
         Processa un file caricato.
@@ -40,7 +39,13 @@ class FileManager:
         Returns:
             Optional[Dict]: Informazioni sul file processato
         """
-        if uploaded_file.size > self.MAX_FILE_SIZE:
+        return self._process_file_cached(uploaded_file)
+    
+    @staticmethod
+    @st.cache_data
+    def _process_file_cached(uploaded_file) -> Optional[Dict]:
+        """Versione cacheable del process_file."""
+        if uploaded_file.size > FileManager.MAX_FILE_SIZE:
             st.warning(f"File {uploaded_file.name} troppo grande. Massimo 5MB consentiti.")
             return None
             
@@ -56,19 +61,21 @@ class FileManager:
             except:
                 language = 'text'
             
+            # Usiamo una funzione statica per l'highlighting
+            highlighted = FileManager._highlight_code_cached(content, language)
+            
             return {
                 'content': content,
                 'language': language,
                 'size': len(content),
                 'name': uploaded_file.name,
-                'highlighted': self.highlight_code(content, language)
+                'highlighted': highlighted
             }
             
         except Exception as e:
             st.warning(f"Errore nel processare {uploaded_file.name}: {str(e)}")
             return None
     
-    @st.cache_data
     def process_zip(self, zip_file) -> Dict[str, Dict]:
         """
         Processa un file ZIP.
@@ -79,12 +86,18 @@ class FileManager:
         Returns:
             Dict[str, Dict]: Mappa dei file processati
         """
+        return self._process_zip_cached(zip_file)
+    
+    @staticmethod
+    @st.cache_data
+    def _process_zip_cached(zip_file) -> Dict[str, Dict]:
+        """Versione cacheable del process_zip."""
         processed_files = {}
         total_size = 0
         
         with ZipFile(BytesIO(zip_file.read()), 'r') as zip_ref:
             for file_info in zip_ref.infolist():
-                if file_info.file_size > self.MAX_FILE_SIZE:
+                if file_info.file_size > FileManager.MAX_FILE_SIZE:
                     continue
                     
                 # Skip directories and hidden files
@@ -93,7 +106,7 @@ class FileManager:
                     
                 # Check extension
                 ext = os.path.splitext(file_info.filename)[1].lower()
-                if ext not in self.ALLOWED_EXTENSIONS:
+                if ext not in FileManager.ALLOWED_EXTENSIONS:
                     continue
                     
                 try:
@@ -104,16 +117,18 @@ class FileManager:
                     except:
                         language = 'text'
                     
+                    highlighted = FileManager._highlight_code_cached(content, language)
+                    
                     processed_files[file_info.filename] = {
                         'content': content,
                         'language': language,
                         'size': file_info.file_size,
                         'name': file_info.filename,
-                        'highlighted': self.highlight_code(content, language)
+                        'highlighted': highlighted
                     }
                     total_size += file_info.file_size
                     
-                    if total_size > self.MAX_FILE_SIZE * 3:  # Limite totale ZIP
+                    if total_size > FileManager.MAX_FILE_SIZE * 3:  # Limite totale ZIP
                         break
                         
                 except Exception:
@@ -121,10 +136,11 @@ class FileManager:
                     
         return processed_files
     
+    @staticmethod
     @st.cache_data
-    def highlight_code(self, content: str, language: str) -> str:
+    def _highlight_code_cached(content: str, language: str) -> str:
         """
-        Applica syntax highlighting al codice.
+        Versione cacheable del syntax highlighting.
         
         Args:
             content: Contenuto del file
