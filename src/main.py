@@ -28,47 +28,64 @@ from src.ui.components import FileExplorer, ChatInterface, CodeViewer, ModelSele
 # Carica variabili d'ambiente
 load_dotenv()
 
-# Configurazioni globali
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
-ALLOWED_EXTENSIONS = {
-    '.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.css',
-    '.java', '.cpp', '.c', '.h', '.hpp', '.cs', '.php',
-    '.rb', '.go', '.rs', '.swift', '.kt', '.scala', '.sh',
-    '.sql', '.md', '.txt', '.json', '.yml', '.yaml'
-}
-
-def check_environment():
-    """Verifica la presenza delle secrets necessari."""
-    required_vars = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']
-    missing_vars = [var for var in required_vars if var not in st.secrets]
-    
-    if missing_vars:
-        st.error(f"⚠️ Secrets mancanti: {', '.join(missing_vars)}")
-        st.info("ℹ️ Configura le API keys in .streamlit/secrets.toml")
-        st.stop()
-
-def check_directories():
-    """Verifica e crea le cartelle necessarie se non esistono."""
-    required_dirs = ['templates', 'src/core', 'src/ui', 'src/utils']
-    base_path = Path(__file__).parent.parent
-    
-    for dir_name in required_dirs:
-        dir_path = base_path / dir_name
-        if not dir_path.exists():
-            st.warning(f"⚠️ Cartella {dir_name} mancante. Creazione in corso...")
-            dir_path.mkdir(parents=True, exist_ok=True)
-
 def load_custom_css():
     """Carica stili CSS personalizzati."""
     st.markdown("""
         <style>
-        /* Stile generale */
-        .stApp {
-            max-width: 1200px;
-            margin: 0 auto;
+        /* Layout generale */
+        .main {
+            padding: 0 !important;
         }
         
-        /* Stile code viewer */
+        .block-container {
+            padding-top: 1rem !important;
+            max-width: 100% !important;
+        }
+        
+        /* Sidebar migliorata */
+        [data-testid="stSidebar"] {
+            background-color: #f8f9fa;
+            padding: 1rem;
+        }
+        
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        /* Chat UI */
+        .stChatFloatingInputContainer {
+            position: fixed !important;
+            bottom: 0 !important;
+            left: 18rem !important;
+            right: 0 !important;
+            padding: 1rem 2rem !important;
+            background: white !important;
+            border-top: 1px solid #eee !important;
+            z-index: 1000 !important;
+        }
+        
+        .stChatMessage {
+            max-width: none !important;
+            width: 100% !important;
+            margin: 0.5rem 0 !important;
+        }
+        
+        /* Spazio per l'input fisso */
+        [data-testid="stChatMessageContainer"] {
+            padding-bottom: 80px !important;
+        }
+        
+        /* Code viewer */
+        .code-viewer {
+            background: #ffffff;
+            border-radius: 0.5rem;
+            border: 1px solid #eee;
+            padding: 1rem;
+            height: calc(100vh - 130px);
+            overflow-y: auto;
+        }
+        
         .source {
             font-family: 'Courier New', Courier, monospace;
             font-size: 14px;
@@ -79,53 +96,66 @@ def load_custom_css():
             overflow-x: auto;
         }
         
-        .source .linenos {
-            color: #8f908a;
-            padding-right: 10px;
-            user-select: none;
+        /* File explorer minimalista */
+        .file-tree button {
+            background: none !important;
+            border: none !important;
+            padding: 0.2rem 0.5rem !important;
+            text-align: left !important;
+            font-size: 0.9rem !important;
+            color: #0e1117 !important;
+            width: 100% !important;
+            margin: 0 !important;
         }
         
-        .source pre {
-            margin: 0;
-            color: #f8f8f2;
+        .file-tree button:hover {
+            background-color: #eef2f5 !important;
         }
         
-        /* Stile chat messages */
-        .stChatMessage {
-            background-color: #f0f2f6;
-            border-radius: 10px;
-            padding: 10px;
-            margin: 5px 0;
+        /* Loader animation */
+        .thinking-loader {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
         }
         
-        /* Stile file explorer */
-        .file-explorer {
-            background-color: #ffffff;
-            border-radius: 5px;
-            padding: 10px;
-            margin: 5px 0;
+        .loader-dots {
+            display: inline-flex;
+            gap: 0.3rem;
         }
         
-        /* Stile stats */
+        .loader-dots span {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #666;
+            animation: loader 1.4s infinite;
+        }
+        
+        .loader-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .loader-dots span:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes loader {
+            0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1); }
+        }
+        
+        /* Stats display */
         .stats-container {
-            background-color: #f8f9fa;
-            border-radius: 5px;
-            padding: 10px;
-            margin-top: 10px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            padding: 0.5rem;
+            background: #f8f9fa;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
         }
         
-        /* Stile buttons e inputs */
-        .stButton>button {
-            border-radius: 5px;
-            transition: all 0.2s ease;
-        }
-        
-        .stButton>button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        /* Stile scrollbars */
+        /* Scrollbars */
         ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -145,7 +175,7 @@ def load_custom_css():
             background: #555;
         }
         
-        /* Stile tooltips */
+        /* Tooltips */
         .tooltip {
             position: relative;
             display: inline-block;
@@ -174,6 +204,27 @@ def load_custom_css():
         </style>
     """, unsafe_allow_html=True)
 
+def check_environment():
+    """Verifica la presenza delle secrets necessari."""
+    required_vars = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']
+    missing_vars = [var for var in required_vars if var not in st.secrets]
+    
+    if missing_vars:
+        st.error(f"⚠️ Secrets mancanti: {', '.join(missing_vars)}")
+        st.info("ℹ️ Configura le API keys in .streamlit/secrets.toml")
+        st.stop()
+
+def check_directories():
+    """Verifica e crea le cartelle necessarie se non esistono."""
+    required_dirs = ['templates', 'src/core', 'src/ui', 'src/utils']
+    base_path = Path(__file__).parent.parent
+    
+    for dir_name in required_dirs:
+        dir_path = base_path / dir_name
+        if not dir_path.exists():
+            st.warning(f"⚠️ Cartella {dir_name} mancante. Creazione in corso...")
+            dir_path.mkdir(parents=True, exist_ok=True)
+
 @st.cache_resource
 def init_clients():
     """Inizializza e cachea i clients API."""
@@ -189,14 +240,16 @@ def render_main_layout():
     clients = init_clients()
     clients['session'].init_session()
     
-    # Title Area
-    col1, col2 = st.columns([3, 1])
+    # Title Area con Stats
+    col1, col2, col3 = st.columns([4, 1, 1])
     with col1:
         st.title("🎯 Allegro IO - Code Assistant")
     with col2:
-        StatsDisplay().render()
+        st.metric("Tokens Used", f"{st.session_state.get('token_count', 0):,}")
+    with col3:
+        st.metric("Cost ($)", f"${st.session_state.get('cost', 0):.3f}")
     
-    # Main Layout con Sidebar
+    # Sidebar con File Manager e Model Selector
     with st.sidebar:
         st.markdown("### 📁 File Manager")
         FileExplorer().render()
@@ -204,7 +257,7 @@ def render_main_layout():
         st.markdown("### 🤖 Model Settings")
         ModelSelector().render()
     
-    # Main Content Area
+    # Main Content Area con Chat e Code Viewer
     col1, col2 = st.columns([3, 2])
     
     with col1:
