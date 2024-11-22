@@ -51,8 +51,8 @@ class FileExplorer:
             current[parts[-1]] = content
         return tree
 
-    def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", is_last: bool = True):
-        """Renderizza un nodo dell'albero dei file in stile minimale."""
+    def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", is_last: bool = True, full_path: str = ""):
+        """Renderizza un nodo dell'albero dei file con chiavi uniche."""
         # Definisci i caratteri per l'albero
         PIPE = "│   "
         ELBOW = "└── "
@@ -61,31 +61,44 @@ class FileExplorer:
         # Scegli il connettore appropriato
         connector = ELBOW if is_last else TEE
         
+        # Costruisci il path completo per questo nodo
+        current_full_path = f"{full_path}/{path}" if full_path else path
+        
         if isinstance(node, dict) and 'content' not in node:
             # È una directory
-            st.markdown(f"<div style='font-family: monospace; white-space: pre;'>{prefix}{connector}{path.split('/')[-1]}/</div>", 
-                      unsafe_allow_html=True)
+            st.markdown(f"<div style='font-family: monospace; white-space: pre;'>{prefix}{connector}{path}/</div>", 
+                       unsafe_allow_html=True)
             
             items = sorted(node.items())
             for i, (name, child) in enumerate(items):
                 is_last_item = i == len(items) - 1
                 new_prefix = prefix + (PIPE if not is_last else "    ")
-                self._render_tree_node(name, child, new_prefix, is_last_item)
+                self._render_tree_node(
+                    name, 
+                    child, 
+                    new_prefix, 
+                    is_last_item, 
+                    current_full_path
+                )
         else:
-            # È un file
-            if st.button(f"{prefix}{connector}{path.split('/')[-1]}", 
-                        key=f"file_{path}",
-                        use_container_width=True,
-                        type="secondary"):
-                st.session_state.selected_file = path
-                st.session_state.current_file = path
+            # È un file - usa il path completo per la chiave
+            unique_key = f"file_{current_full_path.replace('/', '_')}"
+            if st.button(
+                f"{prefix}{connector}{path}",
+                key=unique_key,
+                use_container_width=True,
+                type="secondary"
+            ):
+                st.session_state.selected_file = current_full_path
+                st.session_state.current_file = current_full_path
 
     def render(self):
         """Renderizza il componente."""
         uploaded_files = st.file_uploader(
             "Drag and drop files here",
             type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
-            accept_multiple_files=True
+            accept_multiple_files=True,
+            key="file_uploader"  # Added unique key for uploader
         )
 
         if uploaded_files:
@@ -115,13 +128,12 @@ class FileExplorer:
                             'name': file.name
                         }
                 except Exception as e:
-                    st.error(f"Errore nel processare {file.name}: {str(e)}")
+                    st.error(f"Error processing {file.name}: {str(e)}")
 
-        # Visualizza struttura ad albero
+        # File tree visualization
         if st.session_state.uploaded_files:
             st.markdown("""
                 <style>
-                    /* Stile per i bottoni dell'albero */
                     .stButton button {
                         background: none !important;
                         border: none !important;
@@ -137,7 +149,6 @@ class FileExplorer:
                     .stButton button:hover {
                         color: #ff4b4b !important;
                     }
-                    /* Stile per il testo delle directory */
                     .directory {
                         color: #666;
                         font-family: monospace;
@@ -146,7 +157,11 @@ class FileExplorer:
             """, unsafe_allow_html=True)
             
             tree = self._create_file_tree(st.session_state.uploaded_files)
-            st.markdown("<div style='font-family: monospace;'>allegro-io/</div>", unsafe_allow_html=True)
+            st.markdown(
+                "<div style='font-family: monospace;'>allegro-io/</div>", 
+                unsafe_allow_html=True
+            )
+            
             items = sorted(tree.items())
             for i, (name, node) in enumerate(items):
                 is_last = i == len(items) - 1
