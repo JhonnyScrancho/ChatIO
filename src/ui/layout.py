@@ -2,7 +2,7 @@
 Main layout management for Allegro IO Code Assistant.
 """
 
-from .components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay
+from src.ui.components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay
 from src.core.session import SessionManager
 import streamlit as st
 
