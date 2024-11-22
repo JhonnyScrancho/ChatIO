@@ -3,7 +3,7 @@ LLM integration for Allegro IO Code Assistant.
 Manages interactions with OpenAI and Anthropic models.
 """
 
-import os
+import streamlit as st
 from typing import Dict, Optional, Tuple
 from openai import OpenAI
 from anthropic import Anthropic
