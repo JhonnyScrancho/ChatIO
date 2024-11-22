@@ -98,7 +98,7 @@ class FileExplorer:
             "Drag and drop files here",
             type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
             accept_multiple_files=True,
-            key="file_uploader"  # Added unique key for uploader
+            key="file_uploader"
         )
 
         if uploaded_files:
@@ -185,21 +185,50 @@ class ChatInterface:
             }
             st.session_state.current_chat = 'Chat principale'
 
+    def _build_file_context(self) -> str:
+        """Costruisce il contesto dai file caricati."""
+        context = []
+        uploaded_files = st.session_state.get('uploaded_files', {})
+        
+        if not uploaded_files:
+            return ""
+            
+        for filename, file_info in uploaded_files.items():
+            context.append(f"\nFile: {filename}")
+            context.append(f"```{file_info['language']}")
+            context.append(file_info['content'])
+            context.append("```\n")
+        
+        return "\n".join(context)
+
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
         try:
-            context = ""
-            for filename, file_info in st.session_state.uploaded_files.items():
-                context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
+            # Costruisci il contesto dai file
+            file_context = self._build_file_context()
+            
+            if not file_context:
+                return "Non ci sono file caricati. Carica alcuni file per permettermi di analizzarli."
 
+            # Aggiungi info sui file al prompt
+            enhanced_prompt = f"""
+Contesto dei file caricati:
+{file_context}
+
+Richiesta dell'utente:
+{prompt}
+"""
+            
             response = ""
             with st.spinner("Analyzing code..."):
                 for chunk in self.llm.process_request(
-                    prompt=prompt,
-                    context=context
+                    prompt=enhanced_prompt,
+                    context=file_context
                 ):
                     response += chunk
+                    st.write(chunk)  # Mostra la risposta in tempo reale
             return response
+            
         except Exception as e:
             return f"Mi dispiace, si è verificato un errore: {str(e)}"
         
@@ -281,11 +310,32 @@ class ChatInterface:
         # Container per i messaggi della chat corrente
         messages_container = st.container()
         
+        # Mostra i messaggi esistenti
         current_chat = st.session_state.chats[st.session_state.current_chat]
         with messages_container:
             for message in current_chat['messages']:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
+        
+        # Input per il messaggio
+        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
+            # Aggiungi il messaggio dell'utente
+            st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                "role": "user",
+                "content": prompt
+            })
+            
+            # Processa la risposta
+            response = self._process_response(prompt)
+            
+            # Aggiungi la risposta dell'assistente
+            st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                "role": "assistant",
+                "content": response
+            })
+            
+            # Forza il refresh della UI
+            st.rerun()
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
