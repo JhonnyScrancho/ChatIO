@@ -73,54 +73,65 @@ class FileExplorer:
                 st.session_state.current_file = path
 
     def render(self):
-        """Renderizza il componente."""
-        uploaded_files = st.file_uploader(
-            "Drag and drop files here",
-            type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
-            accept_multiple_files=True
-        )
-
-        if uploaded_files:
-            for file in uploaded_files:
-                try:
-                    if file.name.endswith('.zip'):
-                        import zipfile
-                        import io
-                        
-                        # Processa il file ZIP
-                        zip_content = zipfile.ZipFile(io.BytesIO(file.read()))
-                        for zip_file in zip_content.namelist():
-                            if not zip_file.startswith('__') and not zip_file.startswith('.'):
-                                try:
-                                    content = zip_content.read(zip_file).decode('utf-8', errors='ignore')
-                                    st.session_state.uploaded_files[zip_file] = {
-                                        'content': content,
-                                        'language': zip_file.split('.')[-1],
-                                        'name': zip_file
-                                    }
-                                except Exception as e:
-                                    continue  # Salta i file che non possono essere decodificati
-                    else:
-                        # Processa file singolo
-                        content = file.read().decode('utf-8')
-                        st.session_state.uploaded_files[file.name] = {
-                            'content': content,
-                            'language': file.name.split('.')[-1],
-                            'name': file.name
-                        }
-                except Exception as e:
-                    st.error(f"Errore nel processare {file.name}: {str(e)}")
-
-        # Visualizza struttura ad albero
-        if st.session_state.uploaded_files:
-            st.markdown("""
-                <div class="file-tree">
-                    <p style='margin-bottom: 8px; color: #666;'>Files:</p>
-                </div>
-            """, unsafe_allow_html=True)
-            tree = self._create_file_tree(st.session_state.uploaded_files)
-            for name, node in sorted(tree.items()):
-                self._render_tree_node(name, node)
+        """Renderizza l'interfaccia chat."""
+        # CSS aggiornato con i selettori corretti
+        st.markdown("""
+            <style>
+                /* Container principale della chat */
+                div[data-testid="stVerticalBlockBorderWrapper"] {
+                    position: fixed !important;
+                    bottom: 0 !important;
+                    left: 18rem !important;  /* Sidebar width */
+                    right: 2rem !important;
+                    background: white !important;
+                    padding: 1rem !important;
+                    z-index: 999999 !important;
+                    border-top: 1px solid #ddd !important;
+                }
+                
+                /* Contenitore dell'input */
+                .stChatInput {
+                    margin-bottom: 0 !important;
+                }
+                
+                /* Area messaggi con padding per l'input */
+                [data-testid="stChatMessageContainer"] {
+                    margin-bottom: 80px !important;
+                    padding-bottom: 40px !important;
+                }
+                
+                /* Nasconde il footer */
+                footer {
+                    display: none !important;
+                }
+                
+                /* Assicura che il contenitore principale abbia spazio per l'input */
+                .main .block-container {
+                    padding-bottom: 100px !important;
+                }
+                
+                /* Style per i messaggi */
+                .stChatMessage {
+                    margin-bottom: 1rem !important;
+                }
+            </style>
+        """, unsafe_allow_html=True)
+        
+        # Container per i messaggi
+        chat_container = st.container()
+        
+        # Visualizza i messaggi
+        with chat_container:
+            for message in st.session_state.messages:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+        
+        # Input 
+        if prompt := st.chat_input("Ask about your code...", key="chat_input"):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.spinner("Processing..."):
+                response = self._process_response(prompt)
+                st.session_state.messages.append({"role": "assistant", "content": response})
 
 class ChatInterface:
     """Componente per l'interfaccia chat."""
