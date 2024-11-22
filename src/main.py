@@ -74,8 +74,8 @@ def load_custom_css():
         /* Spazio per l'input fisso */
         [data-testid="stChatMessageContainer"] {
             padding-bottom: 80px !important;
-            position: fixed;
-            bottom: 0;
+            position: fixed !important;
+            bottom: 0 !important;
         }
         
         /* Code viewer */
