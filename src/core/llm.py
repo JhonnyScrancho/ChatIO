@@ -18,7 +18,7 @@ class LLMManager:
     def __init__(self):
         """Inizializza le connessioni API e le configurazioni."""
         self.openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-        self.anthropic_client = Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+        self.anthropic_client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
         
         # Costi per 1K tokens (in USD)
         self.cost_map = {
@@ -247,14 +247,14 @@ class LLMManager:
                 else:
                     claude_messages.append(msg)
             
-            message = self.anthropic_client.messages.create(
+            response = self.anthropic_client.beta.messages.create(
                 model="claude-3-5-sonnet-20241022",
                 max_tokens=4096,
                 messages=claude_messages,
                 stream=True
             )
             
-            for chunk in message:
+            for chunk in response:
                 if chunk.delta.text:
                     yield chunk.delta.text
                     
