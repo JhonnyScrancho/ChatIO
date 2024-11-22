@@ -7,7 +7,6 @@ import streamlit as st
 from typing import Dict, Optional, Tuple, Generator
 from openai import OpenAI
 from anthropic import Anthropic
-import json
 
 class LLMManager:
     """Gestisce le interazioni con i modelli LLM."""
@@ -23,67 +22,59 @@ class LLMManager:
             'o1-mini': {'input': 0.001, 'output': 0.002},
             'claude-3-5-sonnet': {'input': 0.008, 'output': 0.024}
         }
-        
-        # Template di sistema per diversi tipi di analisi
-        self.system_templates = {
-            'code_review': """You are a senior software engineer performing a code review. 
-                            Focus on: code quality, patterns, potential issues, and suggestions for improvement.""",
-            'architecture': """You are a software architect analyzing code structure. 
-                            Focus on: architectural patterns, SOLID principles, and scalability concerns.""",
-            'security': """You are a security expert reviewing code for vulnerabilities. 
-                         Focus on: security issues, best practices, and potential risks.""",
-            'performance': """You are a performance optimization expert. 
-                            Focus on: performance bottlenecks, optimization opportunities, and efficiency improvements."""
-        }
     
-    def select_model(self, task_type: str, code_size: int) -> str:
+    def select_model(self, task_type: str, content_length: int) -> str:
         """
         Seleziona automaticamente il modello più appropriato.
         
         Args:
             task_type: Tipo di task (es. 'architecture', 'review', 'debug')
-            code_size: Dimensione del codice in bytes
+            content_length: Lunghezza del contenuto in caratteri
             
         Returns:
             str: Nome del modello selezionato
         """
-        if code_size > 100_000:
-            return "claude-3-5-sonnet"  # Per file grandi
+        # Stima approssimativa dei token (1 token ~ 4 caratteri)
+        estimated_tokens = content_length // 4
+        
+        if estimated_tokens > 32000:  # Limite massimo per o1-preview
+            return "claude-3-5-sonnet"
         elif task_type in ["architecture", "review", "security"]:
-            return "o1-preview"  # Per analisi complesse
+            return "o1-preview"
         else:
-            return "o1-mini"  # Per task semplici
+            return "o1-mini"
     
-    def prepare_prompt(self, task_type: str, code: str, context: Optional[str] = None) -> str:
+    def _prepare_messages(self, prompt: str, content: Optional[str] = None,
+                         context: Optional[str] = None) -> list:
         """
-        Prepara il prompt per il modello.
+        Prepara i messaggi per l'API.
         
         Args:
-            task_type: Tipo di analisi richiesta
-            code: Codice da analizzare
+            prompt: Il prompt dell'utente
+            content: Contenuto da analizzare (opzionale)
             context: Contesto aggiuntivo (opzionale)
-            
+        
         Returns:
-            str: Prompt formattato
+            list: Lista di messaggi formattati
         """
-        system_prompt = self.system_templates.get(task_type, "You are a helpful code assistant.")
+        message = prompt
         
-        prompt = f"{system_prompt}\n\nCODE TO ANALYZE:\n```\n{code}\n```\n"
-        
-        if context:
-            prompt += f"\nADDITIONAL CONTEXT:\n{context}\n"
+        if content:
+            message += f"\n\nCONTENT TO ANALYZE:\n```\n{content}\n```"
             
-        prompt += "\nPlease provide your analysis:"
+        if context:
+            message += f"\n\nADDITIONAL CONTEXT:\n{context}"
         
-        return prompt
+        return [{"role": "user", "content": message}]
     
-    def _call_openai(self, prompt: str, model: str) -> Generator[str, None, None]:
+    def _call_openai(self, messages: list, model: str, max_completion_tokens: Optional[int] = None) -> Generator[str, None, None]:
         """
         Effettua una chiamata streaming ai modelli OpenAI.
         
         Args:
-            prompt: Prompt da inviare
+            messages: Lista di messaggi
             model: Nome del modello
+            max_completion_tokens: Limite massimo di token per la risposta
             
         Yields:
             str: Chunks della risposta
@@ -91,8 +82,9 @@ class LLMManager:
         try:
             completion = self.openai_client.chat.completions.create(
                 model=model,
-                messages=[{"role": "user", "content": prompt}],
-                stream=True
+                messages=messages,
+                stream=True,
+                max_completion_tokens=max_completion_tokens or 32768
             )
             
             for chunk in completion:
@@ -103,12 +95,12 @@ class LLMManager:
             st.error(f"Errore OpenAI: {str(e)}")
             yield "Mi dispiace, si è verificato un errore durante l'elaborazione."
     
-    def _call_anthropic(self, prompt: str) -> Generator[str, None, None]:
+    def _call_anthropic(self, messages: list) -> Generator[str, None, None]:
         """
         Effettua una chiamata streaming ai modelli Anthropic.
         
         Args:
-            prompt: Prompt da inviare
+            messages: Lista di messaggi
             
         Yields:
             str: Chunks della risposta
@@ -117,7 +109,7 @@ class LLMManager:
             message = self.anthropic_client.messages.create(
                 model="claude-3-5-sonnet",
                 max_tokens=1024,
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 stream=True
             )
             
@@ -129,34 +121,31 @@ class LLMManager:
             st.error(f"Errore Anthropic: {str(e)}")
             yield "Mi dispiace, si è verificato un errore durante l'elaborazione."
     
-    def process_request(self, prompt: str, task_type: Optional[str] = None,
-                       code: Optional[str] = None, context: Optional[str] = None) -> Generator[str, None, None]:
+    def process_request(self, prompt: str, content: Optional[str] = None,
+                       context: Optional[str] = None, task_type: Optional[str] = None) -> Generator[str, None, None]:
         """
         Processa una richiesta completa.
         
         Args:
-            prompt: Prompt dell'utente
-            task_type: Tipo di task (opzionale)
-            code: Codice da analizzare (opzionale)
+            prompt: Il prompt dell'utente
+            content: Contenuto da analizzare (opzionale)
             context: Contesto aggiuntivo (opzionale)
+            task_type: Tipo di task per la selezione del modello
             
         Yields:
             str: Chunks della risposta
         """
-        # Prepara il prompt completo se necessario
-        final_prompt = self.prepare_prompt(task_type, code, context) if code else prompt
-        
         # Seleziona il modello appropriato
-        if task_type and code:
-            model = self.select_model(task_type, len(code))
-        else:
-            model = st.session_state.get('current_model', 'o1-mini')
+        model = self.select_model(task_type, len(content)) if task_type and content else st.session_state.current_model
+        
+        # Prepara i messaggi
+        messages = self._prepare_messages(prompt, content, context)
         
         # Effettua la chiamata al modello appropriato
         if model.startswith('o1'):
-            yield from self._call_openai(final_prompt, model)
+            yield from self._call_openai(messages, model)
         else:
-            yield from self._call_anthropic(final_prompt)
+            yield from self._call_anthropic(messages)
     
     def _calculate_cost(self, model: str, tokens: int) -> float:
         """
@@ -170,7 +159,7 @@ class LLMManager:
             float: Costo in USD
         """
         model_costs = self.cost_map.get(model, {'input': 0, 'output': 0})
-        # Semplificazione: consideriamo il 40% input e 60% output
+        # Stima: 40% input, 60% output
         input_tokens = tokens * 0.4
         output_tokens = tokens * 0.6
         

@@ -89,17 +89,18 @@ class ChatInterface:
                 
                 # Get current file content if any
                 current_file = self.session.get_current_file()
-                code = None
+                content = None
                 if current_file:
                     file_info = self.session.get_file(current_file)
                     if file_info:
-                        code = file_info['content']
+                        content = file_info['content']
                 
                 # Stream response
                 for chunk in self.llm.process_request(
                     prompt=prompt,
-                    task_type='code_review' if code else None,
-                    code=code
+                    content=content,  # Invece di 'code'
+                    task_type='code_review' if content else None,
+                    context=f"File: {current_file}" if current_file else None
                 ):
                     full_response += chunk
                     message_placeholder.markdown(full_response + "▌")
