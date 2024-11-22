@@ -255,7 +255,7 @@ class LLMManager:
                     })
             
             response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-3-5-sonnet-20241022",  # Nome esatto del modello
                 max_tokens=4096,
                 temperature=0.7,
                 system=system_message,
