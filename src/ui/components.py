@@ -102,8 +102,6 @@ class FileExplorer:
                 self._render_tree_node(name, node)
 
 class ChatInterface:
-    """Component per l'interfaccia chat con supporto analisi file."""
-    
     def __init__(self):
         if 'messages' not in st.session_state:
             st.session_state.messages = []
@@ -112,70 +110,94 @@ class ChatInterface:
                 "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
             })
 
-    def _get_files_context(self) -> str:
-        """Prepara il contesto dei file per l'analisi."""
-        if not st.session_state.uploaded_files:
-            return ""
-            
-        context = "File disponibili per l'analisi:\n\n"
-        for filename, file_info in st.session_state.uploaded_files.items():
-            content = file_info['content']
-            context += f"\nFile: {filename}\nContenuto:\n```\n{content}\n```\n"
-        return context
-
-    def _process_file_reference(self, message: str) -> str:
-        """Processa riferimenti a file specifici nel messaggio."""
-        available_files = st.session_state.uploaded_files.keys()
-        
-        # Cerca riferimenti espliciti a file
-        for filename in available_files:
-            if filename.lower() in message.lower():
-                content = st.session_state.uploaded_files[filename]['content']
-                return f"Riferimento al file {filename}:\n```\n{content}\n```\n\n{message}"
-        
-        # Se non ci sono riferimenti specifici ma ci sono file, includi il contesto
-        if st.session_state.uploaded_files:
-            return f"{message}\n\nContesto dei file disponibili:\n{self._get_files_context()}"
-            
-        return message
+    def _get_file_content(self, filename: str) -> str:
+        """Recupera il contenuto di un file."""
+        if filename in st.session_state.uploaded_files:
+            return st.session_state.uploaded_files[filename]['content']
+        return None
 
     def render(self):
-        """Renderizza l'interfaccia chat."""
-        # Mostra la cronologia dei messaggi
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+        """Renderizza l'interfaccia chat con layout corretto."""
+        # Container principale con scrolling per i messaggi
+        chat_container = st.container()
+        
+        # Container fisso per l'input
+        input_container = st.container()
 
-        # Input utente
-        if prompt := st.chat_input("Chiedi informazioni sui file caricati..."):
-            # Aggiungi il messaggio dell'utente
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            
-            # Mostra il messaggio dell'utente
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            # Processa il messaggio con il contesto dei file
-            full_prompt = self._process_file_reference(prompt)
-            
-            # Genera e mostra la risposta
-            with st.chat_message("assistant"):
-                response = "Mi dispiace, ma non sono stati caricati file da analizzare." if not st.session_state.uploaded_files else f"""Ho analizzato i file disponibili in base alla tua richiesta.
-
-{self._generate_response(full_prompt)}"""
+        # Stile CSS per fissare l'input in basso
+        st.markdown("""
+            <style>
+                .stChatInput {
+                    position: fixed;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    background: white;
+                    padding: 1rem;
+                    z-index: 1000;
+                    border-top: 1px solid #ddd;
+                }
                 
-                st.markdown(response)
+                .chat-message {
+                    margin-bottom: 1rem;
+                    padding-bottom: 1rem;
+                    border-bottom: 1px solid #eee;
+                }
+                
+                [data-testid="stVerticalBlock"] {
+                    padding-bottom: 5rem;
+                }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # Gestione input (deve essere prima del display dei messaggi)
+        with input_container:
+            if prompt := st.chat_input("Chiedi informazioni sui file..."):
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                
+                # Analizza i file quando viene fatta una domanda
+                response = self._analyze_files(prompt)
                 st.session_state.messages.append({"role": "assistant", "content": response})
 
-    def _generate_response(self, prompt: str) -> str:
-        """Genera una risposta basata sul prompt e i file disponibili."""
-        # Qui puoi integrare la logica del tuo LLM preferito
-        # Per ora forniamo una risposta di esempio
-        if "file" in prompt.lower():
-            files_list = "\n".join([f"- {f}" for f in st.session_state.uploaded_files.keys()])
-            return f"Ho trovato i seguenti file:\n{files_list}\n\nPosso aiutarti ad analizzarli in dettaglio."
-        
-        return "Posso aiutarti ad analizzare il codice, individuare pattern, suggerire miglioramenti o rispondere a domande specifiche sui file caricati."
+        # Display dei messaggi nella chat
+        with chat_container:
+            for message in st.session_state.messages:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+
+    def _analyze_files(self, prompt: str) -> str:
+        """Analizza i file in base alla domanda dell'utente."""
+        if not st.session_state.uploaded_files:
+            return "Non ho trovato file da analizzare. Carica prima alcuni file."
+
+        # Prepara il contesto con tutti i file disponibili
+        files_context = ""
+        for filename, file_info in st.session_state.uploaded_files.items():
+            content = file_info['content']
+            files_context += f"\nFile: {filename}\n```\n{content}\n```\n"
+
+        # Analizza il contenuto utilizzando il modello LLM configurato
+        try:
+            llm_manager = LLMManager()  # Assumiamo che sia già configurato
+            
+            # Prepara il prompt completo con il contesto dei file
+            full_prompt = f"""Analizza i seguenti file in base alla domanda dell'utente:
+
+{files_context}
+
+Domanda dell'utente: {prompt}
+
+Fornisci una risposta dettagliata analizzando il codice."""
+
+            # Ottieni la risposta dal modello
+            response = ""
+            for chunk in llm_manager.process_request(prompt=full_prompt):
+                response += chunk
+            
+            return response
+
+        except Exception as e:
+            return f"Mi dispiace, si è verificato un errore nell'analisi dei file: {str(e)}"
 
 class CodeViewer:
     """Component per la visualizzazione del codice."""
