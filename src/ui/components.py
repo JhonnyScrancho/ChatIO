@@ -73,6 +73,90 @@ class FileExplorer:
                 st.session_state.current_file = path
 
     def render(self):
+        """Renderizza il componente."""
+        uploaded_files = st.file_uploader(
+            "Drag and drop files here",
+            type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
+            accept_multiple_files=True
+        )
+
+        if uploaded_files:
+            for file in uploaded_files:
+                try:
+                    if file.name.endswith('.zip'):
+                        import zipfile
+                        import io
+                        
+                        # Processa il file ZIP
+                        zip_content = zipfile.ZipFile(io.BytesIO(file.read()))
+                        for zip_file in zip_content.namelist():
+                            if not zip_file.startswith('__') and not zip_file.startswith('.'):
+                                try:
+                                    content = zip_content.read(zip_file).decode('utf-8', errors='ignore')
+                                    st.session_state.uploaded_files[zip_file] = {
+                                        'content': content,
+                                        'language': zip_file.split('.')[-1],
+                                        'name': zip_file
+                                    }
+                                except Exception as e:
+                                    continue  # Salta i file che non possono essere decodificati
+                    else:
+                        # Processa file singolo
+                        content = file.read().decode('utf-8')
+                        st.session_state.uploaded_files[file.name] = {
+                            'content': content,
+                            'language': file.name.split('.')[-1],
+                            'name': file.name
+                        }
+                except Exception as e:
+                    st.error(f"Errore nel processare {file.name}: {str(e)}")
+
+        # Visualizza struttura ad albero
+        if st.session_state.uploaded_files:
+            st.markdown("""
+                <div class="file-tree">
+                    <p style='margin-bottom: 8px; color: #666;'>Files:</p>
+                </div>
+            """, unsafe_allow_html=True)
+            tree = self._create_file_tree(st.session_state.uploaded_files)
+            for name, node in sorted(tree.items()):
+                self._render_tree_node(name, node)
+
+class ChatInterface:
+    """Componente per l'interfaccia chat."""
+    
+    def __init__(self):
+        self.session = SessionManager()
+        self.llm = LLMManager()
+        if 'messages' not in st.session_state:
+            st.session_state.messages = []
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
+            })
+
+    def _process_response(self, prompt: str) -> str:
+        """Processa la richiesta e genera una risposta."""
+        try:
+            # Prepara il contesto con i file disponibili
+            context = ""
+            for filename, file_info in st.session_state.uploaded_files.items():
+                context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
+
+            # Genera la risposta
+            response = ""
+            with st.spinner("Analyzing code..."):
+                for chunk in self.llm.process_request(
+                    prompt=prompt,
+                    context=context
+                ):
+                    response += chunk
+            return response
+            
+        except Exception as e:
+            return f"Mi dispiace, si è verificato un errore: {str(e)}"
+
+    def render(self):
         """Renderizza l'interfaccia chat."""
         # CSS aggiornato con i selettori corretti
         st.markdown("""
@@ -132,100 +216,6 @@ class FileExplorer:
             with st.spinner("Processing..."):
                 response = self._process_response(prompt)
                 st.session_state.messages.append({"role": "assistant", "content": response})
-
-class ChatInterface:
-    """Componente per l'interfaccia chat."""
-    
-    def __init__(self):
-        self.session = SessionManager()
-        self.llm = LLMManager()
-        if 'messages' not in st.session_state:
-            st.session_state.messages = []
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
-            })
-
-    def _process_response(self, prompt: str) -> str:
-        """Processa la richiesta e genera una risposta."""
-        try:
-            # Prepara il contesto con i file disponibili
-            context = ""
-            for filename, file_info in st.session_state.uploaded_files.items():
-                context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
-
-            # Genera la risposta
-            response = ""
-            with st.spinner("Analyzing code..."):
-                for chunk in self.llm.process_request(
-                    prompt=prompt,
-                    context=context
-                ):
-                    response += chunk
-            return response
-            
-        except Exception as e:
-            return f"Mi dispiace, si è verificato un errore: {str(e)}"
-
-    def render(self):
-        """Renderizza l'interfaccia chat."""
-        # CSS per fissare l'input in basso
-        st.markdown("""
-            <style>
-                /* Nasconde il footer standard di Streamlit */
-                footer {display: none !important;}
-                
-                /* Contenitore principale della chat */
-                .stChatFloatingInputContainer, .stChatInputContainer {
-                    position: fixed !important;
-                    bottom: 0 !important;
-                    background: white !important;
-                    padding: 1rem !important;
-                    border-top: 1px solid #ddd !important;
-                    z-index: 999999 !important;
-                    left: 18rem !important; /* Larghezza della sidebar */
-                    right: 0 !important;
-                }
-                
-                /* Aggiunge spazio in fondo per evitare che i messaggi vengano nascosti dall'input */
-                [data-testid="stChatMessageContainer"] {
-                    padding-bottom: 100px !important;
-                }
-                
-                .main .block-container {
-                    padding-bottom: 100px !important;
-                }
-                
-                /* Stile per i messaggi della chat */
-                .stChatMessage {
-                    background: white !important;
-                    border: 1px solid #ddd !important;
-                    border-radius: 5px !important;
-                    margin-bottom: 0.5rem !important;
-                    padding: 0.5rem !important;
-                }
-            </style>
-        """, unsafe_allow_html=True)
-        
-        # Contenitore per i messaggi con padding extra in fondo
-        messages_container = st.container()
-        
-        # Input container separato che verrà fissato dal CSS
-        input_container = st.container()
-        
-        # Renderizza i messaggi
-        with messages_container:
-            for message in st.session_state.messages:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
-        
-        # Renderizza l'input
-        with input_container:
-            if prompt := st.chat_input("Ask about your code...", key="chat_input"):
-                st.session_state.messages.append({"role": "user", "content": prompt})
-                with st.spinner("Processing..."):
-                    response = self._process_response(prompt)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
