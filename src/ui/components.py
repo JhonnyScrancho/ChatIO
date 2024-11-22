@@ -67,73 +67,57 @@ class ChatInterface:
         self.llm = LLMManager()
     
     def render(self):
-        # Container per la chat history con scrolling
+        # Container per la chat history
         chat_container = st.container()
         
-        # Input container fissato in basso
-        input_container = st.container()
-        
-        # Gestiamo prima l'input per mantenere il flusso corretto
-        with input_container:
-            st.write("")  # Spacer
-            st.markdown("""
-                <style>
-                    .stChatInput {
-                        position: fixed;
-                        bottom: 3rem;
-                        background: white;
-                        padding: 1rem 0;
-                        z-index: 100;
-                    }
-                </style>
-            """, unsafe_allow_html=True)
-            if prompt := st.chat_input("Ask about your code..."):
-                # Aggiungiamo il messaggio dell'utente alla history
-                self.session.add_to_chat_history({
-                    "role": "user",
-                    "content": prompt
-                })
-                
-                # Prepariamo il contesto del file corrente
-                current_file = self.session.get_current_file()
-                file_content = None
-                context = None
-                if current_file:
-                    file_info = self.session.get_file(current_file)
-                    if file_info:
-                        file_content = file_info['content']
-                        context = f"File: {current_file} ({file_info['language']})"
-                
-                # Aggiungiamo la risposta dell'assistente alla history
-                with chat_container.chat_message("assistant"):
-                    message_placeholder = st.empty()
-                    full_response = ""
-                    
-                    for chunk in self.llm.process_request(
-                        prompt=prompt,
-                        analysis_type='code_review' if file_content else None,
-                        file_content=file_content,
-                        context=context
-                    ):
-                        full_response += chunk
-                        message_placeholder.markdown(full_response + "▌")
-                    message_placeholder.markdown(full_response)
-                
-                self.session.add_to_chat_history({
-                    "role": "assistant",
-                    "content": full_response
-                })
-        
-        # Mostra la chat history nel container principale
+        # Mostra prima la chat history nel container principale
         with chat_container:
-            for msg in self.session.get_chat_history():
+            messages = self.session.get_chat_history()
+            for msg in messages:
                 with st.chat_message(msg["role"]):
                     st.markdown(msg["content"])
+        
+        # Input container 
+        if prompt := st.chat_input("Ask about your code..."):
+            # Aggiungiamo il messaggio dell'utente alla history
+            self.session.add_to_chat_history({
+                "role": "user",
+                "content": prompt
+            })
             
-            # Aggiungiamo spazio extra in fondo per l'input
-            st.write("")
-            st.write("")
-            st.write("")
+            # Prepariamo il contesto del file corrente
+            current_file = self.session.get_current_file()
+            file_content = None
+            context = None
+            if current_file:
+                file_info = self.session.get_file(current_file)
+                if file_info:
+                    file_content = file_info['content']
+                    context = f"File: {current_file} ({file_info['language']})"
+            
+            # Generiamo la risposta dell'assistente
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                full_response = ""
+                
+                for chunk in self.llm.process_request(
+                    prompt=prompt,
+                    analysis_type='code_review' if file_content else None,
+                    file_content=file_content,
+                    context=context
+                ):
+                    full_response += chunk
+                    message_placeholder.markdown(full_response + "▌")
+                message_placeholder.markdown(full_response)
+            
+            # Aggiungiamo la risposta alla chat history solo dopo averla generata completamente
+            self.session.add_to_chat_history({
+                "role": "assistant",
+                "content": full_response
+            })
+            
+            # Forziamo il rerun per aggiornare la chat history
+            st.rerun()
 
 class CodeViewer:
     """Component per la visualizzazione del codice."""
