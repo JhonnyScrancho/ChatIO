@@ -21,7 +21,6 @@ class FileExplorer:
     def __init__(self):
         self.session = SessionManager()
         self.file_manager = FileManager()
-        # Aggiungiamo icone per i vari tipi di file
         self.file_icons = {
             '.py': '🐍', '.js': '📜', '.html': '🌐', '.css': '🎨',
             '.md': '📝', '.txt': '📄', '.json': '📋',
@@ -52,13 +51,13 @@ class FileExplorer:
         """
         return self.file_manager.process_zip(zip_file)
 
-    def render_tree(self, files: Dict[str, Any], base_path: str = ""):
+    def render_tree(self, files: Dict[str, Any], indent_level: int = 0):
         """
-        Renderizza l'albero dei file in modo ricorsivo.
+        Renderizza l'albero dei file con indentazione visuale.
         
         Args:
             files: Dizionario dei file/cartelle
-            base_path: Percorso base per il livello corrente
+            indent_level: Livello di indentazione corrente
         """
         # Separa cartelle e file
         folders = {}
@@ -70,19 +69,22 @@ class FileExplorer:
             else:
                 direct_files[name] = content
         
-        # Renderizza prima le cartelle
+        # Renderizza cartelle
         for folder_name, folder_content in folders.items():
-            with st.expander(f"{self.file_icons['folder']} {folder_name}", expanded=True):
-                self.render_tree(folder_content, os.path.join(base_path, folder_name))
+            indent = "    " * indent_level
+            st.markdown(f"{indent}{self.file_icons['folder']} **{folder_name}/**")
+            # Renderizza contenuto della cartella con indentazione aumentata
+            self.render_tree(folder_content, indent_level + 1)
         
-        # Poi renderizza i file
+        # Renderizza file
         for file_name, file_info in direct_files.items():
+            indent = "    " * indent_level
             ext = os.path.splitext(file_name)[1].lower()
             icon = self.file_icons.get(ext, self.file_icons['default'])
             
             col1, col2 = st.columns([6, 1])
             with col1:
-                if st.button(f"{icon} {file_name}", key=f"file_{base_path}_{file_name}"):
+                if st.button(f"{indent}{icon} {file_name}", key=f"file_{indent_level}_{file_name}"):
                     self.session.set_current_file(file_name)
             with col2:
                 if isinstance(file_info, dict) and 'size' in file_info:
@@ -112,13 +114,13 @@ class FileExplorer:
                         if result:
                             self.session.add_file(file.name, result)
             
-            # Mostra l'albero dei file usando il nuovo metodo
+            # Mostra l'albero dei file
             files = self.session.get_all_files()
             if files:
                 st.markdown("### 📂 Files")
+                # Crea l'albero dei file e visualizzalo
                 tree = self.file_manager.create_file_tree(files)
                 self.render_tree(tree)
-
 
 class ChatInterface:
     """Component per l'interfaccia chat."""
@@ -129,22 +131,7 @@ class ChatInterface:
     
     def render(self):
         """Renderizza l'interfaccia chat."""
-        # Stile per fissare l'input in basso
-        st.markdown(
-            """
-            <style>
-                section[data-testid="stSidebar"] {
-                    width: 300px;
-                }
-                .main > .block-container {
-                    padding-bottom: 100px;
-                }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-        
-        # Chat history container
+        # Chat history container con padding per l'input in basso
         chat_container = st.container()
         
         # Display chat history
@@ -153,7 +140,7 @@ class ChatInterface:
                 with st.chat_message(msg["role"]):
                     st.markdown(msg["content"])
         
-        # Input area fixed at bottom with native Streamlit chat input
+        # Input area con chat input nativo di Streamlit
         prompt = st.chat_input("Ask about your code...")
         
         if prompt:
