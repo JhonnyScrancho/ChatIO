@@ -2,15 +2,7 @@
 UI components for Allegro IO Code Assistant.
 """
 
-import os
 import streamlit as st
-from typing import Dict, Optional, Any
-from zipfile import ZipFile
-from io import BytesIO
-from pygments import highlight
-from pygments.lexers import get_lexer_for_filename, TextLexer
-from pygments.formatters import HtmlFormatter
-
 from src.core.session import SessionManager
 from src.core.files import FileManager
 from src.core.llm import LLMManager
@@ -21,106 +13,51 @@ class FileExplorer:
     def __init__(self):
         self.session = SessionManager()
         self.file_manager = FileManager()
-        self.file_icons = {
-            '.py': '🐍', '.js': '📜', '.html': '🌐', '.css': '🎨',
-            '.md': '📝', '.txt': '📄', '.json': '📋',
-            'folder': '📁', 'default': '📄'
-        }
-    
-    def process_single_file(self, uploaded_file) -> Optional[Dict[str, Any]]:
-        """
-        Processa un singolo file senza caching.
-        
-        Args:
-            uploaded_file: File caricato da Streamlit
-            
-        Returns:
-            Optional[Dict[str, Any]]: Informazioni sul file processato
-        """
-        return self.file_manager.process_file(uploaded_file)
-    
-    def process_zip(self, zip_file) -> Dict[str, Dict[str, Any]]:
-        """
-        Processa un file ZIP.
-        
-        Args:
-            zip_file: File ZIP caricato
-            
-        Returns:
-            Dict[str, Dict[str, Any]]: Mappa dei file processati
-        """
-        return self.file_manager.process_zip(zip_file)
-
-    def render_tree(self, files: Dict[str, Any], indent_level: int = 0):
-        """
-        Renderizza l'albero dei file con indentazione visuale.
-        
-        Args:
-            files: Dizionario dei file/cartelle
-            indent_level: Livello di indentazione corrente
-        """
-        # Separa cartelle e file
-        folders = {}
-        direct_files = {}
-        
-        for name, content in files.items():
-            if isinstance(content, dict) and 'content' not in content:
-                folders[name] = content
-            else:
-                direct_files[name] = content
-        
-        # Renderizza cartelle
-        for folder_name, folder_content in folders.items():
-            indent = "    " * indent_level
-            st.markdown(f"{indent}{self.file_icons['folder']} **{folder_name}/**")
-            # Renderizza contenuto della cartella con indentazione aumentata
-            self.render_tree(folder_content, indent_level + 1)
-        
-        # Renderizza file
-        for file_name, file_info in direct_files.items():
-            indent = "    " * indent_level
-            ext = os.path.splitext(file_name)[1].lower()
-            icon = self.file_icons.get(ext, self.file_icons['default'])
-            
-            col1, col2 = st.columns([6, 1])
-            with col1:
-                if st.button(f"{indent}{icon} {file_name}", key=f"file_{indent_level}_{file_name}"):
-                    self.session.set_current_file(file_name)
-            with col2:
-                if isinstance(file_info, dict) and 'size' in file_info:
-                    st.text(f"{file_info['size'] // 1024}KB")
     
     def render(self):
-        """Renderizza il componente FileExplorer."""
         uploaded_files = st.file_uploader(
             "Upload Files",
             accept_multiple_files=True,
-            type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css',
-                  'java', 'cpp', 'c', 'h', 'hpp', 'cs', 'php',
-                  'rb', 'go', 'rs', 'swift', 'kt', 'scala', 'sh',
-                  'sql', 'md', 'txt', 'json', 'yml', 'yaml', 'zip']
+            type=[ext[1:] for ext in self.file_manager.ALLOWED_EXTENSIONS]
         )
         
         if uploaded_files:
             for file in uploaded_files:
-                if file.type == "application/zip" or file.name.endswith('.zip'):
-                    with st.spinner(f"Processing ZIP file {file.name}..."):
-                        files = self.process_zip(file)
-                        for name, info in files.items():
-                            self.session.add_file(name, info)
+                if file.name.endswith('.zip'):
+                    files = self.file_manager.process_zip(file)
+                    for name, info in files.items():
+                        self.session.add_file(name, info)
                 else:
-                    with st.spinner(f"Processing file {file.name}..."):
-                        result = self.process_single_file(file)
-                        if result:
-                            self.session.add_file(file.name, result)
+                    result = self.file_manager.process_file(file)
+                    if result:
+                        self.session.add_file(file.name, result)
             
-            # Mostra l'albero dei file
+            # File Tree View
+            st.markdown("### 📂 Files")
             files = self.session.get_all_files()
             if files:
-                st.markdown("### 📂 Files")
-                # Crea l'albero dei file e visualizzalo
                 tree = self.file_manager.create_file_tree(files)
-                self.render_tree(tree)
+                self._render_tree(tree)
+                
+                # Mostra statistiche
+                stats = self.file_manager.analyze_codebase(files)
+                with st.expander("📊 Codebase Stats"):
+                    st.write(f"Total Files: {stats['total_files']}")
+                    st.write(f"Total Lines: {stats['line_count']:,}")
+                    st.write(f"Total Size: {stats['total_size'] / 1024:.1f} KB")
+                    st.write("Languages:", ", ".join(f"{k} ({v})" for k, v in stats['languages'].items()))
+    
+    def _render_tree(self, tree, indent=0):
+        """Renderizza la struttura ad albero dei file."""
+        for name, value in tree.items():
+            if isinstance(value, dict):
+                if '_info' in value:  # È un file
+                    icon = self.file_manager.get_file_icon(name)
+                    if st.button(f"{'  ' * indent}{icon} {name}", key=f"file_{name}"):
+                        self.session.set_current_file(name)
+                else:  # È una directory
+                    st.markdown(f"{'  ' * indent}📁 {name}")
+                    self._render_tree(value, indent + 1)
 
 class ChatInterface:
     """Component per l'interfaccia chat."""
@@ -130,51 +67,70 @@ class ChatInterface:
         self.llm = LLMManager()
     
     def render(self):
-        """Renderizza l'interfaccia chat."""
-        # Chat history container con padding per l'input in basso
+        # Container per la chat history con scrolling
         chat_container = st.container()
         
-        # Display chat history
+        # Input container fissato in basso
+        input_container = st.container()
+        
+        # Gestiamo prima l'input per mantenere il flusso corretto
+        with input_container:
+            st.write("")  # Spacer
+            st.markdown("""
+                <style>
+                    .stChatInput {
+                        position: fixed;
+                        bottom: 3rem;
+                        background: white;
+                        padding: 1rem 0;
+                        z-index: 100;
+                    }
+                </style>
+            """, unsafe_allow_html=True)
+            if prompt := st.chat_input("Ask about your code..."):
+                # Aggiungiamo il messaggio dell'utente alla history
+                self.session.add_to_chat_history({
+                    "role": "user",
+                    "content": prompt
+                })
+                
+                # Prepariamo il prompt con il contenuto del file corrente
+                current_file = self.session.get_current_file()
+                file_content = None
+                if current_file:
+                    file_info = self.session.get_file(current_file)
+                    if file_info:
+                        file_content = file_info['content']
+                
+                full_prompt = prompt
+                if file_content:
+                    full_prompt = f"{prompt}\n\nFile content:\n```\n{file_content}\n```"
+                
+                # Aggiungiamo la risposta dell'assistente alla history
+                with chat_container.chat_message("assistant"):
+                    message_placeholder = st.empty()
+                    full_response = ""
+                    
+                    for chunk in self.llm.process_request(prompt=full_prompt):
+                        full_response += chunk
+                        message_placeholder.markdown(full_response + "▌")
+                    message_placeholder.markdown(full_response)
+                
+                self.session.add_to_chat_history({
+                    "role": "assistant",
+                    "content": full_response
+                })
+        
+        # Mostra la chat history nel container principale
         with chat_container:
             for msg in self.session.get_chat_history():
                 with st.chat_message(msg["role"]):
                     st.markdown(msg["content"])
-        
-        # Input area con chat input nativo di Streamlit
-        prompt = st.chat_input("Ask about your code...")
-        
-        if prompt:
-            # Add user message to history
-            self.session.add_to_chat_history({
-                "role": "user",
-                "content": prompt
-            })
             
-            # Get current file context
-            current_file = self.session.get_current_file()
-            file_content = None
-            context = None
-            if current_file:
-                file_info = self.session.get_file(current_file)
-                if file_info:
-                    file_content = file_info['content']
-                    context = f"File: {current_file} ({file_info['language']})"
-            
-            # Process response
-            with st.spinner("Thinking..."):
-                response = ""
-                for chunk in self.llm.process_request(
-                    prompt=prompt,
-                    file_content=file_content,
-                    context=context
-                ):
-                    response += chunk
-                    
-                # Add assistant response to history
-                self.session.add_to_chat_history({
-                    "role": "assistant",
-                    "content": response
-                })
+            # Aggiungiamo spazio extra in fondo per l'input
+            st.write("")
+            st.write("")
+            st.write("")
 
 class CodeViewer:
     """Component per la visualizzazione del codice."""
@@ -183,10 +139,9 @@ class CodeViewer:
         self.session = SessionManager()
     
     def render(self):
-        """Renderizza il visualizzatore di codice."""
         current_file = self.session.get_current_file()
         if current_file and (file_info := self.session.get_file(current_file)):
-            st.markdown(f"**{current_file}** ({file_info['language']})")
+            st.markdown(f"**{file_info['name']}** ({file_info['language']})")
             st.markdown(file_info['highlighted'], unsafe_allow_html=True)
 
 class ModelSelector:
@@ -196,7 +151,6 @@ class ModelSelector:
         self.session = SessionManager()
     
     def render(self):
-        """Renderizza il selettore del modello."""
         models = {
             'o1-mini': '🚀 O1 Mini (Fast)',
             'o1-preview': '🔍 O1 Preview (Advanced)',
@@ -221,7 +175,6 @@ class StatsDisplay:
         self.session = SessionManager()
     
     def render(self):
-        """Renderizza il display delle statistiche."""
         stats = self.session.get_stats()
         col1, col2 = st.columns(2)
         
