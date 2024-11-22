@@ -20,6 +20,8 @@ class SessionManager:
             st.session_state.current_file = None
             st.session_state.token_count = 0
             st.session_state.cost = 0.0
+            st.session_state.last_error = None
+            st.session_state.debug_mode = False
     
     @staticmethod
     def get_current_model() -> str:
@@ -57,6 +59,11 @@ class SessionManager:
         return st.session_state.files.get(file_name)
     
     @staticmethod
+    def get_all_files() -> Dict[str, Any]:
+        """Recupera tutti i file dallo stato."""
+        return st.session_state.files
+    
+    @staticmethod
     def set_current_file(file_name: str):
         """Imposta il file correntemente selezionato."""
         st.session_state.current_file = file_name
@@ -85,3 +92,18 @@ class SessionManager:
             'files_count': len(st.session_state.files),
             'messages_count': len(st.session_state.chat_history)
         }
+    
+    @staticmethod
+    def set_error(error: str):
+        """Imposta l'ultimo errore verificatosi."""
+        st.session_state.last_error = error
+    
+    @staticmethod
+    def get_error() -> Optional[str]:
+        """Recupera l'ultimo errore."""
+        return st.session_state.last_error
+    
+    @staticmethod
+    def clear_error():
+        """Pulisce l'ultimo errore."""
+        st.session_state.last_error = None

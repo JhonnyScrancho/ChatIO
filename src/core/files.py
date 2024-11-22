@@ -25,8 +25,12 @@ class FileManager:
     
     MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
     
+    def __init__(self):
+        """Inizializza il FileManager."""
+        self.current_path = None
+    
     @st.cache_data
-    def process_file(self, uploaded_file) -> Tuple[str, str, int]:
+    def process_file(self, uploaded_file) -> Optional[Dict]:
         """
         Processa un file caricato.
         
@@ -34,30 +38,38 @@ class FileManager:
             uploaded_file: File caricato tramite st.file_uploader
             
         Returns:
-            Tuple[str, str, int]: (contenuto, linguaggio, dimensione)
+            Optional[Dict]: Informazioni sul file processato
         """
-        content = uploaded_file.read()
-        file_size = len(content)
-        
-        if file_size > self.MAX_FILE_SIZE:
-            raise ValueError(f"File troppo grande. Massimo {self.MAX_FILE_SIZE/1024/1024}MB consentiti")
+        if uploaded_file.size > self.MAX_FILE_SIZE:
+            st.warning(f"File {uploaded_file.name} troppo grande. Massimo 5MB consentiti.")
+            return None
             
         try:
-            content_str = content.decode('utf-8')
-        except UnicodeDecodeError:
-            raise ValueError("File non valido: deve essere un file di testo")
+            content = uploaded_file.read()
+            if isinstance(content, bytes):
+                content = content.decode('utf-8')
             
-        # Determina il linguaggio dal file
-        try:
-            lexer = get_lexer_for_filename(uploaded_file.name)
-            language = lexer.name.lower()
-        except:
-            language = 'text'
+            # Determina il linguaggio
+            try:
+                lexer = get_lexer_for_filename(uploaded_file.name)
+                language = lexer.name.lower()
+            except:
+                language = 'text'
             
-        return content_str, language, file_size
+            return {
+                'content': content,
+                'language': language,
+                'size': len(content),
+                'name': uploaded_file.name,
+                'highlighted': self.highlight_code(content, language)
+            }
+            
+        except Exception as e:
+            st.warning(f"Errore nel processare {uploaded_file.name}: {str(e)}")
+            return None
     
     @st.cache_data
-    def process_zip(self, zip_file) -> Dict[str, Tuple[str, str, int]]:
+    def process_zip(self, zip_file) -> Dict[str, Dict]:
         """
         Processa un file ZIP.
         
@@ -65,7 +77,7 @@ class FileManager:
             zip_file: File ZIP caricato
             
         Returns:
-            Dict[str, Tuple[str, str, int]]: Mappa di (nome_file: (contenuto, linguaggio, dimensione))
+            Dict[str, Dict]: Mappa dei file processati
         """
         processed_files = {}
         total_size = 0
@@ -84,7 +96,6 @@ class FileManager:
                 if ext not in self.ALLOWED_EXTENSIONS:
                     continue
                     
-                # Process file
                 try:
                     content = zip_ref.read(file_info.filename).decode('utf-8')
                     try:
@@ -92,16 +103,20 @@ class FileManager:
                         language = lexer.name.lower()
                     except:
                         language = 'text'
-                        
-                    processed_files[file_info.filename] = (
-                        content, language, file_info.file_size
-                    )
+                    
+                    processed_files[file_info.filename] = {
+                        'content': content,
+                        'language': language,
+                        'size': file_info.file_size,
+                        'name': file_info.filename,
+                        'highlighted': self.highlight_code(content, language)
+                    }
                     total_size += file_info.file_size
                     
                     if total_size > self.MAX_FILE_SIZE * 3:  # Limite totale ZIP
                         break
                         
-                except UnicodeDecodeError:
+                except Exception:
                     continue
                     
         return processed_files
@@ -166,7 +181,7 @@ class FileManager:
         }
         return icons.get(ext, '📄')
     
-    def create_file_tree(self, files: Dict[str, Tuple[str, str, int]]) -> Dict:
+    def create_file_tree(self, files: Dict[str, Dict]) -> Dict:
         """
         Crea una struttura ad albero dai file caricati.
         
@@ -177,14 +192,45 @@ class FileManager:
             Dict: Struttura ad albero dei file
         """
         tree = {}
-        for filepath in files.keys():
+        for filepath, file_info in files.items():
             current = tree
             parts = filepath.split('/')
             for i, part in enumerate(parts):
                 if i == len(parts) - 1:
-                    current[part] = filepath
+                    current[part] = file_info
                 else:
                     if part not in current:
                         current[part] = {}
                     current = current[part]
         return tree
+    
+    def analyze_codebase(self, files: Dict[str, Dict]) -> Dict:
+        """
+        Analizza la codebase per statistiche generali.
+        
+        Args:
+            files: Dizionario dei file processati
+            
+        Returns:
+            Dict: Statistiche sulla codebase
+        """
+        stats = {
+            'total_files': len(files),
+            'total_size': 0,
+            'languages': {},
+            'largest_file': ('', 0),
+            'line_count': 0
+        }
+        
+        for file_name, file_info in files.items():
+            size = file_info['size']
+            lang = file_info['language']
+            
+            stats['total_size'] += size
+            stats['languages'][lang] = stats['languages'].get(lang, 0) + 1
+            stats['line_count'] += len(file_info['content'].splitlines())
+            
+            if size > stats['largest_file'][1]:
+                stats['largest_file'] = (file_name, size)
+        
+        return stats

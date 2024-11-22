@@ -2,10 +2,10 @@
 UI components for Allegro IO Code Assistant.
 """
 
+import streamlit as st
 from src.core.session import SessionManager
 from src.core.files import FileManager
 from src.core.llm import LLMManager
-import streamlit as st
 
 class FileExplorer:
     """Component per l'esplorazione e l'upload dei file."""
@@ -18,35 +18,46 @@ class FileExplorer:
         uploaded_files = st.file_uploader(
             "Upload Files",
             accept_multiple_files=True,
-            type=list(FileManager.ALLOWED_EXTENSIONS)
+            type=[ext[1:] for ext in self.file_manager.ALLOWED_EXTENSIONS]
         )
         
         if uploaded_files:
             for file in uploaded_files:
                 if file.name.endswith('.zip'):
                     files = self.file_manager.process_zip(file)
-                    for name, (content, lang, size) in files.items():
-                        self.session.add_file(name, (content, lang, size))
+                    for name, info in files.items():
+                        self.session.add_file(name, info)
                 else:
-                    content, lang, size = self.file_manager.process_file(file)
-                    self.session.add_file(file.name, (content, lang, size))
+                    result = self.file_manager.process_file(file)
+                    if result:
+                        self.session.add_file(file.name, result)
             
             # File Tree View
             st.markdown("### 📂 Files")
-            files = {k: v[0] for k, v in st.session_state.files.items()}
-            tree = self.file_manager.create_file_tree(files)
-            self._render_tree(tree)
+            files = self.session.get_all_files()
+            if files:
+                tree = self.file_manager.create_file_tree(files)
+                self._render_tree(tree)
+                
+                # Mostra statistiche
+                stats = self.file_manager.analyze_codebase(files)
+                with st.expander("📊 Codebase Stats"):
+                    st.write(f"Total Files: {stats['total_files']}")
+                    st.write(f"Total Lines: {stats['line_count']:,}")
+                    st.write(f"Total Size: {stats['total_size'] / 1024:.1f} KB")
+                    st.write("Languages:", ", ".join(f"{k} ({v})" for k, v in stats['languages'].items()))
     
     def _render_tree(self, tree, indent=0):
         """Renderizza la struttura ad albero dei file."""
         for name, value in tree.items():
             if isinstance(value, dict):
-                st.markdown(f"{'  ' * indent}📁 {name}")
-                self._render_tree(value, indent + 1)
-            else:
-                icon = self.file_manager.get_file_icon(name)
-                if st.button(f"{'  ' * indent}{icon} {name}", key=value):
-                    self.session.set_current_file(value)
+                if '_info' in value:  # È un file
+                    icon = self.file_manager.get_file_icon(name)
+                    if st.button(f"{'  ' * indent}{icon} {name}", key=f"file_{name}"):
+                        self.session.set_current_file(name)
+                else:  # È una directory
+                    st.markdown(f"{'  ' * indent}📁 {name}")
+                    self._render_tree(value, indent + 1)
 
 class ChatInterface:
     """Component per l'interfaccia chat."""
@@ -62,7 +73,7 @@ class ChatInterface:
                 st.markdown(msg["content"])
         
         # Input
-        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
+        if prompt := st.chat_input("Ask about your code..."):
             # User Message
             with st.chat_message("user"):
                 st.markdown(prompt)
@@ -76,8 +87,20 @@ class ChatInterface:
                 message_placeholder = st.empty()
                 full_response = ""
                 
+                # Get current file content if any
+                current_file = self.session.get_current_file()
+                code = None
+                if current_file:
+                    file_info = self.session.get_file(current_file)
+                    if file_info:
+                        code = file_info['content']
+                
                 # Stream response
-                for chunk in self.llm.process_request(prompt):
+                for chunk in self.llm.process_request(
+                    prompt=prompt,
+                    task_type='code_review' if code else None,
+                    code=code
+                ):
                     full_response += chunk
                     message_placeholder.markdown(full_response + "▌")
                 message_placeholder.markdown(full_response)
@@ -92,24 +115,12 @@ class CodeViewer:
     
     def __init__(self):
         self.session = SessionManager()
-        self.file_manager = FileManager()
     
     def render(self):
         current_file = self.session.get_current_file()
-        if current_file and (file_data := self.session.get_file(current_file)):
-            content, lang, _ = file_data
-            highlighted = self.file_manager.highlight_code(content, lang)
-            st.markdown(f"**{current_file}** ({lang})")
-            st.markdown(highlighted, unsafe_allow_html=True)
-            
-            # Add CSS for syntax highlighting
-            st.markdown("""
-                <style>
-                    .source { background-color: #272822; padding: 10px; border-radius: 5px; }
-                    .source .linenos { color: #8f908a; padding-right: 10px; }
-                    .source pre { margin: 0; }
-                </style>
-                """, unsafe_allow_html=True)
+        if current_file and (file_info := self.session.get_file(current_file)):
+            st.markdown(f"**{file_info['name']}** ({file_info['language']})")
+            st.markdown(file_info['highlighted'], unsafe_allow_html=True)
 
 class ModelSelector:
     """Component per la selezione del modello LLM."""

@@ -4,10 +4,10 @@ Manages interactions with OpenAI and Anthropic models.
 """
 
 import streamlit as st
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Generator
 from openai import OpenAI
 from anthropic import Anthropic
-from .session import SessionManager
+import json
 
 class LLMManager:
     """Gestisce le interazioni con i modelli LLM."""
@@ -16,13 +16,24 @@ class LLMManager:
         """Inizializza le connessioni API."""
         self.openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
         self.anthropic_client = Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
-        self.session = SessionManager()
         
         # Costi per 1K tokens (in USD)
         self.cost_map = {
             'o1-preview': {'input': 0.01, 'output': 0.03},
             'o1-mini': {'input': 0.001, 'output': 0.002},
             'claude-3-5-sonnet': {'input': 0.008, 'output': 0.024}
+        }
+        
+        # Template di sistema per diversi tipi di analisi
+        self.system_templates = {
+            'code_review': """You are a senior software engineer performing a code review. 
+                            Focus on: code quality, patterns, potential issues, and suggestions for improvement.""",
+            'architecture': """You are a software architect analyzing code structure. 
+                            Focus on: architectural patterns, SOLID principles, and scalability concerns.""",
+            'security': """You are a security expert reviewing code for vulnerabilities. 
+                         Focus on: security issues, best practices, and potential risks.""",
+            'performance': """You are a performance optimization expert. 
+                            Focus on: performance bottlenecks, optimization opportunities, and efficiency improvements."""
         }
     
     def select_model(self, task_type: str, code_size: int) -> str:
@@ -37,109 +48,127 @@ class LLMManager:
             str: Nome del modello selezionato
         """
         if code_size > 100_000:
-            return "claude-3-5-sonnet"
-        elif task_type in ["architecture", "review"]:
-            return "o1-preview"
+            return "claude-3-5-sonnet"  # Per file grandi
+        elif task_type in ["architecture", "review", "security"]:
+            return "o1-preview"  # Per analisi complesse
         else:
-            return "o1-mini"
+            return "o1-mini"  # Per task semplici
     
-    def get_template(self, template_name: str) -> str:
-        """Carica un template di prompt."""
-        template_path = f"templates/{template_name}.txt"
-        try:
-            with open(template_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        except FileNotFoundError:
-            return ""
-    
-    def prepare_prompt(self, template_name: str, **kwargs) -> str:
-        """Prepara il prompt combinando template e variabili."""
-        template = self.get_template(template_name)
-        return template.format(**kwargs) if template else kwargs.get('prompt', '')
-    
-    def _call_openai(self, prompt: str, model: str) -> Tuple[str, int]:
-        """Effettua una chiamata ai modelli OpenAI."""
-        completion = self.openai_client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            stream=True
-        )
-        
-        response_chunks = []
-        total_tokens = 0
-        
-        for chunk in completion:
-            if chunk.choices[0].delta.content:
-                response_chunks.append(chunk.choices[0].delta.content)
-                yield chunk.choices[0].delta.content, total_tokens
-            if chunk.usage:
-                total_tokens = chunk.usage.total_tokens
-    
-    def _call_anthropic(self, prompt: str) -> Tuple[str, int]:
-        """Effettua una chiamata ai modelli Anthropic."""
-        message = self.anthropic_client.messages.create(
-            model="claude-3-5-sonnet",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
-            stream=True
-        )
-        
-        response_chunks = []
-        total_tokens = 0
-        
-        for chunk in message:
-            if chunk.delta.text:
-                response_chunks.append(chunk.delta.text)
-                yield chunk.delta.text, total_tokens
-            if chunk.usage:
-                total_tokens = chunk.usage.total_tokens
-    
-    def process_request(self, prompt: str, template_name: Optional[str] = None, 
-                       task_type: Optional[str] = None, code_size: Optional[int] = 0) -> Dict:
+    def prepare_prompt(self, task_type: str, code: str, context: Optional[str] = None) -> str:
         """
-        Processa una richiesta LLM completa.
+        Prepara il prompt per il modello.
         
         Args:
-            prompt: Il prompt dell'utente
-            template_name: Nome del template da utilizzare (opzionale)
-            task_type: Tipo di task per la selezione del modello
-            code_size: Dimensione del codice per la selezione del modello
+            task_type: Tipo di analisi richiesta
+            code: Codice da analizzare
+            context: Contesto aggiuntivo (opzionale)
             
         Returns:
-            Dict: Risultato della richiesta con tokens e costo
+            str: Prompt formattato
         """
-        # Seleziona o usa il modello corrente
-        if task_type and code_size:
-            model = self.select_model(task_type, code_size)
-            self.session.set_current_model(model)
-        else:
-            model = self.session.get_current_model()
+        system_prompt = self.system_templates.get(task_type, "You are a helpful code assistant.")
         
-        # Prepara il prompt finale
-        final_prompt = self.prepare_prompt(template_name, prompt=prompt) if template_name else prompt
+        prompt = f"{system_prompt}\n\nCODE TO ANALYZE:\n```\n{code}\n```\n"
+        
+        if context:
+            prompt += f"\nADDITIONAL CONTEXT:\n{context}\n"
+            
+        prompt += "\nPlease provide your analysis:"
+        
+        return prompt
+    
+    def _call_openai(self, prompt: str, model: str) -> Generator[str, None, None]:
+        """
+        Effettua una chiamata streaming ai modelli OpenAI.
+        
+        Args:
+            prompt: Prompt da inviare
+            model: Nome del modello
+            
+        Yields:
+            str: Chunks della risposta
+        """
+        try:
+            completion = self.openai_client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                stream=True
+            )
+            
+            for chunk in completion:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+                    
+        except Exception as e:
+            st.error(f"Errore OpenAI: {str(e)}")
+            yield "Mi dispiace, si è verificato un errore durante l'elaborazione."
+    
+    def _call_anthropic(self, prompt: str) -> Generator[str, None, None]:
+        """
+        Effettua una chiamata streaming ai modelli Anthropic.
+        
+        Args:
+            prompt: Prompt da inviare
+            
+        Yields:
+            str: Chunks della risposta
+        """
+        try:
+            message = self.anthropic_client.messages.create(
+                model="claude-3-5-sonnet",
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+                stream=True
+            )
+            
+            for chunk in message:
+                if chunk.delta.text:
+                    yield chunk.delta.text
+                    
+        except Exception as e:
+            st.error(f"Errore Anthropic: {str(e)}")
+            yield "Mi dispiace, si è verificato un errore durante l'elaborazione."
+    
+    def process_request(self, prompt: str, task_type: Optional[str] = None,
+                       code: Optional[str] = None, context: Optional[str] = None) -> Generator[str, None, None]:
+        """
+        Processa una richiesta completa.
+        
+        Args:
+            prompt: Prompt dell'utente
+            task_type: Tipo di task (opzionale)
+            code: Codice da analizzare (opzionale)
+            context: Contesto aggiuntivo (opzionale)
+            
+        Yields:
+            str: Chunks della risposta
+        """
+        # Prepara il prompt completo se necessario
+        final_prompt = self.prepare_prompt(task_type, code, context) if code else prompt
+        
+        # Seleziona il modello appropriato
+        if task_type and code:
+            model = self.select_model(task_type, len(code))
+        else:
+            model = st.session_state.get('current_model', 'o1-mini')
         
         # Effettua la chiamata al modello appropriato
         if model.startswith('o1'):
-            response_generator = self._call_openai(final_prompt, model)
+            yield from self._call_openai(final_prompt, model)
         else:
-            response_generator = self._call_anthropic(final_prompt)
-        
-        # Processa la risposta
-        response_chunks = []
-        total_tokens = 0
-        
-        for chunk, tokens in response_generator:
-            response_chunks.append(chunk)
-            total_tokens = tokens
-            yield chunk
-        
-        # Calcola e aggiorna i costi
-        cost = self._calculate_cost(model, total_tokens)
-        self.session.update_token_count(total_tokens)
-        self.session.update_cost(cost)
+            yield from self._call_anthropic(final_prompt)
     
     def _calculate_cost(self, model: str, tokens: int) -> float:
-        """Calcola il costo di una richiesta."""
+        """
+        Calcola il costo di una richiesta.
+        
+        Args:
+            model: Nome del modello
+            tokens: Numero di token utilizzati
+            
+        Returns:
+            float: Costo in USD
+        """
         model_costs = self.cost_map.get(model, {'input': 0, 'output': 0})
         # Semplificazione: consideriamo il 40% input e 60% output
         input_tokens = tokens * 0.4
