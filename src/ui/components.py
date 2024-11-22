@@ -12,52 +12,163 @@ class FileExplorer:
     
     def __init__(self):
         self.session = SessionManager()
-        self.file_manager = FileManager()
+    
+    def process_single_file(self, uploaded_file) -> Optional[Dict]:
+        """
+        Processa un singolo file senza caching.
+        
+        Args:
+            uploaded_file: File caricato da Streamlit
+            
+        Returns:
+            Optional[Dict]: Informazioni sul file processato
+        """
+        if uploaded_file.size > 5 * 1024 * 1024:  # 5MB limit
+            st.warning(f"File {uploaded_file.name} troppo grande. Massimo 5MB consentiti.")
+            return None
+            
+        try:
+            content = uploaded_file.read()
+            if isinstance(content, bytes):
+                content = content.decode('utf-8')
+            
+            # Determina il linguaggio
+            extension = os.path.splitext(uploaded_file.name)[1].lower()
+            language_map = {
+                '.py': 'python',
+                '.js': 'javascript',
+                '.html': 'html',
+                '.css': 'css',
+                '.java': 'java',
+                '.cpp': 'cpp',
+                '.c': 'c',
+                '.md': 'markdown',
+                '.txt': 'text',
+                '.json': 'json',
+                '.yml': 'yaml',
+                '.yaml': 'yaml'
+            }
+            language = language_map.get(extension, 'text')
+            
+            # Highlight del codice
+            try:
+                lexer = get_lexer_for_filename(uploaded_file.name)
+                formatter = HtmlFormatter(
+                    style='monokai',
+                    linenos=True,
+                    cssclass='source'
+                )
+                highlighted = highlight(content, lexer, formatter)
+            except:
+                highlighted = f"<pre><code>{content}</code></pre>"
+            
+            return {
+                'content': content,
+                'language': language,
+                'size': len(content),
+                'name': uploaded_file.name,
+                'highlighted': highlighted
+            }
+            
+        except Exception as e:
+            st.error(f"Errore nel processare {uploaded_file.name}: {str(e)}")
+            return None
+    
+    def process_zip(self, zip_file) -> Dict[str, Dict]:
+        """
+        Processa un file ZIP.
+        
+        Args:
+            zip_file: File ZIP caricato
+            
+        Returns:
+            Dict[str, Dict]: Mappa dei file processati
+        """
+        processed_files = {}
+        total_size = 0
+        
+        try:
+            with ZipFile(BytesIO(zip_file.getvalue()), 'r') as zip_ref:
+                for file_info in zip_ref.infolist():
+                    if file_info.file_size > 5 * 1024 * 1024:  # 5MB per file
+                        continue
+                        
+                    # Skip directories and hidden files
+                    if file_info.filename.endswith('/') or '/.' in file_info.filename:
+                        continue
+                        
+                    # Check extension
+                    ext = os.path.splitext(file_info.filename)[1].lower()
+                    if ext not in ['.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.css',
+                                 '.java', '.cpp', '.c', '.h', '.hpp', '.cs', '.php',
+                                 '.rb', '.go', '.rs', '.swift', '.kt', '.scala', '.sh',
+                                 '.sql', '.md', '.txt', '.json', '.yml', '.yaml']:
+                        continue
+                    
+                    try:
+                        content = zip_ref.read(file_info.filename).decode('utf-8')
+                        file_data = {
+                            'name': file_info.filename,
+                            'content': content,
+                            'size': file_info.file_size,
+                            'language': os.path.splitext(file_info.filename)[1][1:],
+                            'highlighted': None  # Will be generated on demand
+                        }
+                        processed_files[file_info.filename] = file_data
+                        total_size += file_info.file_size
+                        
+                        if total_size > 15 * 1024 * 1024:  # 15MB total limit
+                            break
+                            
+                    except Exception:
+                        continue
+                        
+        except Exception as e:
+            st.error(f"Errore nel processare il file ZIP: {str(e)}")
+        
+        return processed_files
     
     def render(self):
+        """Renderizza il componente FileExplorer."""
         uploaded_files = st.file_uploader(
             "Upload Files",
             accept_multiple_files=True,
-            type=[ext[1:] for ext in self.file_manager.ALLOWED_EXTENSIONS]
+            type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css',
+                  'java', 'cpp', 'c', 'h', 'hpp', 'cs', 'php',
+                  'rb', 'go', 'rs', 'swift', 'kt', 'scala', 'sh',
+                  'sql', 'md', 'txt', 'json', 'yml', 'yaml', 'zip']
         )
         
         if uploaded_files:
             for file in uploaded_files:
-                if file.name.endswith('.zip'):
-                    files = self.file_manager.process_zip(file)
-                    for name, info in files.items():
-                        self.session.add_file(name, info)
+                if file.type == "application/zip" or file.name.endswith('.zip'):
+                    with st.spinner(f"Processing ZIP file {file.name}..."):
+                        files = self.process_zip(file)
+                        for name, info in files.items():
+                            self.session.add_file(name, info)
                 else:
-                    result = self.file_manager.process_file(file)
-                    if result:
-                        self.session.add_file(file.name, result)
+                    with st.spinner(f"Processing file {file.name}..."):
+                        result = self.process_single_file(file)
+                        if result:
+                            self.session.add_file(file.name, result)
             
-            # File Tree View
-            st.markdown("### 📂 Files")
+            # Show file tree
             files = self.session.get_all_files()
             if files:
-                tree = self.file_manager.create_file_tree(files)
-                self._render_tree(tree)
+                st.markdown("### 📂 Files")
+                for filename, file_info in files.items():
+                    if st.button(f"📄 {filename}", key=f"file_{filename}"):
+                        self.session.set_current_file(filename)
                 
-                # Mostra statistiche
-                stats = self.file_manager.analyze_codebase(files)
-                with st.expander("📊 Codebase Stats"):
-                    st.write(f"Total Files: {stats['total_files']}")
-                    st.write(f"Total Lines: {stats['line_count']:,}")
-                    st.write(f"Total Size: {stats['total_size'] / 1024:.1f} KB")
-                    st.write("Languages:", ", ".join(f"{k} ({v})" for k, v in stats['languages'].items()))
-    
-    def _render_tree(self, tree, indent=0):
-        """Renderizza la struttura ad albero dei file."""
-        for name, value in tree.items():
-            if isinstance(value, dict):
-                if '_info' in value:  # È un file
-                    icon = self.file_manager.get_file_icon(name)
-                    if st.button(f"{'  ' * indent}{icon} {name}", key=f"file_{name}"):
-                        self.session.set_current_file(name)
-                else:  # È una directory
-                    st.markdown(f"{'  ' * indent}📁 {name}")
-                    self._render_tree(value, indent + 1)
+                # Show stats
+                with st.expander("📊 Stats"):
+                    total_size = sum(f['size'] for f in files.values())
+                    total_files = len(files)
+                    languages = set(f['language'] for f in files.values())
+                    
+                    st.write(f"Total files: {total_files}")
+                    st.write(f"Total size: {total_size / 1024:.1f} KB")
+                    st.write(f"Languages: {', '.join(languages)}")
 
 class ChatInterface:
     """Component per l'interfaccia chat."""
