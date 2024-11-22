@@ -24,7 +24,7 @@ class LLMManager:
         self.cost_map = {
             'o1-preview': {'input': 0.01, 'output': 0.03},
             'o1-mini': {'input': 0.001, 'output': 0.002},
-            'claude-3-5-sonnet-20241022': {'input': 0.008, 'output': 0.024}
+            'claude-3-sonnet': {'input': 0.008, 'output': 0.024}
         }
         
         # Limiti dei modelli
@@ -43,7 +43,7 @@ class LLMManager:
                 'supports_system_message': False,
                 'supports_functions': False
             },
-            'claude-3-5-sonnet-20241022': {
+            'claude-3-sonnet': {
                 'max_tokens': 200000,
                 'context_window': 200000,
                 'supports_files': True,
@@ -234,7 +234,7 @@ class LLMManager:
             str: Chunks della risposta
         """
         try:
-            self._enforce_rate_limit("claude-3-5-sonnet-20241022")
+            self._enforce_rate_limit("claude-3-sonnet")
             
             # Converte i messaggi nel formato Claude
             claude_messages = []
@@ -248,7 +248,7 @@ class LLMManager:
                     claude_messages.append(msg)
             
             response = self.anthropic_client.beta.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-3-sonnet",
                 max_tokens=4096,
                 messages=claude_messages,
                 stream=True
