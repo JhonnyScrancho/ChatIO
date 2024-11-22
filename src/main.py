@@ -293,16 +293,22 @@ def render_main_layout():
         st.markdown("### 📝 Code Viewer")
         CodeViewer().render()
     
-    # Chat input al fondo della pagina usando st.empty()
+    # Chat input al fondo della pagina
     chat_input_container = st.empty()
     
     # Inserisci l'input nel container vuoto
     with chat_input_container:
         if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            current_chat = st.session_state.chats[st.session_state.current_chat]
+            current_chat['messages'].append({"role": "user", "content": prompt})
+            
             with st.spinner("Elaborazione in corso..."):
                 response = clients['llm'].process_request(prompt)
-                st.session_state.messages.append({"role": "assistant", "content": "".join(response)})
+                current_chat['messages'].append({
+                    "role": "assistant", 
+                    "content": "".join(response)
+                })
+            st.rerun()
 
 def main():
     """Funzione principale dell'applicazione."""

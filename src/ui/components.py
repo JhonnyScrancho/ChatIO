@@ -157,22 +157,25 @@ class ChatInterface:
     def __init__(self):
         self.session = SessionManager()
         self.llm = LLMManager()
-        if 'messages' not in st.session_state:
-            st.session_state.messages = []
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
-            })
+        if 'chats' not in st.session_state:
+            st.session_state.chats = {
+                'Chat principale': {
+                    'messages': [{
+                        "role": "assistant",
+                        "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
+                    }],
+                    'created_at': datetime.now().isoformat()
+                }
+            }
+            st.session_state.current_chat = 'Chat principale'
 
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
         try:
-            # Prepara il contesto con i file disponibili
             context = ""
             for filename, file_info in st.session_state.uploaded_files.items():
                 context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
 
-            # Genera la risposta
             response = ""
             with st.spinner("Analyzing code..."):
                 for chunk in self.llm.process_request(
@@ -181,18 +184,90 @@ class ChatInterface:
                 ):
                     response += chunk
             return response
-            
         except Exception as e:
             return f"Mi dispiace, si è verificato un errore: {str(e)}"
+        
+    def render_chat_controls(self):
+        """Renderizza i controlli per la gestione delle chat."""
+        st.markdown("""
+            <style>
+                .chat-controls {
+                    display: flex;
+                    gap: 1rem;
+                    margin-bottom: 1rem;
+                }
+                .stSelectbox {
+                    flex-grow: 1;
+                }
+            </style>
+        """, unsafe_allow_html=True)
+
+        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+        
+        with col1:
+            # Selettore chat corrente
+            current_chat = st.selectbox(
+                "Seleziona chat",
+                options=list(st.session_state.chats.keys()),
+                index=list(st.session_state.chats.keys()).index(st.session_state.current_chat)
+            )
+            if current_chat != st.session_state.current_chat:
+                st.session_state.current_chat = current_chat
+
+        with col2:
+            # Pulsante nuova chat
+            if st.button("🆕 Nuova", use_container_width=True):
+                new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
+                st.session_state.chats[new_chat_name] = {
+                    'messages': [],
+                    'created_at': datetime.now().isoformat()
+                }
+                st.session_state.current_chat = new_chat_name
+                st.rerun()
+
+        with col3:
+            # Pulsante rinomina
+            if st.button("✏️ Rinomina", use_container_width=True):
+                st.session_state.renaming = True
+                st.rerun()
+
+        with col4:
+            # Pulsante elimina
+            if len(st.session_state.chats) > 1 and st.button("🗑️ Elimina", use_container_width=True):
+                if st.session_state.current_chat in st.session_state.chats:
+                    del st.session_state.chats[st.session_state.current_chat]
+                    st.session_state.current_chat = list(st.session_state.chats.keys())[0]
+                    st.rerun()
+
+        # Dialog per rinominare la chat
+        if getattr(st.session_state, 'renaming', False):
+            with st.form("rename_chat"):
+                new_name = st.text_input("Nuovo nome", value=st.session_state.current_chat)
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.form_submit_button("Salva"):
+                        if new_name and new_name != st.session_state.current_chat:
+                            # Rinomina la chat
+                            st.session_state.chats[new_name] = st.session_state.chats.pop(st.session_state.current_chat)
+                            st.session_state.current_chat = new_name
+                        st.session_state.renaming = False
+                        st.rerun()
+                with col2:
+                    if st.form_submit_button("Annulla"):
+                        st.session_state.renaming = False
+                        st.rerun()    
 
     def render(self):
         """Renderizza l'interfaccia chat."""
-        # Container per i messaggi
+        # Renderizza i controlli delle chat
+        self.render_chat_controls()
+        
+        # Container per i messaggi della chat corrente
         messages_container = st.container()
         
-        # Renderizza i messaggi
+        current_chat = st.session_state.chats[st.session_state.current_chat]
         with messages_container:
-            for message in st.session_state.messages:
+            for message in current_chat['messages']:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
 
