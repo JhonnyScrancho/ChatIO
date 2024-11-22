@@ -238,44 +238,25 @@ def init_clients():
 
 def render_main_layout():
     """Renderizza il layout principale dell'applicazione."""
-    # CSS per il footer
+    # CSS per gestire correttamente il layout di pagina
     st.markdown("""
         <style>
             /* Layout principale */
-            .main > .block-container {
-                padding-bottom: 6rem !important;
-            }
-            
-            /* Footer globale */
-            .footer-container {
-                position: fixed !important;
-                bottom: 0 !important;
-                left: 0 !important;
-                right: 0 !important;
-                height: auto !important;
-                background-color: #ffffff !important;
-                border-top: 1px solid #e0e0e0 !important;
-                padding: 1rem !important;
-                z-index: 9999 !important;
+            .main .block-container {
+                max-width: 100% !important;
+                padding-top: 1rem !important;
+                padding-right: 1rem !important;
+                padding-left: 1rem !important;
+                padding-bottom: 80px !important;   /* Spazio per il footer */
             }
 
-            /* Adatta il contenuto della sidebar */
-            [data-testid="stSidebar"] {
-                padding-bottom: 6rem !important;
-            }
-            
-            /* Nascondi il footer di default di Streamlit */
-            footer {display: none !important;}
-            
-            /* Rendi lo sfondo del footer un po' più opaco */
-            .footer-container::before {
-                content: "";
-                position: absolute;
-                top: -10px;
-                left: 0;
-                right: 0;
-                height: 10px;
-                background: linear-gradient(transparent, rgba(255,255,255,0.9));
+            /* Stile input chat */
+            .stChatFloatingInputContainer {
+                bottom: 0;
+                background: white;
+                padding: 1rem;
+                z-index: 999999;
+                width: 100%;
             }
         </style>
     """, unsafe_allow_html=True)
@@ -287,7 +268,7 @@ def render_main_layout():
     # Title Area con Stats
     col1, col2, col3 = st.columns([4, 1, 1])
     with col1:
-        st.title(" 👲🏿 Allegro IO")
+        st.title("👲🏿 Allegro IO")
     with col2:
         st.metric("Tokens Used", f"{st.session_state.get('token_count', 0):,}")
     with col3:
@@ -312,19 +293,16 @@ def render_main_layout():
         st.markdown("### 📝 Code Viewer")
         CodeViewer().render()
     
-    # Footer globale con input chat
-    footer = st.container()
-    with footer:
-        st.markdown('<div class="footer-container">', unsafe_allow_html=True)
-        # Crea tre colonne nel footer: una vuota a sinistra per la sidebar, una per l'input, una vuota a destra
-        foot_col1, foot_col2 = st.columns([1, 5])
-        with foot_col2:
-            if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="footer_chat_input"):
-                st.session_state.messages.append({"role": "user", "content": prompt})
-                with st.spinner("Elaborazione in corso..."):
-                    response = clients['llm'].process_request(prompt)
-                    st.session_state.messages.append({"role": "assistant", "content": "".join(response)})
-        st.markdown('</div>', unsafe_allow_html=True)
+    # Chat input al fondo della pagina usando st.empty()
+    chat_input_container = st.empty()
+    
+    # Inserisci l'input nel container vuoto
+    with chat_input_container:
+        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.spinner("Elaborazione in corso..."):
+                response = clients['llm'].process_request(prompt)
+                st.session_state.messages.append({"role": "assistant", "content": "".join(response)})
 
 def main():
     """Funzione principale dell'applicazione."""
