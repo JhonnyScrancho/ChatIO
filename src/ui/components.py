@@ -7,57 +7,99 @@ from src.core.session import SessionManager
 from src.core.files import FileManager
 from src.core.llm import LLMManager
 
+import streamlit as st
+from typing import Dict, Any
+
 class FileExplorer:
     """Component per l'esplorazione e l'upload dei file."""
     
     def __init__(self):
-        self.session = SessionManager()
-        self.file_manager = FileManager()
+        """Inizializza il componente."""
+        if 'uploaded_files' not in st.session_state:
+            st.session_state.uploaded_files = {}
     
+    def _render_tree_node(self, path: str, node: Dict[str, Any], indent: int = 0):
+        """Renderizza un nodo dell'albero dei file."""
+        if isinstance(node, dict) and 'content' not in node:
+            # È una directory
+            st.markdown(f"{'&nbsp;' * (indent * 2)}📁 **{path.split('/')[-1]}**", unsafe_allow_html=True)
+            for name, child in sorted(node.items()):
+                self._render_tree_node(f"{path}/{name}", child, indent + 1)
+        else:
+            # È un file
+            icon = self._get_file_icon(path)
+            if st.button(f"{'    ' * indent}{icon} {path.split('/')[-1]}", key=f"file_{path}"):
+                st.session_state.selected_file = path
+    
+    def _get_file_icon(self, filename: str) -> str:
+        """Restituisce l'icona appropriata per il tipo di file."""
+        ext = filename.split('.')[-1].lower() if '.' in filename else ''
+        icons = {
+            'py': '🐍',
+            'js': '📜',
+            'html': '🌐',
+            'css': '🎨',
+            'md': '📝',
+            'txt': '📄',
+            'json': '📋',
+            'zip': '📦'
+        }
+        return icons.get(ext, '📄')
+    
+    def _create_file_tree(self, files: Dict[str, Any]) -> Dict[str, Any]:
+        """Crea una struttura ad albero dai file."""
+        tree = {}
+        for path, content in files.items():
+            current = tree
+            parts = path.split('/')
+            for i, part in enumerate(parts[:-1]):
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+            current[parts[-1]] = content
+        return tree
+
     def render(self):
+        """Renderizza il componente."""
+        # File uploader
         uploaded_files = st.file_uploader(
-            "Upload Files",
-            accept_multiple_files=True,
-            type=[ext[1:] for ext in self.file_manager.ALLOWED_EXTENSIONS]
+            "Upload files",
+            type=['py', 'js', 'html', 'css', 'txt', 'md', 'json', 'zip'],
+            accept_multiple_files=True
         )
-        
+
         if uploaded_files:
             for file in uploaded_files:
-                if file.name.endswith('.zip'):
-                    files = self.file_manager.process_zip(file)
-                    for name, info in files.items():
-                        self.session.add_file(name, info)
-                else:
-                    result = self.file_manager.process_file(file)
-                    if result:
-                        self.session.add_file(file.name, result)
-            
-            # File Tree View
-            st.markdown("### 📂 Files")
-            files = self.session.get_all_files()
-            if files:
-                tree = self.file_manager.create_file_tree(files)
-                self._render_tree(tree)
-                
-                # Mostra statistiche
-                stats = self.file_manager.analyze_codebase(files)
-                with st.expander("📊 Codebase Stats"):
-                    st.write(f"Total Files: {stats['total_files']}")
-                    st.write(f"Total Lines: {stats['line_count']:,}")
-                    st.write(f"Total Size: {stats['total_size'] / 1024:.1f} KB")
-                    st.write("Languages:", ", ".join(f"{k} ({v})" for k, v in stats['languages'].items()))
-    
-    def _render_tree(self, tree, indent=0):
-        """Renderizza la struttura ad albero dei file."""
-        for name, value in tree.items():
-            if isinstance(value, dict):
-                if '_info' in value:  # È un file
-                    icon = self.file_manager.get_file_icon(name)
-                    if st.button(f"{'  ' * indent}{icon} {name}", key=f"file_{name}"):
-                        self.session.set_current_file(name)
-                else:  # È una directory
-                    st.markdown(f"{'  ' * indent}📁 {name}")
-                    self._render_tree(value, indent + 1)
+                try:
+                    if file.name.endswith('.zip'):
+                        import zipfile
+                        import io
+                        
+                        # Processa il file ZIP
+                        zip_content = zipfile.ZipFile(io.BytesIO(file.read()))
+                        for zip_file in zip_content.namelist():
+                            if not zip_file.startswith('__') and not zip_file.startswith('.'):
+                                content = zip_content.read(zip_file).decode('utf-8', errors='ignore')
+                                st.session_state.uploaded_files[zip_file] = {
+                                    'content': content,
+                                    'type': zip_file.split('.')[-1]
+                                }
+                    else:
+                        # Processa file singolo
+                        content = file.read().decode('utf-8')
+                        st.session_state.uploaded_files[file.name] = {
+                            'content': content,
+                            'type': file.name.split('.')[-1]
+                        }
+                except Exception as e:
+                    st.error(f"Errore nel processare {file.name}: {str(e)}")
+
+        # Visualizza struttura ad albero
+        if st.session_state.uploaded_files:
+            st.markdown("### Files")
+            tree = self._create_file_tree(st.session_state.uploaded_files)
+            for name, node in sorted(tree.items()):
+                self._render_tree_node(name, node)
 
 class ChatInterface:
     """Component per l'interfaccia chat."""
