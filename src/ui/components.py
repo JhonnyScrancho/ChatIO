@@ -50,25 +50,32 @@ class FileExplorer:
             current[parts[-1]] = content
         return tree
 
-    def _render_tree_node(self, path: str, node: Dict[str, Any], indent: int = 0):
-        """Renderizza un nodo dell'albero dei file."""
+    def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", is_last: bool = True):
+        """Renderizza un nodo dell'albero dei file in stile minimale."""
+        # Definisci i caratteri per l'albero
+        PIPE = "│   "
+        ELBOW = "└── "
+        TEE = "├── "
+        
+        # Scegli il connettore appropriato
+        connector = ELBOW if is_last else TEE
+        
         if isinstance(node, dict) and 'content' not in node:
             # È una directory
-            st.markdown(f"""
-                <div class="file-tree-folder" style="margin-left: {indent*10}px">
-                    <span>📁 {path.split('/')[-1]}</span>
-                </div>
-            """, unsafe_allow_html=True)
-            for name, child in sorted(node.items()):
-                self._render_tree_node(f"{path}/{name}", child, indent + 1)
+            st.markdown(f"<div style='font-family: monospace; white-space: pre;'>{prefix}{connector}{path.split('/')[-1]}/</div>", 
+                      unsafe_allow_html=True)
+            
+            items = sorted(node.items())
+            for i, (name, child) in enumerate(items):
+                is_last_item = i == len(items) - 1
+                new_prefix = prefix + (PIPE if not is_last else "    ")
+                self._render_tree_node(name, child, new_prefix, is_last_item)
         else:
             # È un file
-            icon = self._get_file_icon(path)
-            if st.button(
-                f"{'    ' * indent}{icon} {path.split('/')[-1]}", 
-                key=f"file_{path}",
-                use_container_width=True
-            ):
+            if st.button(f"{prefix}{connector}{path.split('/')[-1]}", 
+                        key=f"file_{path}",
+                        use_container_width=True,
+                        type="secondary"):
                 st.session_state.selected_file = path
                 st.session_state.current_file = path
 
@@ -87,7 +94,6 @@ class FileExplorer:
                         import zipfile
                         import io
                         
-                        # Processa il file ZIP
                         zip_content = zipfile.ZipFile(io.BytesIO(file.read()))
                         for zip_file in zip_content.namelist():
                             if not zip_file.startswith('__') and not zip_file.startswith('.'):
@@ -99,9 +105,8 @@ class FileExplorer:
                                         'name': zip_file
                                     }
                                 except Exception as e:
-                                    continue  # Salta i file che non possono essere decodificati
+                                    continue
                     else:
-                        # Processa file singolo
                         content = file.read().decode('utf-8')
                         st.session_state.uploaded_files[file.name] = {
                             'content': content,
@@ -114,13 +119,37 @@ class FileExplorer:
         # Visualizza struttura ad albero
         if st.session_state.uploaded_files:
             st.markdown("""
-                <div class="file-tree">
-                    <p style='margin-bottom: 8px; color: #666;'>Files:</p>
-                </div>
+                <style>
+                    /* Stile per i bottoni dell'albero */
+                    .stButton button {
+                        background: none !important;
+                        border: none !important;
+                        padding: 0 !important;
+                        font-family: monospace !important;
+                        color: inherit !important;
+                        text-align: left !important;
+                        width: 100% !important;
+                        margin: 0 !important;
+                        height: auto !important;
+                        line-height: 1.5 !important;
+                    }
+                    .stButton button:hover {
+                        color: #ff4b4b !important;
+                    }
+                    /* Stile per il testo delle directory */
+                    .directory {
+                        color: #666;
+                        font-family: monospace;
+                    }
+                </style>
             """, unsafe_allow_html=True)
+            
             tree = self._create_file_tree(st.session_state.uploaded_files)
-            for name, node in sorted(tree.items()):
-                self._render_tree_node(name, node)
+            st.markdown("<div style='font-family: monospace;'>allegro-io/</div>", unsafe_allow_html=True)
+            items = sorted(tree.items())
+            for i, (name, node) in enumerate(items):
+                is_last = i == len(items) - 1
+                self._render_tree_node(name, node, "", is_last)
 
 class ChatInterface:
     """Componente per l'interfaccia chat."""
