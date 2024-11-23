@@ -77,7 +77,7 @@ class LLMManager:
         self._call_count = {}
         self._reset_time = {}
     
-    def get_context_from_files(self, files: Dict[str, Any], selected_file: Optional[str] = None) -> str:
+    def get_files_context(self, files: Dict[str, Any], selected_file: Optional[str] = None) -> str:
         """
         Prepara il contesto con tutti i file, evidenziando quello selezionato.
         
