@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 import os
 import sys
+from datetime import datetime
 
 # Deve essere la prima chiamata Streamlit
 st.set_page_config(
@@ -44,13 +45,14 @@ def load_custom_css():
         
         /* Sidebar migliorata */
         [data-testid="stSidebar"] {
-            background-color: #f8f9fa;
+            background-color: var(--surface-container);
             padding: 1rem;
         }
         
         [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
             font-size: 0.9rem;
             margin-bottom: 0.5rem;
+            color: var(--text-color);
         }
         
         /* Chat UI */
@@ -105,13 +107,13 @@ def load_custom_css():
             padding: 0.2rem 0.5rem !important;
             text-align: left !important;
             font-size: 0.9rem !important;
-            color: #0e1117 !important;
+            color: var(--text-color) !important;
             width: 100% !important;
             margin: 0 !important;
         }
         
         .file-tree button:hover {
-            background-color: #eef2f5 !important;
+            background-color: var(--surface-container-highest) !important;
         }
         
         /* Loader animation */
@@ -203,17 +205,8 @@ def load_custom_css():
             visibility: visible;
             opacity: 1;
         }
-                
-        [data-testid="stSidebar"] {
-        background-color: var(--surface-container);  /* Usa la variabile del tema corrente */
-        }
-
-        /* Adatta il colore del testo nella sidebar al tema */
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-            color: var(--text-color);
-        }
-
-        /* Bottoni e input nella sidebar */
+        
+        /* Sidebar buttons and inputs */
         [data-testid="stSidebar"] button {
             background-color: var(--surface-container-highest) !important;
             color: var(--text-color) !important;
@@ -223,15 +216,6 @@ def load_custom_css():
             background-color: var(--surface-container-highest) !important;
             color: var(--text-color) !important;
         }
-
-        /* File explorer nella sidebar */
-        [data-testid="stSidebar"] .file-tree button {
-            color: var(--text-color) !important;
-        }
-
-        [data-testid="stSidebar"] .file-tree button:hover {
-            background-color: var(--surface-container-highest) !important;
-        }        
         </style>
     """, unsafe_allow_html=True)
 
@@ -265,6 +249,27 @@ def init_clients():
         'file_manager': FileManager()
     }
 
+def init_session_state():
+    """Inizializza lo stato della sessione se non esiste."""
+    if 'initialized' not in st.session_state:
+        st.session_state.initialized = True
+        st.session_state.files = {}
+        st.session_state.chats = {
+            'Chat principale': {
+                'messages': [{
+                    "role": "assistant",
+                    "content": "Ciao! Carica dei file e fammi delle domande su di essi."
+                }],
+                'created_at': datetime.now().isoformat()
+            }
+        }
+        st.session_state.current_chat = 'Chat principale'
+        st.session_state.selected_file = None
+        st.session_state.token_count = 0
+        st.session_state.cost = 0.0
+        st.session_state.current_model = 'o1-mini'
+        st.session_state.debug_mode = False
+
 def render_main_layout():
     """Renderizza il layout principale dell'applicazione."""
     # CSS per gestire correttamente il layout di pagina
@@ -290,18 +295,18 @@ def render_main_layout():
         </style>
     """, unsafe_allow_html=True)
     
-    # Setup iniziale della sessione
+    # Setup iniziale della sessione e clients
+    init_session_state()
     clients = init_clients()
-    clients['session'].init_session()
     
     # Title Area con Stats
     col1, col2, col3 = st.columns([4, 1, 1])
     with col1:
         st.title("👲🏿 Allegro IO")
     with col2:
-        st.metric("Tokens Used", f"{st.session_state.get('token_count', 0):,}")
+        st.metric("Tokens Used", f"{st.session_state.token_count:,}")
     with col3:
-        st.metric("Cost ($)", f"${st.session_state.get('cost', 0):.3f}")
+        st.metric("Cost ($)", f"${st.session_state.cost:.3f}")
     
     # Sidebar con File Manager e Model Selector
     with st.sidebar:
@@ -310,6 +315,16 @@ def render_main_layout():
         st.markdown("---")
         st.markdown("### 🤖 Model Settings")
         ModelSelector().render()
+        
+        # Debug mode toggle in sidebar
+        if st.checkbox("Debug Mode", value=st.session_state.debug_mode):
+            st.session_state.debug_mode = True
+            st.markdown("### 🔧 Debug Info")
+            st.json({
+                "session_state": {k: str(v) for k, v in st.session_state.items()},
+                "current_model": st.session_state.current_model,
+                "files_loaded": len(st.session_state.files)
+            })
     
     # Main Content Area con Chat e Code Viewer
     col1, col2 = st.columns([3, 2])
@@ -321,6 +336,11 @@ def render_main_layout():
     with col2:
         st.markdown("### 📝 Code Viewer")
         CodeViewer().render()
+        
+        # Stats Display sotto il Code Viewer
+        if st.session_state.files:
+            st.markdown("### 📊 Statistics")
+            StatsDisplay().render()
     
     # Chat input al fondo della pagina
     chat_input_container = st.empty()
@@ -331,11 +351,17 @@ def render_main_layout():
             current_chat = st.session_state.chats[st.session_state.current_chat]
             current_chat['messages'].append({"role": "user", "content": prompt})
             
+            # Get context from selected file
+            context = ""
+            if st.session_state.selected_file:
+                file_info = st.session_state.files[st.session_state.selected_file]
+                context = f"Current file: {file_info['name']}\n```{file_info['language']}\n{file_info['content']}\n```\n\n"
+            
             with st.spinner("Elaborazione in corso..."):
-                response = clients['llm'].process_request(prompt)
+                response = "".join(list(clients['llm'].process_request(prompt, context=context)))
                 current_chat['messages'].append({
                     "role": "assistant", 
-                    "content": "".join(response)
+                    "content": response
                 })
             st.rerun()
 
@@ -352,8 +378,13 @@ def main():
         
     except Exception as e:
         st.error(f"❌ Si è verificato un errore: {str(e)}")
-        if os.getenv('DEBUG') == 'True':
+        if st.session_state.get('debug_mode', False):
             st.exception(e)
+            st.json({
+                "error_type": type(e).__name__,
+                "error_details": str(e),
+                "session_state": {k: str(v) for k, v in st.session_state.items()}
+            })
 
 if __name__ == "__main__":
     main()
