@@ -270,101 +270,6 @@ def init_session_state():
         st.session_state.current_model = 'o1-mini'
         st.session_state.debug_mode = False
 
-def render_main_layout():
-    """Renderizza il layout principale dell'applicazione."""
-    # CSS per gestire correttamente il layout di pagina
-    st.markdown("""
-        <style>
-            /* Layout principale */
-            .main .block-container {
-                max-width: 100% !important;
-                padding-top: 1rem !important;
-                padding-right: 1rem !important;
-                padding-left: 1rem !important;
-                padding-bottom: 80px !important;   /* Spazio per il footer */
-            }
-
-            /* Stile input chat */
-            .stChatFloatingInputContainer {
-                bottom: 0;
-                background: white;
-                padding: 1rem;
-                z-index: 999999;
-                width: 100%;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    # Setup iniziale della sessione e clients
-    init_session_state()
-    clients = init_clients()
-    
-    # Title Area con Stats
-    col1, col2, col3 = st.columns([4, 1, 1])
-    with col1:
-        st.title("👲🏿 Allegro IO")
-    with col2:
-        st.metric("Tokens Used", f"{st.session_state.token_count:,}")
-    with col3:
-        st.metric("Cost ($)", f"${st.session_state.cost:.3f}")
-    
-    # Sidebar con File Manager e Model Selector
-    with st.sidebar:
-        st.markdown("### 📁 File Manager")
-        FileExplorer().render()
-        st.markdown("---")
-        st.markdown("### 🤖 Model Settings")
-        ModelSelector().render()
-        
-        # Debug mode toggle in sidebar
-        if st.checkbox("Debug Mode", value=st.session_state.debug_mode):
-            st.session_state.debug_mode = True
-            st.markdown("### 🔧 Debug Info")
-            st.json({
-                "session_state": {k: str(v) for k, v in st.session_state.items()},
-                "current_model": st.session_state.current_model,
-                "files_loaded": len(st.session_state.files)
-            })
-    
-    # Main Content Area con Chat e Code Viewer
-    col1, col2 = st.columns([3, 2])
-    
-    with col1:
-        st.markdown("### 💬 Chat")
-        ChatInterface().render()
-    
-    with col2:
-        st.markdown("### 📝 Code Viewer")
-        CodeViewer().render()
-        
-        # Stats Display sotto il Code Viewer
-        if st.session_state.files:
-            st.markdown("### 📊 Statistics")
-            StatsDisplay().render()
-    
-    # Chat input al fondo della pagina
-    chat_input_container = st.empty()
-    
-    # Inserisci l'input nel container vuoto
-    with chat_input_container:
-        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
-            current_chat = st.session_state.chats[st.session_state.current_chat]
-            current_chat['messages'].append({"role": "user", "content": prompt})
-            
-            # Get context from ALL files
-            context = clients['llm'].get_files_context(
-                st.session_state.files,
-                st.session_state.selected_file
-            )
-            
-            with st.spinner("Elaborazione in corso..."):
-                response = "".join(list(clients['llm'].process_request(prompt, context=context)))
-                current_chat['messages'].append({
-                    "role": "assistant", 
-                    "content": response
-                })
-            st.rerun()
-
 def main():
     """Funzione principale dell'applicazione."""
     try:
@@ -373,8 +278,77 @@ def main():
         check_directories()
         load_custom_css()
         
-        # Renderizza il layout principale
-        render_main_layout()
+        # Setup iniziale della sessione e clients
+        init_session_state()
+        clients = init_clients()
+        
+        # Title Area con Stats
+        col1, col2, col3 = st.columns([4, 1, 1])
+        with col1:
+            st.title("👲🏿 Allegro IO")
+        with col2:
+            st.metric("Tokens Used", f"{st.session_state.token_count:,}")
+        with col3:
+            st.metric("Cost ($)", f"${st.session_state.cost:.3f}")
+        
+        # Sidebar con File Manager e Model Selector
+        with st.sidebar:
+            st.markdown("### 📁 File Manager")
+            FileExplorer().render()
+            st.markdown("---")
+            st.markdown("### 🤖 Model Settings")
+            ModelSelector().render()
+            
+            if st.checkbox("Debug Mode", value=st.session_state.debug_mode):
+                st.session_state.debug_mode = True
+                st.markdown("### 🔧 Debug Info")
+                st.json({
+                    "session_state": {k: str(v) for k, v in st.session_state.items()},
+                    "current_model": st.session_state.current_model,
+                    "files_loaded": len(st.session_state.files)
+                })
+        
+        # Main Content Area con Chat e Code Viewer
+        col1, col2 = st.columns([3, 2])
+        
+        with col1:
+            st.markdown("### 💬 Chat")
+            ChatInterface().render()
+            
+            # Chat input
+            if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
+                current_chat = st.session_state.chats[st.session_state.current_chat]
+                current_chat['messages'].append({"role": "user", "content": prompt})
+                
+                # Prepara il contesto con tutti i file
+                context = ""
+                if st.session_state.files:
+                    context = "Files disponibili:\n\n"
+                    # Prima il file selezionato
+                    if st.session_state.selected_file:
+                        file_info = st.session_state.files[st.session_state.selected_file]
+                        context += f"File selezionato - {st.session_state.selected_file}:\n```{file_info['language']}\n{file_info['content']}\n```\n\n"
+                    
+                    # Poi gli altri file
+                    for filename, file_info in st.session_state.files.items():
+                        if filename != st.session_state.selected_file:
+                            context += f"File: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n\n"
+                
+                with st.spinner("Elaborazione in corso..."):
+                    response = "".join(list(clients['llm'].process_request(prompt, context=context)))
+                    current_chat['messages'].append({
+                        "role": "assistant", 
+                        "content": response
+                    })
+                st.rerun()
+        
+        with col2:
+            st.markdown("### 📝 Code Viewer")
+            CodeViewer().render()
+            
+            if st.session_state.files:
+                st.markdown("### 📊 Statistics")
+                StatsDisplay().render()
         
     except Exception as e:
         st.error(f"❌ Si è verificato un errore: {str(e)}")

@@ -1,13 +1,18 @@
+# src/ui/__init__.py
 """
-UI package for Allegro IO Code Assistant.
+UI package initialization.
 Contains layout and components for the Streamlit interface.
 """
 
-from .layout import render_main_layout
-from .components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay
+from .components import (
+    FileExplorer, 
+    ChatInterface, 
+    CodeViewer, 
+    ModelSelector, 
+    StatsDisplay
+)
 
 __all__ = [
-    'render_main_layout',
     'FileExplorer',
     'ChatInterface',
     'CodeViewer',
