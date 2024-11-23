@@ -55,31 +55,15 @@ def load_custom_css():
             color: var(--text-color);
         }
         
-        /* Chat UI */
-        .stChatFloatingInputContainer {
-            position: fixed !important;
-            bottom: 0 !important;
-            left: 18rem !important;
-            right: 0 !important;
-            padding: 1rem 2rem !important;
-            background: white !important;
-            border-top: 1px solid #eee !important;
-            z-index: 1000 !important;
+        /* Chat container con spazio per input fisso */
+        .chat-container {
+            height: calc(100vh - 200px);
+            overflow-y: auto;
+            margin-bottom: 80px;
         }
         
-        .stChatMessage {
-            max-width: none !important;
-            width: 100% !important;
-            margin: 0.5rem 0 !important;
-        }
-        
-        /* Spazio per l'input fisso */
-        [data-testid="stChatMessageContainer"] {
-            padding-bottom: 80px !important;
-        }
-        
-        /* Chat input container fisso */
-        .chat-input-container {
+        /* Input chat fisso */
+        .stChatInputContainer, .stStreamlitMessageInputContainer {
             position: fixed !important;
             bottom: 0 !important;
             left: 18rem !important;
@@ -88,6 +72,17 @@ def load_custom_css():
             padding: 1rem !important;
             border-top: 1px solid #eee !important;
             z-index: 1000 !important;
+        }
+        
+        /* Chat message container */
+        [data-testid="stChatMessageContainer"] {
+            padding-bottom: 100px !important;
+        }
+        
+        .stChatMessage {
+            max-width: none !important;
+            width: 100% !important;
+            margin: 0.5rem 0 !important;
         }
         
         /* Code viewer */
@@ -135,38 +130,6 @@ def load_custom_css():
             background: #f8f9fa;
             border-radius: 0.5rem;
             margin: 1rem 0;
-        }
-        
-        .loader-dots {
-            display: inline-flex;
-            gap: 0.3rem;
-        }
-        
-        .loader-dots span {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: #666;
-            animation: loader 1.4s infinite;
-        }
-        
-        .loader-dots span:nth-child(2) { animation-delay: 0.2s; }
-        .loader-dots span:nth-child(3) { animation-delay: 0.4s; }
-        
-        @keyframes loader {
-            0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
-            40% { opacity: 1; transform: scale(1); }
-        }
-        
-        /* Stats display */
-        .stats-container {
-            display: flex;
-            justify-content: flex-end;
-            gap: 1rem;
-            padding: 0.5rem;
-            background: #f8f9fa;
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
         }
         
         /* Scrollbars */
@@ -226,13 +189,6 @@ def load_custom_css():
             background-color: var(--surface-container-highest) !important;
             color: var(--text-color) !important;
         }
-        
-        /* Fissa il contenitore della chat con spazio per l'input */
-        .chat-container {
-            height: calc(100vh - 200px);
-            overflow-y: auto;
-            padding-bottom: 80px;
-        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -286,6 +242,11 @@ def init_session_state():
         st.session_state.cost = 0.0
         st.session_state.current_model = 'o1-mini'
         st.session_state.debug_mode = False
+        st.session_state.model_usage = {
+            'o1-mini': 0,
+            'o1-preview': 0,
+            'claude-3-5-sonnet-20241022': 0
+        }
 
 def main():
     """Funzione principale dell'applicazione."""
@@ -302,7 +263,7 @@ def main():
         # Title Area con Stats
         col1, col2, col3 = st.columns([4, 1, 1])
         with col1:
-            st.title("👲🏿 Allegro IO")
+            st.title("🎯 Allegro IO")
         with col2:
             st.metric("Tokens Used", f"{st.session_state.token_count:,}")
         with col3:
@@ -344,19 +305,11 @@ def main():
                 current_chat = st.session_state.chats[st.session_state.current_chat]
                 current_chat['messages'].append({"role": "user", "content": prompt})
                 
-                # Prepara il contesto con tutti i file
-                context = ""
-                if st.session_state.files:
-                    context = "Files disponibili:\n\n"
-                    # Prima il file selezionato
-                    if st.session_state.selected_file:
-                        file_info = st.session_state.files[st.session_state.selected_file]
-                        context += f"File selezionato - {st.session_state.selected_file}:\n```{file_info['language']}\n{file_info['content']}\n```\n\n"
-                    
-                    # Poi gli altri file
-                    for filename, file_info in st.session_state.files.items():
-                        if filename != st.session_state.selected_file:
-                            context += f"File: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n\n"
+                # Preparazione del contesto usando LLMManager
+                context = clients['llm'].get_files_context(
+                    st.session_state.files,
+                    st.session_state.selected_file
+                )
                 
                 with st.spinner("Elaborazione in corso..."):
                     try:
@@ -366,6 +319,10 @@ def main():
                             model=st.session_state.current_model
                         )))
                         
+                        # Aggiorna le statistiche di utilizzo del modello
+                        if st.session_state.current_model in st.session_state.model_usage:
+                            st.session_state.model_usage[st.session_state.current_model] += 1
+                        
                         current_chat['messages'].append({
                             "role": "assistant", 
                             "content": response
@@ -374,6 +331,7 @@ def main():
                         st.error(f"Errore: {str(e)}")
                         if st.session_state.current_model != 'claude-3-5-sonnet-20241022':
                             st.info("Tentativo con Claude come fallback...")
+                            prev_model = st.session_state.current_model
                             st.session_state.current_model = 'claude-3-5-sonnet-20241022'
                             try:
                                 response = "".join(list(clients['llm'].process_request(
@@ -381,10 +339,16 @@ def main():
                                     context=context,
                                     model='claude-3-5-sonnet-20241022'
                                 )))
+                                
+                                # Aggiorna statistiche anche per il fallback
+                                st.session_state.model_usage['claude-3-5-sonnet-20241022'] += 1
+                                
                                 current_chat['messages'].append({
                                     "role": "assistant", 
                                     "content": response
                                 })
+                                # Ripristina il modello precedente
+                                st.session_state.current_model = prev_model
                             except Exception as e:
                                 st.error(f"Errore anche con Claude: {str(e)}")
                 st.rerun()
