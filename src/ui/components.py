@@ -209,26 +209,24 @@ class ChatInterface:
         ])
 
     def _process_response(self, prompt: str) -> str:
-        """Processa la richiesta e genera una risposta includendo il contesto dei file."""
+        """Processa la richiesta e genera una risposta."""
         try:
-            # Prepara il contesto dei file
-            files_context = ""
-            if st.session_state.uploaded_files:
-                files_context = "Files caricati:\n\n"
+            # Prepara il contesto con tutti i file caricati
+            context = ""
+            if st.session_state.get('uploaded_files'):
                 for filename, file_info in st.session_state.uploaded_files.items():
-                    files_context += f"File: {filename}\n"
-                    files_context += f"```{file_info['language']}\n{file_info['content']}\n```\n\n"
+                    context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
 
-            # Processa la risposta includendo il contesto
+            # Processa la risposta
             response = ""
             with st.spinner("Analyzing code..."):
                 for chunk in self.llm.process_request(
                     prompt=prompt,
-                    context=files_context
+                    context=context
                 ):
                     response += chunk
             return response
-                
+            
         except Exception as e:
             return f"Mi dispiace, si è verificato un errore: {str(e)}"
     
@@ -282,30 +280,22 @@ class ChatInterface:
 
     def render(self):
         """Renderizza l'interfaccia chat."""
-        # Renderizza i controlli delle chat
-        self.render_chat_controls()
-        
-        # Container per i messaggi della chat
-        messages_container = st.container()
-        
         # Mostra i messaggi della chat corrente
-        current_chat = st.session_state.chats[st.session_state.current_chat]
-        with messages_container:
-            for message in current_chat['messages']:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
-        
-        # Input della chat
+        for message in st.session_state.chats[st.session_state.current_chat]['messages']:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        # Solo input chat, no controlli aggiuntivi
         if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
             # Aggiungi il messaggio dell'utente
-            self.session.add_message_to_current_chat({
+            st.session_state.chats[st.session_state.current_chat]['messages'].append({
                 "role": "user",
                 "content": prompt
             })
             
             # Genera e aggiungi la risposta
             response = self._process_response(prompt)
-            self.session.add_message_to_current_chat({
+            st.session_state.chats[st.session_state.current_chat]['messages'].append({
                 "role": "assistant",
                 "content": response
             })
