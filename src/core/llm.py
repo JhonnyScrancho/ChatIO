@@ -218,16 +218,7 @@ class LLMManager:
         self._last_call_time[model] = current_time
     
     def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
-        """
-        Gestisce le chiamate ai modelli o1.
-        
-        Args:
-            messages: Lista di messaggi
-            model: Nome del modello o1
-            
-        Yields:
-            str: Chunks della risposta
-        """
+        """Gestisce le chiamate ai modelli OpenAI."""
         try:
             self._enforce_rate_limit(model)
             
@@ -235,7 +226,7 @@ class LLMManager:
                 model=model,
                 messages=messages,
                 stream=True,
-                max_completion_tokens=32768 if model == "o1-preview" else 65536
+                max_tokens=32768 if model == "o1-preview" else 65536
             )
             
             for chunk in completion:
@@ -245,46 +236,20 @@ class LLMManager:
         except Exception as e:
             error_msg = f"Errore con {model}: {str(e)}"
             st.error(error_msg)
-            # Fallback a Claude in caso di errore
-            yield from self._handle_claude_completion(messages)
+            # Non facciamo più il fallback automatico qui, lo gestiamo nel main
+            yield error_msg
     
-    def _handle_claude_completion(self, messages: List[Dict]) -> Generator[str, None, None]:
-        """
-        Gestisce le chiamate a Claude.
-        
-        Args:
-            messages: Lista di messaggi
-            
-        Yields:
-            str: Chunks della risposta
-        """
+    def _handle_claude_completion(self, messages: List[Dict], system_message: str = None) -> Generator[str, None, None]:
+        """Gestisce le chiamate a Claude."""
         try:
             self._enforce_rate_limit("claude-3-5-sonnet-20241022")
-            
-            # Converti i messaggi nel formato corretto per Claude 3
-            claude_messages = []
-            system_message = None
-            
-            for msg in messages:
-                if msg["role"] == "system":
-                    system_message = msg["content"]
-                else:
-                    claude_messages.append({
-                        "role": msg["role"],
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": msg["content"]
-                            }
-                        ]
-                    })
             
             response = self.anthropic_client.messages.create(
                 model="claude-3-5-sonnet-20241022",
                 max_tokens=4096,
                 temperature=0.7,
                 system=system_message,
-                messages=claude_messages,
+                messages=messages,
                 stream=True
             )
             
@@ -297,36 +262,54 @@ class LLMManager:
             st.error(error_msg)
             yield error_msg
     
-    def process_request(self, prompt: str, analysis_type: Optional[str] = None,
-                   file_content: Optional[str] = None, 
-                   context: Optional[str] = None) -> Generator[str, None, None]:
+    def process_request(self, prompt: str, messages: List[Dict[str, str]] = None, 
+                   model: str = None, context: str = None) -> Generator[str, None, None]:
         """
         Processa una richiesta completa.
+        
+        Args:
+            prompt: Il prompt dell'utente
+            messages: Lista di messaggi formattati (opzionale)
+            model: Il modello da usare (opzionale)
+            context: Contesto aggiuntivo (opzionale)
         """
-        # Determina se il task richiede gestione file
-        requires_file_handling = bool(context) or bool(file_content)
+        if model is None:
+            model = "o1-mini"  # default model
         
-        # Seleziona il modello appropriato
-        model = self.select_model(
-            analysis_type or "general", 
-            len(context or file_content or prompt), 
-            requires_file_handling
-        )
-        
-        # Prepara i messaggi includendo TUTTO il contesto
-        messages = self.prepare_prompt(
-            prompt=prompt,
-            analysis_type=analysis_type,
-            file_content=file_content,
-            context=context,  # Ora viene sempre incluso!
-            model=model
-        )
-        
-        # Processa la richiesta con il modello appropriato
-        if model.startswith('o1'):
-            yield from self._handle_o1_completion(messages, model)
-        else:
-            yield from self._handle_claude_completion(messages)
+        try:
+            if model.startswith('o1'):
+                # Per OpenAI, usiamo il formato messages
+                if messages is None:
+                    messages = [
+                        {"role": "system", "content": "Sei un assistente esperto in analisi del codice."},
+                        {"role": "user", "content": prompt}
+                    ]
+                
+                return self._handle_o1_completion(messages, model)
+            else:
+                # Per Claude, prepariamo il messaggio nel suo formato
+                system_message = None
+                user_messages = []
+                
+                if messages:
+                    for msg in messages:
+                        if msg["role"] == "system":
+                            system_message = msg["content"]
+                        elif msg["role"] == "user":
+                            user_messages.append({
+                                "role": "user",
+                                "content": [{"type": "text", "text": msg["content"]}]
+                            })
+                else:
+                    user_messages = [{
+                        "role": "user",
+                        "content": [{"type": "text", "text": prompt}]
+                    }]
+                
+                return self._handle_claude_completion(user_messages, system_message)
+                
+        except Exception as e:
+            raise Exception(f"Errore nel processare la richiesta: {str(e)}")
     
     def calculate_cost(self, model: str, input_tokens: int, 
                       output_tokens: int) -> float:

@@ -76,8 +76,18 @@ def load_custom_css():
         /* Spazio per l'input fisso */
         [data-testid="stChatMessageContainer"] {
             padding-bottom: 80px !important;
+        }
+        
+        /* Chat input container fisso */
+        .chat-input-container {
             position: fixed !important;
             bottom: 0 !important;
+            left: 18rem !important;
+            right: 0 !important;
+            background: white !important;
+            padding: 1rem !important;
+            border-top: 1px solid #eee !important;
+            z-index: 1000 !important;
         }
         
         /* Code viewer */
@@ -216,6 +226,13 @@ def load_custom_css():
             background-color: var(--surface-container-highest) !important;
             color: var(--text-color) !important;
         }
+        
+        /* Fissa il contenitore della chat con spazio per l'input */
+        .chat-container {
+            height: calc(100vh - 200px);
+            overflow-y: auto;
+            padding-bottom: 80px;
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -313,9 +330,16 @@ def main():
         
         with col1:
             st.markdown("### 💬 Chat")
-            ChatInterface().render()
             
-            # Chat input
+            # Container per la chat con scrolling
+            chat_container = st.container()
+            with chat_container:
+                st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+                ChatInterface().render()
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Chat input fisso nel footer
+            st.markdown('<div class="chat-input-container">', unsafe_allow_html=True)
             if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
                 current_chat = st.session_state.chats[st.session_state.current_chat]
                 current_chat['messages'].append({"role": "user", "content": prompt})
@@ -335,12 +359,36 @@ def main():
                             context += f"File: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n\n"
                 
                 with st.spinner("Elaborazione in corso..."):
-                    response = "".join(list(clients['llm'].process_request(prompt, context=context)))
-                    current_chat['messages'].append({
-                        "role": "assistant", 
-                        "content": response
-                    })
+                    try:
+                        response = "".join(list(clients['llm'].process_request(
+                            prompt=prompt,
+                            context=context,
+                            model=st.session_state.current_model
+                        )))
+                        
+                        current_chat['messages'].append({
+                            "role": "assistant", 
+                            "content": response
+                        })
+                    except Exception as e:
+                        st.error(f"Errore: {str(e)}")
+                        if st.session_state.current_model != 'claude-3-5-sonnet-20241022':
+                            st.info("Tentativo con Claude come fallback...")
+                            st.session_state.current_model = 'claude-3-5-sonnet-20241022'
+                            try:
+                                response = "".join(list(clients['llm'].process_request(
+                                    prompt=prompt,
+                                    context=context,
+                                    model='claude-3-5-sonnet-20241022'
+                                )))
+                                current_chat['messages'].append({
+                                    "role": "assistant", 
+                                    "content": response
+                                })
+                            except Exception as e:
+                                st.error(f"Errore anche con Claude: {str(e)}")
                 st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
         
         with col2:
             st.markdown("### 📝 Code Viewer")
