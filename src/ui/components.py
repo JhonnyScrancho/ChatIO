@@ -1,117 +1,44 @@
 """
-UI components for Allegro IO Code Assistant.
+UI component for file exploration and management in Streamlit.
 """
 
 import streamlit as st
-from datetime import datetime
 from typing import Dict, Any
 import os
-from zipfile import ZipFile
 from io import BytesIO
+from zipfile import ZipFile
 from pygments import highlight
 from pygments.lexers import get_lexer_for_filename, TextLexer
 from pygments.formatters import HtmlFormatter
 
 class FileExplorer:
-    """Component per l'esplorazione e l'upload dei file."""
+    """A simplified file explorer component for Streamlit."""
+    
+    ALLOWED_EXTENSIONS = {
+        '.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.css',
+        '.java', '.cpp', '.c', '.h', '.hpp', '.cs', '.php',
+        '.rb', '.go', '.rs', '.swift', '.kt', '.scala', '.sh',
+        '.sql', '.md', '.txt', '.json', '.yml', '.yaml'
+    }
+    
+    MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
     
     def __init__(self):
+        """Initialize the FileExplorer component."""
+        # Initialize session state if needed
         if 'files' not in st.session_state:
             st.session_state.files = {}
-
-    def _add_file(self, filename: str, content: str, language: str):
-        """Metodo unificato per aggiungere file."""
-        processed_file = {
-            'content': content,
-            'language': language,
-            'name': filename,
-            'size': len(content)
-        }
-        
-        # Aggiorna entrambi gli stati in modo consistente
-        st.session_state.files[filename] = processed_file
-        
-        # Trigger rerun per aggiornare l'interfaccia
-        st.rerun()        
-            
-    def _get_file_icon(self, filename: str) -> str:
-        """Restituisce l'icona appropriata per il tipo di file."""
-        ext = filename.split('.')[-1].lower() if '.' in filename else ''
-        icons = {
-            'py': '🐍',
-            'js': '📜',
-            'jsx': '⚛️',
-            'ts': '📘',
-            'tsx': '💠',
-            'html': '🌐',
-            'css': '🎨',
-            'md': '📝',
-            'txt': '📄',
-            'json': '📋',
-            'yaml': '⚙️',
-            'yml': '⚙️',
-            'zip': '📦'
-        }
-        return icons.get(ext, '📄')
-
-    def _create_file_tree(self, files: Dict[str, Any]) -> Dict[str, Any]:
-        """Crea una struttura ad albero dai file."""
-        tree = {}
-        for path, content in files.items():
-            current = tree
-            parts = path.split('/')
-            for i, part in enumerate(parts[:-1]):
-                if part not in current:
-                    current[part] = {}
-                current = current[part]
-            current[parts[-1]] = content
-        return tree
-
-    def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", is_last: bool = True, full_path: str = ""):
-        """Renderizza un nodo dell'albero dei file."""
-        PIPE = "│   "
-        ELBOW = "└── "
-        TEE = "├── "
-        
-        connector = ELBOW if is_last else TEE
-        current_full_path = f"{full_path}/{path}" if full_path else path
-        
-        if isinstance(node, dict) and 'content' not in node:
-            # Directory
-            st.markdown(f"<div style='font-family: monospace; white-space: pre;'>{prefix}{connector}📁 {path}/</div>", 
-                       unsafe_allow_html=True)
-            
-            items = sorted(node.items())
-            for i, (name, child) in enumerate(items):
-                is_last_item = i == len(items) - 1
-                new_prefix = prefix + (PIPE if not is_last else "    ")
-                self._render_tree_node(
-                    name, 
-                    child, 
-                    new_prefix, 
-                    is_last_item, 
-                    current_full_path
-                )
-        else:
-            # File
-            icon = self._get_file_icon(path)
-            unique_key = f"file_{current_full_path.replace('/', '_')}"
-            if st.button(
-                f"{prefix}{connector}{icon} {path}",
-                key=unique_key,
-                use_container_width=True,
-                type="secondary"
-            ):
-                st.session_state.selected_file = current_full_path
-                st.session_state.current_file = current_full_path
+        if 'selected_file' not in st.session_state:
+            st.session_state.selected_file = None
 
     def _process_file_content(self, content: str, filename: str) -> Dict[str, Any]:
-        """Processa il contenuto del file."""
+        """Process the content of a file."""
         try:
             lexer = get_lexer_for_filename(filename)
             language = lexer.name.lower()
         except:
             language = 'text'
+            lexer = TextLexer()
             
         formatter = HtmlFormatter(
             style='monokai',
@@ -129,35 +56,44 @@ class FileExplorer:
             'size': len(content)
         }
 
+    def _get_file_icon(self, filename: str) -> str:
+        """Get an appropriate icon for the file type."""
+        ext = os.path.splitext(filename)[1].lower()
+        icons = {
+            '.py': '🐍',
+            '.js': '📜',
+            '.jsx': '⚛️',
+            '.ts': '📘',
+            '.tsx': '💠',
+            '.html': '🌐',
+            '.css': '🎨',
+            '.md': '📝',
+            '.txt': '📄',
+            '.json': '📋',
+            '.yml': '⚙️',
+            '.yaml': '⚙️',
+            '.zip': '📦'
+        }
+        return icons.get(ext, '📄')
+
     def render(self):
-        """Renderizza il componente."""
+        """Render the file explorer component."""
         st.markdown("""
             <style>
-                .file-tree button {
-                    background: none !important;
-                    border: none !important;
-                    padding: 0.2rem 0.5rem !important;
-                    text-align: left !important;
-                    font-size: 0.9rem !important;
-                    color: var(--text-color) !important;
-                    width: 100% !important;
-                    margin: 0 !important;
+                .file-button {
+                    text-align: left;
+                    padding: 0.5rem;
+                    margin: 0.2rem 0;
                 }
-                
-                .file-tree button:hover {
-                    background-color: var(--surface-container-highest) !important;
-                }
-                
-                .directory {
-                    font-weight: bold;
-                    color: var(--text-color);
+                .file-button:hover {
+                    background-color: rgba(255, 255, 255, 0.1);
                 }
             </style>
         """, unsafe_allow_html=True)
 
         uploaded_files = st.file_uploader(
-            "Carica file",
-            type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
+            "Upload Files",
+            type=[ext[1:] for ext in self.ALLOWED_EXTENSIONS],
             accept_multiple_files=True,
             key="file_uploader"
         )
@@ -173,34 +109,38 @@ class FileExplorer:
                                     not zip_file.endswith('/')):
                                     try:
                                         content = zip_ref.read(zip_file).decode('utf-8', errors='ignore')
-                                        processed_file = self._process_file_content(content, zip_file)
-                                        st.session_state.uploaded_files[zip_file] = processed_file
-                                        st.session_state.files[zip_file] = processed_file
+                                        if len(content) <= self.MAX_FILE_SIZE:
+                                            processed_file = self._process_file_content(content, zip_file)
+                                            st.session_state.files[zip_file] = processed_file
                                     except Exception as e:
-                                        st.warning(f"Errore nel processare {zip_file}: {str(e)}")
-                                        continue
+                                        st.warning(f"Error processing {zip_file}: {str(e)}")
                     else:
                         content = file.read().decode('utf-8')
-                        processed_file = self._process_file_content(content, file.name)
-                        st.session_state.uploaded_files[file.name] = processed_file
-                        st.session_state.files[file.name] = processed_file
+                        if len(content) <= self.MAX_FILE_SIZE:
+                            processed_file = self._process_file_content(content, file.name)
+                            st.session_state.files[file.name] = processed_file
                 except Exception as e:
-                    st.error(f"Errore nel processare {file.name}: {str(e)}")
+                    st.error(f"Error processing {file.name}: {str(e)}")
 
-        # File tree visualization
-        if st.session_state.uploaded_files:
-            tree = self._create_file_tree(st.session_state.uploaded_files)
-            st.markdown(
-                "<div class='file-tree'><div style='font-family: monospace;'>📁 allegro-io/</div>", 
-                unsafe_allow_html=True
-            )
-            
-            items = sorted(tree.items())
-            for i, (name, node) in enumerate(items):
-                is_last = i == len(items) - 1
-                self._render_tree_node(name, node, "", is_last)
-            
-            st.markdown("</div>", unsafe_allow_html=True)
+        # Display uploaded files
+        if st.session_state.files:
+            st.markdown("### 📁 Uploaded Files")
+            for filename, file_info in st.session_state.files.items():
+                icon = self._get_file_icon(filename)
+                if st.button(
+                    f"{icon} {filename}",
+                    key=f"file_{filename}",
+                    use_container_width=True,
+                    type="secondary"
+                ):
+                    st.session_state.selected_file = filename
+
+        # Display selected file content
+        if st.session_state.selected_file:
+            file_info = st.session_state.files[st.session_state.selected_file]
+            st.markdown("---")
+            st.markdown(f"### 📄 {file_info['name']}")
+            st.code(file_info['content'], language=file_info['language'])
 
 class ChatInterface:
     """Componente per l'interfaccia chat."""
