@@ -112,46 +112,38 @@ class LLMManager:
         # Per task più semplici usa o1-mini
         return "o1-mini"
     
+    
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
-                      file_content: Optional[str] = None, 
-                      context: Optional[str] = None,
-                      model: str = "claude-3-5-sonnet-20241022") -> Dict[str, Any]:
+                  file_content: Optional[str] = None, 
+                  context: Optional[str] = None,
+                  model: str = "claude-3-5-sonnet-20241022") -> Dict[str, Any]:
         """
         Prepara il prompt completo in base al modello.
-        
-        Args:
-            prompt: Prompt base
-            analysis_type: Tipo di analisi
-            file_content: Contenuto del file
-            context: Contesto aggiuntivo
-            model: Modello da utilizzare
-            
-        Returns:
-            Dict[str, Any]: Messaggio formattato per il modello
         """
         messages = []
         
         # Aggiungi system message se supportato
-        if self.model_limits[model]['supports_system_message'] and analysis_type:
-            template = self.system_templates[analysis_type]
-            system_msg = {
+        if self.model_limits[model]['supports_system_message']:
+            system_content = "Sei un assistente esperto in analisi del codice. "
+            if analysis_type and analysis_type in self.system_templates:
+                template = self.system_templates[analysis_type]
+                system_content += f"{template['role']} Focus su: {', '.join(template['focus'])}"
+            
+            messages.append({
                 "role": "system",
-                "content": f"{template['role']} Focus su: {', '.join(template['focus'])}"
-            }
-            messages.append(system_msg)
+                "content": system_content
+            })
         
-        # Prepara il contenuto principale
+        # Prepara il contenuto principale includendo TUTTO il contesto
         main_content = prompt
         
-        # Aggiungi il contenuto del file se presente
-        if file_content:
-            file_section = f"\nFile content:\n```\n{file_content}\n```"
-            main_content += file_section
-        
-        # Aggiungi il contesto se presente
+        # Aggiungi il contesto se presente (prima del file_content specifico)
         if context:
-            context_section = f"\nContext: {context}"
-            main_content += context_section
+            main_content = f"{context}\n\n{main_content}"
+        
+        # Aggiungi il file_content specifico se presente
+        if file_content:
+            main_content += f"\n\nFile specifico analizzato:\n```\n{file_content}\n```"
         
         # Aggiungi il messaggio utente
         messages.append({
@@ -273,39 +265,27 @@ class LLMManager:
             yield error_msg
     
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
-                       file_content: Optional[str] = None, 
-                       context: Optional[str] = None) -> Generator[str, None, None]:
+                   file_content: Optional[str] = None, 
+                   context: Optional[str] = None) -> Generator[str, None, None]:
         """
         Processa una richiesta completa.
-        
-        Args:
-            prompt: Prompt dell'utente
-            analysis_type: Tipo di analisi
-            file_content: Contenuto del file
-            context: Contesto aggiuntivo
-            
-        Yields:
-            str: Chunks della risposta
         """
         # Determina se il task richiede gestione file
-        requires_file_handling = bool(file_content)
+        requires_file_handling = bool(context) or bool(file_content)
         
         # Seleziona il modello appropriato
-        if analysis_type and file_content:
-            model = self.select_model(
-                analysis_type, 
-                len(file_content), 
-                requires_file_handling
-            )
-        else:
-            model = st.session_state.current_model
+        model = self.select_model(
+            analysis_type or "general", 
+            len(context or file_content or prompt), 
+            requires_file_handling
+        )
         
-        # Prepara i messaggi
+        # Prepara i messaggi includendo TUTTO il contesto
         messages = self.prepare_prompt(
             prompt=prompt,
             analysis_type=analysis_type,
             file_content=file_content,
-            context=context,
+            context=context,  # Ora viene sempre incluso!
             model=model
         )
         

@@ -16,9 +16,23 @@ class FileExplorer:
     """Component per l'esplorazione e l'upload dei file."""
     
     def __init__(self):
-        if 'uploaded_files' not in st.session_state:
-            st.session_state.uploaded_files = {}
+        if 'files' not in st.session_state:
             st.session_state.files = {}
+
+    def _add_file(self, filename: str, content: str, language: str):
+        """Metodo unificato per aggiungere file."""
+        processed_file = {
+            'content': content,
+            'language': language,
+            'name': filename,
+            'size': len(content)
+        }
+        
+        # Aggiorna entrambi gli stati in modo consistente
+        st.session_state.files[filename] = processed_file
+        
+        # Trigger rerun per aggiornare l'interfaccia
+        st.rerun()        
             
     def _get_file_icon(self, filename: str) -> str:
         """Restituisce l'icona appropriata per il tipo di file."""
@@ -226,30 +240,6 @@ class ChatInterface:
             *files_preview
         ])
 
-    def _process_response(self, prompt: str) -> str:
-        """Processa la richiesta e genera una risposta."""
-        try:
-            from src.core.llm import LLMManager
-            llm = LLMManager()
-            
-            # Prepara il contesto completo
-            context = ""
-            for filename, file_info in st.session_state.files.items():
-                context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
-
-            # Processa la risposta
-            response = ""
-            with st.spinner("Elaborazione in corso..."):
-                for chunk in llm.process_request(
-                    prompt=prompt,
-                    context=context
-                ):
-                    response += chunk
-            return response
-            
-        except Exception as e:
-            return f"Si è verificato un errore: {str(e)}"
-
     def render_chat_controls(self):
         """Renderizza i controlli per la gestione delle chat."""
         col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
@@ -287,8 +277,48 @@ class ChatInterface:
 
     def render(self):
         """Renderizza l'interfaccia chat."""
+        # Stili per il container dei messaggi
+        st.markdown("""
+            <style>
+                div[data-testid="stChatMessageContainer"] {
+                    min-height: calc(100vh - 200px);
+                    padding-bottom: 100px;
+                    overflow-y: auto;
+                }
+                
+                div[data-testid="stChatMessage"] {
+                    max-width: none !important;
+                    width: auto !important;
+                    margin: 1rem 0 !important;
+                }
+                
+                /* Stile per il codice nei messaggi */
+                .stMarkdown pre {
+                    max-height: 400px;
+                    overflow-y: auto;
+                }
+            </style>
+        """, unsafe_allow_html=True)
+
         # Renderizza i controlli delle chat
         self.render_chat_controls()
+
+        # Gestione rinomina chat
+        if getattr(st.session_state, 'renaming', False):
+            with st.form("rename_chat_form"):
+                new_name = st.text_input("Nuovo nome", value=st.session_state.current_chat)
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.form_submit_button("Salva"):
+                        if new_name and new_name != st.session_state.current_chat:
+                            st.session_state.chats[new_name] = st.session_state.chats.pop(st.session_state.current_chat)
+                            st.session_state.current_chat = new_name
+                        st.session_state.renaming = False
+                        st.rerun()
+                with col2:
+                    if st.form_submit_button("Annulla"):
+                        st.session_state.renaming = False
+                        st.rerun()
         
         # Messages container
         messages_container = st.container()
@@ -298,34 +328,42 @@ class ChatInterface:
             for message in st.session_state.chats[st.session_state.current_chat]['messages']:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
-
-        # Chat input
-        if prompt := st.chat_input("Chiedi qualcosa sul codice..."):
-            # Aggiunge il messaggio dell'utente
-            st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                "role": "user",
-                "content": prompt
-            })
-            
-            # Aggiunge il contesto dei file se necessario
-            files_context = self._get_files_context()
-            if files_context:
-                current_messages = st.session_state.chats[st.session_state.current_chat]['messages']
-                if not any(msg.get('content', '').startswith('📁 Files caricati:') 
-                       for msg in current_messages[-3:]):
-                    st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                        "role": "assistant",
-                        "content": files_context
-                    })
-
-            # Processa e mostra la risposta
-            response = self._process_response(prompt)
-            st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                "role": "assistant",
-                "content": response
-            })
-            
-            st.rerun()
+                    
+                    # Se è un messaggio dell'assistente, mostra opzioni
+                    if message["role"] == "assistant":
+                        with st.expander("🔧 Opzioni", expanded=False):
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("📋 Copia", key=f"copy_{hash(message['content'])}"):
+                                    import pyperclip
+                                    pyperclip.copy(message['content'])
+                                    st.success("Copiato!")
+                            with col2:
+                                if st.button("🔄 Rigenera", key=f"regen_{hash(message['content'])}"):
+                                    # Trova l'ultimo messaggio utente
+                                    user_messages = [msg for msg in st.session_state.chats[st.session_state.current_chat]['messages'] 
+                                                   if msg["role"] == "user"]
+                                    if user_messages:
+                                        last_user_message = user_messages[-1]["content"]
+                                        # Rigenera la risposta
+                                        with st.spinner("Rigenerazione in corso..."):
+                                            context = ""
+                                            if st.session_state.files:
+                                                for filename, file_info in st.session_state.files.items():
+                                                    context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
+                                            
+                                            from src.core.llm import LLMManager
+                                            llm = LLMManager()
+                                            new_response = ""
+                                            for chunk in llm.process_request(
+                                                prompt=last_user_message,
+                                                context=context
+                                            ):
+                                                new_response += chunk
+                                            
+                                            # Sostituisci il messaggio
+                                            message['content'] = new_response
+                                            st.rerun()
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
