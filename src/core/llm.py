@@ -77,6 +77,40 @@ class LLMManager:
         self._call_count = {}
         self._reset_time = {}
     
+    def get_context_from_files(self, files: Dict[str, Any], selected_file: Optional[str] = None) -> str:
+        """
+        Prepara il contesto con tutti i file, evidenziando quello selezionato.
+        
+        Args:
+            files: Dizionario dei file caricati
+            selected_file: Nome del file selezionato (opzionale)
+            
+        Returns:
+            str: Contesto formattato con tutti i file
+        """
+        if not files:
+            return ""
+            
+        context_parts = ["Files disponibili:\n\n"]
+        
+        # Prima il file selezionato, se presente
+        if selected_file and selected_file in files:
+            file_info = files[selected_file]
+            context_parts.append(
+                f"File selezionato - {selected_file}:\n"
+                f"```{file_info['language']}\n{file_info['content']}\n```\n\n"
+            )
+        
+        # Poi gli altri file
+        for filename, file_info in files.items():
+            if filename != selected_file:
+                context_parts.append(
+                    f"File: {filename}\n"
+                    f"```{file_info['language']}\n{file_info['content']}\n```\n\n"
+                )
+                
+        return "".join(context_parts)
+
     def get_files_context(self, files: Dict[str, Any], selected_file: Optional[str] = None) -> str:
         """
         Prepara il contesto con tutti i file, evidenziando quello selezionato.

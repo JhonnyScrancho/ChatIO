@@ -306,10 +306,10 @@ def main():
                 current_chat['messages'].append({"role": "user", "content": prompt})
                 
                 # Preparazione del contesto usando LLMManager
-                context = clients['llm'].get_files_context(
-                    st.session_state.files,
-                    st.session_state.selected_file
-                )
+                context = clients['llm'].get_context_from_files(
+                st.session_state.files,
+                st.session_state.selected_file
+            )
                 
                 with st.spinner("Elaborazione in corso..."):
                     try:
