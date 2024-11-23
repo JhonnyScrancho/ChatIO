@@ -351,11 +351,11 @@ def render_main_layout():
             current_chat = st.session_state.chats[st.session_state.current_chat]
             current_chat['messages'].append({"role": "user", "content": prompt})
             
-            # Get context from selected file
-            context = ""
-            if st.session_state.selected_file:
-                file_info = st.session_state.files[st.session_state.selected_file]
-                context = f"Current file: {file_info['name']}\n```{file_info['language']}\n{file_info['content']}\n```\n\n"
+            # Get context from ALL files
+            context = clients['llm'].get_files_context(
+                st.session_state.files,
+                st.session_state.selected_file
+            )
             
             with st.spinner("Elaborazione in corso..."):
                 response = "".join(list(clients['llm'].process_request(prompt, context=context)))
