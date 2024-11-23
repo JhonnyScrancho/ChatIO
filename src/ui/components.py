@@ -4,20 +4,22 @@ UI components for Allegro IO Code Assistant.
 
 import streamlit as st
 from datetime import datetime
-from src.core.session import SessionManager
-from src.core.files import FileManager
-from src.core.llm import LLMManager
 from typing import Dict, Any
+import os
+from zipfile import ZipFile
+from io import BytesIO
+from pygments import highlight
+from pygments.lexers import get_lexer_for_filename, TextLexer
+from pygments.formatters import HtmlFormatter
 
 class FileExplorer:
     """Component per l'esplorazione e l'upload dei file."""
     
     def __init__(self):
-        self.session = SessionManager()
-        self.file_manager = FileManager()
         if 'uploaded_files' not in st.session_state:
             st.session_state.uploaded_files = {}
-
+            st.session_state.files = {}
+            
     def _get_file_icon(self, filename: str) -> str:
         """Restituisce l'icona appropriata per il tipo di file."""
         ext = filename.split('.')[-1].lower() if '.' in filename else ''
@@ -52,21 +54,17 @@ class FileExplorer:
         return tree
 
     def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", is_last: bool = True, full_path: str = ""):
-        """Renderizza un nodo dell'albero dei file con chiavi uniche."""
-        # Definisci i caratteri per l'albero
+        """Renderizza un nodo dell'albero dei file."""
         PIPE = "│   "
         ELBOW = "└── "
         TEE = "├── "
         
-        # Scegli il connettore appropriato
         connector = ELBOW if is_last else TEE
-        
-        # Costruisci il path completo per questo nodo
         current_full_path = f"{full_path}/{path}" if full_path else path
         
         if isinstance(node, dict) and 'content' not in node:
-            # È una directory
-            st.markdown(f"<div style='font-family: monospace; white-space: pre;'>{prefix}{connector}{path}/</div>", 
+            # Directory
+            st.markdown(f"<div style='font-family: monospace; white-space: pre;'>{prefix}{connector}📁 {path}/</div>", 
                        unsafe_allow_html=True)
             
             items = sorted(node.items())
@@ -81,10 +79,11 @@ class FileExplorer:
                     current_full_path
                 )
         else:
-            # È un file - usa il path completo per la chiave
+            # File
+            icon = self._get_file_icon(path)
             unique_key = f"file_{current_full_path.replace('/', '_')}"
             if st.button(
-                f"{prefix}{connector}{path}",
+                f"{prefix}{connector}{icon} {path}",
                 key=unique_key,
                 use_container_width=True,
                 type="secondary"
@@ -92,73 +91,93 @@ class FileExplorer:
                 st.session_state.selected_file = current_full_path
                 st.session_state.current_file = current_full_path
 
+    def _process_file_content(self, content: str, filename: str) -> Dict[str, Any]:
+        """Processa il contenuto del file."""
+        try:
+            lexer = get_lexer_for_filename(filename)
+            language = lexer.name.lower()
+        except:
+            language = 'text'
+            
+        formatter = HtmlFormatter(
+            style='monokai',
+            linenos=True,
+            cssclass='source'
+        )
+        
+        highlighted = highlight(content, lexer, formatter)
+        
+        return {
+            'content': content,
+            'language': language,
+            'name': filename,
+            'highlighted': highlighted,
+            'size': len(content)
+        }
+
     def render(self):
         """Renderizza il componente."""
+        st.markdown("""
+            <style>
+                .file-tree button {
+                    background: none !important;
+                    border: none !important;
+                    padding: 0.2rem 0.5rem !important;
+                    text-align: left !important;
+                    font-size: 0.9rem !important;
+                    color: var(--text-color) !important;
+                    width: 100% !important;
+                    margin: 0 !important;
+                }
+                
+                .file-tree button:hover {
+                    background-color: var(--surface-container-highest) !important;
+                }
+                
+                .directory {
+                    font-weight: bold;
+                    color: var(--text-color);
+                }
+            </style>
+        """, unsafe_allow_html=True)
+
         uploaded_files = st.file_uploader(
-            "Drag and drop files here",
+            "Carica file",
             type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
             accept_multiple_files=True,
-            key="file_uploader"  # Added unique key for uploader
+            key="file_uploader"
         )
 
         if uploaded_files:
             for file in uploaded_files:
                 try:
                     if file.name.endswith('.zip'):
-                        import zipfile
-                        import io
-                        
-                        zip_content = zipfile.ZipFile(io.BytesIO(file.read()))
-                        for zip_file in zip_content.namelist():
-                            if not zip_file.startswith('__') and not zip_file.startswith('.'):
-                                try:
-                                    content = zip_content.read(zip_file).decode('utf-8', errors='ignore')
-                                    st.session_state.uploaded_files[zip_file] = {
-                                        'content': content,
-                                        'language': zip_file.split('.')[-1],
-                                        'name': zip_file
-                                    }
-                                except Exception as e:
-                                    continue
+                        with ZipFile(BytesIO(file.read()), 'r') as zip_ref:
+                            for zip_file in zip_ref.namelist():
+                                if (not zip_file.startswith('__') and 
+                                    not zip_file.startswith('.') and 
+                                    not zip_file.endswith('/')):
+                                    try:
+                                        content = zip_ref.read(zip_file).decode('utf-8', errors='ignore')
+                                        processed_file = self._process_file_content(content, zip_file)
+                                        st.session_state.uploaded_files[zip_file] = processed_file
+                                        st.session_state.files[zip_file] = processed_file
+                                    except Exception as e:
+                                        st.warning(f"Errore nel processare {zip_file}: {str(e)}")
+                                        continue
                     else:
                         content = file.read().decode('utf-8')
-                        st.session_state.uploaded_files[file.name] = {
-                            'content': content,
-                            'language': file.name.split('.')[-1],
-                            'name': file.name
-                        }
+                        processed_file = self._process_file_content(content, file.name)
+                        st.session_state.uploaded_files[file.name] = processed_file
+                        st.session_state.files[file.name] = processed_file
                 except Exception as e:
-                    st.error(f"Error processing {file.name}: {str(e)}")
+                    st.error(f"Errore nel processare {file.name}: {str(e)}")
 
         # File tree visualization
         if st.session_state.uploaded_files:
-            st.markdown("""
-                <style>
-                    .stButton button {
-                        background: none !important;
-                        border: none !important;
-                        padding: 0 !important;
-                        font-family: monospace !important;
-                        color: inherit !important;
-                        text-align: left !important;
-                        width: 100% !important;
-                        margin: 0 !important;
-                        height: auto !important;
-                        line-height: 1.5 !important;
-                    }
-                    .stButton button:hover {
-                        color: #ff4b4b !important;
-                    }
-                    .directory {
-                        color: #666;
-                        font-family: monospace;
-                    }
-                </style>
-            """, unsafe_allow_html=True)
-            
             tree = self._create_file_tree(st.session_state.uploaded_files)
             st.markdown(
-                "<div style='font-family: monospace;'>allegro-io/</div>", 
+                "<div class='file-tree'><div style='font-family: monospace;'>📁 allegro-io/</div>", 
                 unsafe_allow_html=True
             )
             
@@ -166,19 +185,19 @@ class FileExplorer:
             for i, (name, node) in enumerate(items):
                 is_last = i == len(items) - 1
                 self._render_tree_node(name, node, "", is_last)
+            
+            st.markdown("</div>", unsafe_allow_html=True)
 
 class ChatInterface:
     """Componente per l'interfaccia chat."""
     
     def __init__(self):
-        self.session = SessionManager()
-        self.llm = LLMManager()
         if 'chats' not in st.session_state:
             st.session_state.chats = {
                 'Chat principale': {
                     'messages': [{
                         "role": "assistant",
-                        "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
+                        "content": "Ciao! Carica dei file e fammi delle domande su di essi."
                     }],
                     'created_at': datetime.now().isoformat()
                 }
@@ -187,40 +206,41 @@ class ChatInterface:
 
     def _format_file_preview(self, file_info):
         """Formatta l'anteprima del file per la chat."""
-        return f"""
-```{file_info['language']}
-{file_info['content'][:200]}... 
+        preview_length = min(200, len(file_info['content']))
+        return f"""```{file_info['language']}
+{file_info['content'][:preview_length]}{'...' if preview_length < len(file_info['content']) else ''}
 ```
-[File completo: {file_info['name']}]
-"""
+[File: {file_info['name']} - {len(file_info['content'])} bytes]"""
 
     def _get_files_context(self):
         """Recupera il contesto dei file per la chat."""
-        if not st.session_state.get('uploaded_files'):
+        if not st.session_state.files:
             return None
             
         files_preview = []
-        for filename, file_info in st.session_state.uploaded_files.items():
+        for filename, file_info in st.session_state.files.items():
             files_preview.append(self._format_file_preview(file_info))
             
         return "\n".join([
-            "📁 **Files caricati:**",
+            "📁 Files caricati:",
             *files_preview
         ])
 
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
         try:
-            # Prepara il contesto con tutti i file caricati
+            from src.core.llm import LLMManager
+            llm = LLMManager()
+            
+            # Prepara il contesto completo
             context = ""
-            if st.session_state.get('uploaded_files'):
-                for filename, file_info in st.session_state.uploaded_files.items():
-                    context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
+            for filename, file_info in st.session_state.files.items():
+                context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
 
             # Processa la risposta
             response = ""
-            with st.spinner("Analyzing code..."):
-                for chunk in self.llm.process_request(
+            with st.spinner("Elaborazione in corso..."):
+                for chunk in llm.process_request(
                     prompt=prompt,
                     context=context
                 ):
@@ -228,28 +248,15 @@ class ChatInterface:
             return response
             
         except Exception as e:
-            return f"Mi dispiace, si è verificato un errore: {str(e)}"
-    
+            return f"Si è verificato un errore: {str(e)}"
+
     def render_chat_controls(self):
         """Renderizza i controlli per la gestione delle chat."""
-        st.markdown("""
-            <style>
-                .chat-controls {
-                    display: flex;
-                    gap: 1rem;
-                    margin-bottom: 1rem;
-                }
-                .stSelectbox {
-                    flex-grow: 1;
-                }
-            </style>
-        """, unsafe_allow_html=True)
-
         col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
         
         with col1:
             current_chat = st.selectbox(
-                "Seleziona chat",
+                "Chat attiva",
                 options=list(st.session_state.chats.keys()),
                 index=list(st.session_state.chats.keys()).index(st.session_state.current_chat)
             )
@@ -280,20 +287,38 @@ class ChatInterface:
 
     def render(self):
         """Renderizza l'interfaccia chat."""
+        # Renderizza i controlli delle chat
+        self.render_chat_controls()
+        
+        # Messages container
+        messages_container = st.container()
+        
         # Mostra i messaggi della chat corrente
-        for message in st.session_state.chats[st.session_state.current_chat]['messages']:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+        with messages_container:
+            for message in st.session_state.chats[st.session_state.current_chat]['messages']:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
 
-        # Solo input chat, no controlli aggiuntivi
-        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
-            # Aggiungi il messaggio dell'utente
+        # Chat input
+        if prompt := st.chat_input("Chiedi qualcosa sul codice..."):
+            # Aggiunge il messaggio dell'utente
             st.session_state.chats[st.session_state.current_chat]['messages'].append({
                 "role": "user",
                 "content": prompt
             })
             
-            # Genera e aggiungi la risposta
+            # Aggiunge il contesto dei file se necessario
+            files_context = self._get_files_context()
+            if files_context:
+                current_messages = st.session_state.chats[st.session_state.current_chat]['messages']
+                if not any(msg.get('content', '').startswith('📁 Files caricati:') 
+                       for msg in current_messages[-3:]):
+                    st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                        "role": "assistant",
+                        "content": files_context
+                    })
+
+            # Processa e mostra la risposta
             response = self._process_response(prompt)
             st.session_state.chats[st.session_state.current_chat]['messages'].append({
                 "role": "assistant",
@@ -305,64 +330,272 @@ class ChatInterface:
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
     
-    def __init__(self):
-        self.session = SessionManager()
-
     def render(self):
         """Renderizza il componente."""
         selected_file = st.session_state.get('selected_file')
         if selected_file and (file_info := st.session_state.uploaded_files.get(selected_file)):
             st.markdown(f"**{file_info['name']}** ({file_info['language']})")
             st.code(file_info['content'], language=file_info['language'])
+            
+            # Stats
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Linee di codice", len(file_info['content'].splitlines()))
+            with col2:
+                st.metric("Dimensione", f"{len(file_info['content'])} bytes")
         else:
-            st.info("Select a file from the sidebar to view its content")
+            st.info("Seleziona un file dalla sidebar per visualizzarlo")
 
 class ModelSelector:
     """Componente per la selezione del modello LLM."""
-    
-    def __init__(self):
-        self.session = SessionManager()
     
     def render(self):
         """Renderizza il componente."""
         models = {
             'o1-mini': '🚀 O1 Mini (Fast)',
             'o1-preview': '🔍 O1 Preview (Advanced)',
-            'claude-3-sonnet': '🎭 Claude 3 Sonnet (Detailed)'
+            'claude-3-5-sonnet-20241022': '🎭 Claude 3.5 Sonnet (Detailed)'
         }
         
-        current_model = self.session.get_current_model()
+        current_model = st.session_state.get('current_model', 'o1-mini')
         selected = st.selectbox(
-            "Select Model",
+            "Modello",
             list(models.keys()),
             format_func=lambda x: models[x],
             index=list(models.keys()).index(current_model)
         )
         
         if selected != current_model:
-            self.session.set_current_model(selected)
+            st.session_state.current_model = selected
+            
+        # Mostra info sul modello
+        if st.checkbox("Mostra dettagli modello"):
+            model_info = {
+                'o1-mini': {
+                    'context': '128K tokens',
+                    'best_for': 'Quick fixes, simple analysis',
+                    'cost': '$0.001/1K tokens'
+                },
+                'o1-preview': {
+                    'context': '128K tokens',
+                    'best_for': 'Complex analysis, architecture review',
+                    'cost': '$0.01/1K tokens'
+                },
+                'claude-3-5-sonnet-20241022': {
+                    'context': '200K tokens',
+                    'best_for': 'Large codebases, detailed explanations',
+                    'cost': '$0.008/1K tokens'
+                }
+            }
+            
+            info = model_info[selected]
+            st.markdown(f"""
+            **Dettagli Modello:**
+            - Contesto: {info['context']}
+            - Ideale per: {info['best_for']}
+            - Costo: {info['cost']}
+            """)
 
 class StatsDisplay:
     """Componente per la visualizzazione delle statistiche."""
     
-    def __init__(self):
-        self.session = SessionManager()
-    
+    def _format_number(self, num: float) -> str:
+        """Formatta un numero per la visualizzazione."""
+        if num >= 1_000_000:
+            return f"{num/1_000_000:.1f}M"
+        elif num >= 1_000:
+            return f"{num/1_000:.1f}K"
+        return str(int(num))
+
+    def _get_token_trend(self) -> float:
+        """Calcola il trend dei token utilizzati."""
+        if 'token_history' not in st.session_state:
+            st.session_state.token_history = []
+        
+        history = st.session_state.token_history
+        if len(history) >= 2:
+            return ((history[-1] - history[-2]) / history[-2]) * 100 if history[-2] != 0 else 0
+        return 0
+
     def render(self):
         """Renderizza il componente."""
-        stats = self.session.get_stats()
-        col1, col2 = st.columns(2)
+        # Aggiorna la storia dei token
+        if 'token_history' not in st.session_state:
+            st.session_state.token_history = []
+        st.session_state.token_history.append(st.session_state.get('token_count', 0))
+        if len(st.session_state.token_history) > 10:
+            st.session_state.token_history.pop(0)
+
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             st.metric(
-                "Tokens Used",
-                f"{stats['token_count']:,}",
-                delta=None
+                "Token utilizzati",
+                self._format_number(st.session_state.get('token_count', 0)),
+                delta=f"{self._get_token_trend():.1f}%",
+                delta_color="inverse"
             )
         
         with col2:
             st.metric(
-                "Cost ($)",
-                f"${stats['cost']:.3f}",
+                "Costo ($)",
+                f"${st.session_state.get('cost', 0.0):.3f}",
                 delta=None
             )
+        
+        with col3:
+            st.metric(
+                "File analizzati",
+                len(st.session_state.get('files', {})),
+                delta=None
+            )
+            
+        if st.checkbox("Mostra statistiche dettagliate"):
+            st.markdown("### 📊 Statistiche dettagliate")
+            
+            # Statistiche per tipo di file
+            file_types = {}
+            for file_info in st.session_state.get('files', {}).values():
+                lang = file_info['language']
+                file_types[lang] = file_types.get(lang, 0) + 1
+            
+            if file_types:
+                st.markdown("#### Distribuzione tipi di file")
+                for lang, count in sorted(file_types.items(), key=lambda x: x[1], reverse=True):
+                    st.progress(count / len(st.session_state['files']), text=f"{lang}: {count}")
+            
+            # Utilizzo del modello
+            st.markdown("#### Utilizzo modelli")
+            if 'model_usage' not in st.session_state:
+                st.session_state.model_usage = {
+                    'o1-mini': 0,
+                    'o1-preview': 0,
+                    'claude-3-5-sonnet-20241022': 0
+                }
+            
+            for model, count in st.session_state.model_usage.items():
+                st.progress(
+                    count / (sum(st.session_state.model_usage.values()) or 1),
+                    text=f"{model}: {count} richieste"
+                )
+
+class FileAnalyzer:
+    """Componente per l'analisi dei file."""
+    
+    def _count_lines_by_type(self, content: str) -> Dict[str, int]:
+        """Conta le linee per tipo (codice, commenti, vuote)."""
+        lines = content.split('\n')
+        stats = {
+            'code': 0,
+            'comments': 0,
+            'blank': 0
+        }
+        
+        in_multiline_comment = False
+        for line in lines:
+            line = line.strip()
+            
+            if not line:
+                stats['blank'] += 1
+            elif line.startswith(('/*', '/**')) and '*/' not in line:
+                in_multiline_comment = True
+                stats['comments'] += 1
+            elif '*/' in line and in_multiline_comment:
+                in_multiline_comment = False
+                stats['comments'] += 1
+            elif in_multiline_comment:
+                stats['comments'] += 1
+            elif line.startswith(('#', '//', '<!--')):
+                stats['comments'] += 1
+            else:
+                stats['code'] += 1
+                
+        return stats
+
+    def _analyze_complexity(self, content: str, language: str) -> Dict[str, Any]:
+        """Analizza la complessità del codice."""
+        metrics = {
+            'functions': 0,
+            'classes': 0,
+            'imports': 0,
+            'max_line_length': 0,
+            'avg_line_length': 0
+        }
+        
+        lines = content.split('\n')
+        total_length = 0
+        
+        for line in lines:
+            # Line length metrics
+            line_length = len(line)
+            metrics['max_line_length'] = max(metrics['max_line_length'], line_length)
+            total_length += line_length
+            
+            # Language specific metrics
+            if language == 'python':
+                if 'def ' in line:
+                    metrics['functions'] += 1
+                elif 'class ' in line:
+                    metrics['classes'] += 1
+                elif 'import ' in line or 'from ' in line and ' import ' in line:
+                    metrics['imports'] += 1
+            elif language in ['javascript', 'typescript']:
+                if 'function ' in line or '=>' in line:
+                    metrics['functions'] += 1
+                elif 'class ' in line:
+                    metrics['classes'] += 1
+                elif 'import ' in line:
+                    metrics['imports'] += 1
+                    
+        if lines:
+            metrics['avg_line_length'] = total_length / len(lines)
+            
+        return metrics
+
+    def render(self):
+        """Renderizza il componente."""
+        selected_file = st.session_state.get('selected_file')
+        if selected_file and (file_info := st.session_state.files.get(selected_file)):
+            st.markdown("### 🔍 Analisi File")
+            
+            # Statistiche di base
+            line_stats = self._count_lines_by_type(file_info['content'])
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Linee di codice", line_stats['code'])
+            with col2:
+                st.metric("Commenti", line_stats['comments'])
+            with col3:
+                st.metric("Linee vuote", line_stats['blank'])
+            
+            # Analisi complessità
+            st.markdown("#### Metriche di complessità")
+            metrics = self._analyze_complexity(file_info['content'], file_info['language'])
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Funzioni", metrics['functions'])
+            with col2:
+                st.metric("Classi", metrics['classes'])
+            with col3:
+                st.metric("Import", metrics['imports'])
+            
+            # Metriche di leggibilità
+            st.markdown("#### Leggibilità")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Lunghezza max riga", metrics['max_line_length'])
+            with col2:
+                st.metric("Lunghezza media riga", f"{metrics['avg_line_length']:.1f}")
+            
+            if st.checkbox("Mostra distribuzione linee"):
+                total_lines = sum(line_stats.values())
+                st.markdown("#### Distribuzione linee")
+                for category, count in line_stats.items():
+                    percentage = (count / total_lines) * 100
+                    st.progress(percentage / 100, 
+                              text=f"{category.title()}: {count} ({percentage:.1f}%)")
+        else:
+            st.info("Seleziona un file per visualizzare l'analisi")
