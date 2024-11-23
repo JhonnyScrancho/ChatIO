@@ -84,6 +84,13 @@ class LLMManager:
     def get_files_context(self, files: Dict[str, Any], selected_file: Optional[str] = None) -> str:
         """
         Prepara il contesto con tutti i file, evidenziando quello selezionato.
+        
+        Args:
+            files: Dizionario dei file caricati
+            selected_file: Nome del file selezionato (opzionale)
+            
+        Returns:
+            str: Contesto formattato con tutti i file
         """
         if not files:
             return ""
@@ -133,11 +140,10 @@ class LLMManager:
         # Per task più semplici usa o1-mini
         return "o1-mini"
     
-    
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
-                  file_content: Optional[str] = None, 
-                  context: Optional[str] = None,
-                  model: str = "claude-3-5-sonnet-20241022") -> Dict[str, Any]:
+                      file_content: Optional[str] = None, 
+                      context: Optional[str] = None,
+                      model: str = "claude-3-5-sonnet-20241022") -> Dict[str, Any]:
         """
         Prepara il prompt completo in base al modello.
         """
@@ -155,21 +161,27 @@ class LLMManager:
                 "content": system_content
             })
         
-        # Prepara il contenuto principale includendo TUTTO il contesto
-        main_content = prompt
+        # Prepara il contenuto principale
+        main_content = []
         
-        # Aggiungi il contesto se presente (prima del file_content specifico)
+        # Aggiungi il contesto se presente
         if context:
-            main_content = f"{context}\n\n{main_content}"
+            main_content.append(context)
+        
+        # Aggiungi il prompt dell'utente
+        main_content.append(prompt)
         
         # Aggiungi il file_content specifico se presente
         if file_content:
-            main_content += f"\n\nFile specifico analizzato:\n```\n{file_content}\n```"
+            main_content.append(f"\nFile analizzato:\n```\n{file_content}\n```")
+        
+        # Unisci tutto il contenuto
+        final_content = "\n\n".join(main_content)
         
         # Aggiungi il messaggio utente
         messages.append({
             "role": "user",
-            "content": main_content
+            "content": final_content
         })
         
         return messages
