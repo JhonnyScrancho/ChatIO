@@ -112,40 +112,7 @@ class LLMManager:
         # Per task più semplici usa o1-mini
         return "o1-mini"
     
-    def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
-                  file_content: Optional[str] = None, 
-                  context: Optional[str] = None,
-                  model: str = "claude-3-5-sonnet-20241022") -> List[Dict]:
-        """
-        Prepara il prompt in formato semplificato.
-        """
-        messages = []
-        
-        # Aggiungi system message se necessario
-        if self.model_limits[model]['supports_system_message'] and analysis_type:
-            template = self.system_templates[analysis_type]
-            system_msg = {
-                "role": "system",
-                "content": f"{template['role']} Focus su: {', '.join(template['focus'])}"
-            }
-            messages.append(system_msg)
-        
-        # Prepara il contenuto principale
-        main_content = prompt
-        
-        if file_content:
-            main_content += f"\nFile content:\n```\n{file_content}\n```"
-        
-        if context:
-            main_content += f"\nContext: {context}"
-        
-        # Aggiungi il messaggio utente
-        messages.append({
-            "role": "user",
-            "content": main_content
-        })
-        
-        return messages
+    
     
     def _enforce_rate_limit(self, model: str):
         """
@@ -209,11 +176,11 @@ class LLMManager:
             # Fallback a Claude in caso di errore
             yield from self._handle_claude_completion(messages)
     
-    
+    # src/core/llm.py
 
     def _handle_claude_completion(self, messages: List[Dict]) -> Generator[str, None, None]:
         """
-        Gestisce le chiamate a Claude con gestione corretta dello streaming.
+        Gestisce le chiamate a Claude senza system message.
         
         Args:
             messages: Lista di messaggi
@@ -224,38 +191,33 @@ class LLMManager:
         try:
             self._enforce_rate_limit("claude-3-5-sonnet-20241022")
             
-            # Prepara i messaggi
+            # Converti solo i messaggi utente, ignora i system messages
             user_messages = []
-            system_content = None
             
             for msg in messages:
-                if msg["role"] == "system":
-                    system_content = [{"type": "text", "text": msg["content"]}]
-                elif msg["role"] == "user":
+                if msg["role"] == "user":
                     user_messages.append({
                         "role": "user",
                         "content": [{"type": "text", "text": msg["content"]}]
                     })
             
             try:
-                # Chiamata API con gestione corretta dello streaming
+                # Chiamata API semplificata senza system message
                 response = self.anthropic_client.messages.create(
                     model="claude-3-5-sonnet-20241022",
                     max_tokens=4096,
                     messages=user_messages,
-                    system=system_content,
                     stream=True
                 )
                 
-                # Gestione corretta degli eventi di streaming
                 for event in response:
-                    # Verifica se l'evento ha del contenuto
                     if hasattr(event, 'content') and event.content:
                         yield event.content[0].text
                         
             except Exception as e:
                 error_details = f"Errore nella chiamata API: {str(e)}"
                 st.error(error_details)
+                st.write("Debug - Messages inviati:", user_messages)  # Debug
                 yield error_details
                 
         except Exception as e:
@@ -265,20 +227,21 @@ class LLMManager:
 
     def test_claude(self):
         """
-        Metodo di test per verificare la connessione con Claude.
+        Metodo di test base per Claude.
         """
         try:
-            test_message = {
-                "role": "user",
-                "content": "Ciao, questo è un test."
-            }
-            
+            # Test con un singolo messaggio semplice
             response = self.anthropic_client.messages.create(
                 model="claude-3-5-sonnet-20241022",
                 max_tokens=100,
                 messages=[{
                     "role": "user",
-                    "content": [{"type": "text", "text": test_message["content"]}]
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Ciao, puoi rispondere con 'ok' per verificare la connessione?"
+                        }
+                    ]
                 }],
                 stream=True
             )
@@ -291,8 +254,30 @@ class LLMManager:
             return True, result
             
         except Exception as e:
+            st.error(f"Errore nel test: {str(e)}")
             return False, str(e)
 
+    def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
+                    file_content: Optional[str] = None, 
+                    context: Optional[str] = None,
+                    model: str = "claude-3-5-sonnet-20241022") -> List[Dict]:
+        """
+        Prepara il prompt senza system message.
+        """
+        # Prepara il contenuto principale
+        main_content = prompt
+        
+        if file_content:
+            main_content += f"\nFile content:\n```\n{file_content}\n```"
+        
+        if context:
+            main_content += f"\nContext: {context}"
+        
+        # Restituisce solo il messaggio utente
+        return [{
+            "role": "user",
+            "content": main_content
+        }]
     
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
                        file_content: Optional[str] = None, 
