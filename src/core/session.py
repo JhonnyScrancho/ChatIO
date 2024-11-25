@@ -25,58 +25,65 @@ class SessionManager:
                 }
             }
             st.session_state.current_chat = 'Chat principale'
-            st.session_state.current_model = 'o1-mini'
+            st.session_state.current_model = 'o1-mini'  # Modello di default
             st.session_state.files = {}
             st.session_state.current_file = None
+            st.session_state.selected_file = None       # Per il file viewer
             st.session_state.token_count = 0
             st.session_state.cost = 0.0
             st.session_state.last_error = None
             st.session_state.debug_mode = False
+            st.session_state.start_time = datetime.now().isoformat()
+            st.session_state.uploaded_files = {}
     
     @staticmethod
     def get_current_model() -> str:
         """Restituisce il modello LLM attualmente selezionato."""
-        return st.session_state.get('current_model', 'o1-mini')
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        return st.session_state.current_model
     
     @staticmethod
     def set_current_model(model: str):
         """Imposta il modello LLM corrente."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         st.session_state.current_model = model
     
     @staticmethod
     def get_current_chat() -> Dict:
         """Restituisce la chat corrente."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         return st.session_state.chats[st.session_state.current_chat]
     
     @staticmethod
     def set_current_chat(chat_name: str):
         """Imposta la chat corrente."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         if chat_name in st.session_state.chats:
             st.session_state.current_chat = chat_name
     
     @staticmethod
     def get_all_chats() -> Dict[str, Dict]:
         """Restituisce tutte le chat."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         return st.session_state.chats
     
     @staticmethod
     def add_message_to_current_chat(message: Dict[str, str]):
         """Aggiunge un messaggio alla chat corrente."""
-        if 'chats' not in st.session_state or st.session_state.current_chat not in st.session_state.chats:
-            SessionManager.init_session()
+        SessionManager.init_session()  # Assicura l'inizializzazione
         st.session_state.chats[st.session_state.current_chat]['messages'].append(message)
     
     @staticmethod
     def get_messages_from_current_chat() -> list:
         """Restituisce i messaggi della chat corrente."""
-        if 'chats' not in st.session_state or st.session_state.current_chat not in st.session_state.chats:
-            SessionManager.init_session()
+        SessionManager.init_session()  # Assicura l'inizializzazione
         return st.session_state.chats[st.session_state.current_chat]['messages']
     
     @staticmethod
     def clear_current_chat():
         """Pulisce i messaggi della chat corrente."""
-        if 'chats' in st.session_state and st.session_state.current_chat in st.session_state.chats:
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        if st.session_state.current_chat in st.session_state.chats:
             st.session_state.chats[st.session_state.current_chat]['messages'] = []
     
     @staticmethod
@@ -90,6 +97,7 @@ class SessionManager:
         Returns:
             bool: True se la chat è stata creata, False se esiste già
         """
+        SessionManager.init_session()  # Assicura l'inizializzazione
         if name not in st.session_state.chats:
             st.session_state.chats[name] = {
                 'messages': [],
@@ -111,6 +119,7 @@ class SessionManager:
         Returns:
             bool: True se la chat è stata rinominata, False se non è possibile
         """
+        SessionManager.init_session()  # Assicura l'inizializzazione
         if old_name in st.session_state.chats and new_name not in st.session_state.chats:
             st.session_state.chats[new_name] = st.session_state.chats.pop(old_name)
             if st.session_state.current_chat == old_name:
@@ -129,6 +138,7 @@ class SessionManager:
         Returns:
             bool: True se la chat è stata eliminata, False se non è possibile
         """
+        SessionManager.init_session()  # Assicura l'inizializzazione
         if name in st.session_state.chats and len(st.session_state.chats) > 1:
             del st.session_state.chats[name]
             if st.session_state.current_chat == name:
@@ -139,41 +149,49 @@ class SessionManager:
     @staticmethod
     def add_file(file_name: str, content: Any):
         """Aggiunge un file processato allo stato."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         st.session_state.files[file_name] = content
     
     @staticmethod
     def get_file(file_name: str) -> Optional[Any]:
         """Recupera un file dallo stato."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         return st.session_state.files.get(file_name)
     
     @staticmethod
     def get_all_files() -> Dict[str, Any]:
         """Recupera tutti i file dallo stato."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         return st.session_state.files
     
     @staticmethod
     def set_current_file(file_name: str):
         """Imposta il file correntemente selezionato."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         st.session_state.current_file = file_name
     
     @staticmethod
     def get_current_file() -> Optional[str]:
         """Restituisce il nome del file correntemente selezionato."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         return st.session_state.current_file
     
     @staticmethod
     def update_token_count(tokens: int):
         """Aggiorna il conteggio dei token utilizzati."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         st.session_state.token_count += tokens
     
     @staticmethod
     def update_cost(amount: float):
         """Aggiorna il costo totale delle richieste LLM."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         st.session_state.cost += amount
     
     @staticmethod
     def get_stats() -> Dict[str, Any]:
         """Restituisce le statistiche correnti della sessione."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         return {
             'token_count': st.session_state.token_count,
             'cost': st.session_state.cost,
@@ -184,14 +202,17 @@ class SessionManager:
     @staticmethod
     def set_error(error: str):
         """Imposta l'ultimo errore verificatosi."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         st.session_state.last_error = error
     
     @staticmethod
     def get_error() -> Optional[str]:
         """Recupera l'ultimo errore."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         return st.session_state.last_error
     
     @staticmethod
     def clear_error():
         """Pulisce l'ultimo errore."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
         st.session_state.last_error = None
