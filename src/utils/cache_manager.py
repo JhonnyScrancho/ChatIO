@@ -1,143 +1,173 @@
+"""
+Gestione della cache per Allegro IO Code Assistant.
+Implementa un sistema di caching con TTL e invalidazione.
+"""
+
 import streamlit as st
-from typing import Any, Optional
+from typing import Any, Optional, Callable
 from datetime import datetime
 import hashlib
 import logging
+from functools import wraps
 
 class CacheManager:
     """Gestisce il caching e l'invalidazione della cache per l'applicazione."""
     
     def __init__(self):
+        """Inizializza il CacheManager."""
         self.logger = logging.getLogger(__name__)
-        # Inizializza il timestamp dell'ultima modifica
-        if 'last_modified' not in st.session_state:
-            st.session_state.last_modified = datetime.now().timestamp()
-            
-        # Inizializza il dizionario per tenere traccia delle cache keys
-        if 'cache_keys' not in st.session_state:
-            st.session_state.cache_keys = {}
+        self._initialize_state()
+    
+    def _initialize_state(self):
+        """Inizializza lo stato della sessione per il caching."""
+        if 'cache_manager' not in st.session_state:
+            st.session_state.cache_manager = {
+                'last_modified': datetime.now().timestamp(),
+                'cache_keys': {},
+                'last_clear_time': datetime.now().isoformat(),
+                'stats': {
+                    'hits': 0,
+                    'misses': 0,
+                    'total_cached': 0
+                }
+            }
     
     @staticmethod
     def generate_cache_key(*args, **kwargs) -> str:
-        """Genera una chiave di cache univoca basata sugli argomenti."""
-        # Combina tutti gli argomenti in una stringa
+        """
+        Genera una chiave di cache univoca basata sugli argomenti.
+        
+        Args:
+            *args: Argomenti posizionali
+            **kwargs: Argomenti nominali
+            
+        Returns:
+            str: Chiave hash univoca
+        """
         key_parts = [str(arg) for arg in args]
         key_parts.extend([f"{k}={v}" for k, v in sorted(kwargs.items())])
         key_string = "|".join(key_parts)
-        
-        # Genera un hash SHA-256
         return hashlib.sha256(key_string.encode()).hexdigest()
     
     def clear_all_caches(self):
-        """Pulisce tutte le cache di Streamlit."""
-        # Pulisci la cache di st.cache_data
+        """Pulisce tutte le cache dell'applicazione."""
+        self._initialize_state()
         st.cache_data.clear()
-        
-        # Pulisci la cache di st.cache_resource
         st.cache_resource.clear()
-        
-        # Reset del timestamp di modifica
-        st.session_state.last_modified = datetime.now().timestamp()
-        
-        # Reset delle cache keys
-        st.session_state.cache_keys = {}
-        
-        self.logger.info("Tutte le cache sono state pulite")
+        st.session_state.cache_manager['last_modified'] = datetime.now().timestamp()
+        st.session_state.cache_manager['cache_keys'] = {}
+        st.session_state.cache_manager['last_clear_time'] = datetime.now().isoformat()
+        st.session_state.cache_manager['stats'] = {
+            'hits': 0,
+            'misses': 0,
+            'total_cached': 0
+        }
+        self.logger.info("Cache pulita completamente")
     
     def invalidate_cache_key(self, key: str):
-        """Invalida una specifica chiave di cache."""
-        if key in st.session_state.cache_keys:
-            del st.session_state.cache_keys[key]
-            self.logger.info(f"Cache key {key} invalidata")
-    
-    def cache_data(self, ttl_seconds: Optional[int] = None):
         """
-        Decoratore personalizzato per il caching dei dati con gestione dell'invalidazione.
+        Invalida una specifica chiave di cache.
+        
+        Args:
+            key: Chiave da invalidare
+        """
+        self._initialize_state()
+        if key in st.session_state.cache_manager['cache_keys']:
+            del st.session_state.cache_manager['cache_keys'][key]
+            self.logger.info(f"Cache key '{key}' invalidata")
+    
+    def cache_data(self, ttl_seconds: Optional[int] = None) -> Callable:
+        """
+        Decoratore per il caching dei dati con TTL.
         
         Args:
             ttl_seconds: Tempo di vita della cache in secondi
+            
+        Returns:
+            Callable: Funzione decorata
         """
-        def decorator(func):
-            def wrapper(*args, **kwargs):
-                # Genera una chiave di cache per questa chiamata
+        def decorator(func: Callable) -> Callable:
+            @wraps(func)
+            def wrapper(*args, **kwargs) -> Any:
+                self._initialize_state()
+                
+                # Genera chiave cache
                 cache_key = self.generate_cache_key(func.__name__, *args, **kwargs)
                 
-                # Verifica se il dato è in cache e se è ancora valido
-                cached_data = st.session_state.cache_keys.get(cache_key)
-                
-                if cached_data is not None:
-                    timestamp, data = cached_data
+                # Verifica cache
+                cache_data = st.session_state.cache_manager['cache_keys'].get(cache_key)
+                if cache_data is not None:
+                    timestamp, data = cache_data
+                    current_time = datetime.now().timestamp()
                     
-                    # Verifica TTL se specificato
-                    if ttl_seconds is not None:
-                        current_time = datetime.now().timestamp()
-                        if current_time - timestamp <= ttl_seconds:
-                            return data
-                    else:
+                    # Verifica TTL
+                    if ttl_seconds is None or (current_time - timestamp) <= ttl_seconds:
+                        st.session_state.cache_manager['stats']['hits'] += 1
                         return data
                 
-                # Se non in cache o cache invalida, esegui la funzione
+                # Esegue la funzione e cachea il risultato
+                st.session_state.cache_manager['stats']['misses'] += 1
                 result = func(*args, **kwargs)
                 
-                # Salva il risultato in cache
-                st.session_state.cache_keys[cache_key] = (
+                st.session_state.cache_manager['cache_keys'][cache_key] = (
                     datetime.now().timestamp(),
                     result
                 )
+                st.session_state.cache_manager['stats']['total_cached'] += 1
                 
                 return result
+            
             return wrapper
         return decorator
     
-    def watch_file_changes(self, filepath: str):
+    def get_cache_info(self) -> dict:
         """
-        Monitora i cambiamenti di un file e invalida la cache se necessario.
+        Restituisce informazioni sullo stato attuale della cache.
         
-        Args:
-            filepath: Percorso del file da monitorare
+        Returns:
+            dict: Statistiche e informazioni sulla cache
         """
-        try:
-            import os
-            current_mtime = os.path.getmtime(filepath)
-            
-            # Verifica se il file è stato modificato
-            if current_mtime > st.session_state.last_modified:
-                self.logger.info(f"Rilevata modifica del file: {filepath}")
-                self.clear_all_caches()
-                st.experimental_rerun()
-                
-        except Exception as e:
-            self.logger.error(f"Errore nel monitoraggio del file {filepath}: {e}")
+        self._initialize_state()
+        stats = st.session_state.cache_manager['stats']
+        total_requests = stats['hits'] + stats['misses']
+        hit_ratio = (stats['hits'] / total_requests * 100) if total_requests > 0 else 0
+        
+        return {
+            'ultimo_aggiornamento': datetime.fromtimestamp(
+                st.session_state.cache_manager['last_modified']
+            ).isoformat(),
+            'chiavi_cache': len(st.session_state.cache_manager['cache_keys']),
+            'ultima_pulizia': st.session_state.cache_manager['last_clear_time'],
+            'statistiche': {
+                'hit_ratio': f"{hit_ratio:.1f}%",
+                'cache_hits': stats['hits'],
+                'cache_misses': stats['misses'],
+                'elementi_cachati': stats['total_cached']
+            }
+        }
+    
+    def get_last_clear_time(self) -> str:
+        """
+        Restituisce il timestamp dell'ultima pulizia della cache.
+        
+        Returns:
+            str: Data e ora dell'ultima pulizia
+        """
+        self._initialize_state()
+        return st.session_state.cache_manager['last_clear_time']
+    
+    def monitor_performance(self):
+        """Monitora le performance della cache."""
+        stats = st.session_state.cache_manager['stats']
+        total_requests = stats['hits'] + stats['misses']
+        
+        if total_requests > 1000:  # Monitora solo con un numero significativo di richieste
+            hit_ratio = stats['hits'] / total_requests
+            if hit_ratio < 0.5:  # Hit ratio sotto il 50%
+                self.logger.warning(
+                    f"Performance cache basse: hit ratio {hit_ratio:.1%}. "
+                    "Considerare l'aumento del TTL o la revisione della strategia di caching."
+                )
 
-# Esempio di utilizzo nel codice principale
+# Istanza singleton del CacheManager
 cache_manager = CacheManager()
-
-# Decoratore per le funzioni che necessitano di caching
-@cache_manager.cache_data(ttl_seconds=300)  # 5 minuti di TTL
-def process_data(data: Any) -> Any:
-    # Elaborazione costosa
-    return processed_result
-
-# Aggiungere questo nel main loop dell'applicazione
-def setup_file_monitoring():
-    """Configura il monitoraggio dei file per il ricaricamento automatico."""
-    import os
-    
-    # Lista dei file da monitorare
-    files_to_watch = [
-        'main.py',
-        'src/core/llm.py',
-        'src/core/files.py',
-        'src/core/session.py',
-        'src/ui/components.py',
-        'src/ui/layout.py'
-    ]
-    
-    for file in files_to_watch:
-        if os.path.exists(file):
-            cache_manager.watch_file_changes(file)
-
-# Nel main.py, aggiungere:
-if __name__ == "__main__":
-    setup_file_monitoring()
-    main()

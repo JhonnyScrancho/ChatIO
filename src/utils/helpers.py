@@ -1,5 +1,5 @@
 """
-Utility functions for Allegro IO Code Assistant.
+Funzioni di utilità per Allegro IO Code Assistant.
 """
 
 import re
@@ -52,7 +52,7 @@ def sanitize_input(text: str) -> str:
     text = html.escape(text)
     return text
 
-@cache_manager.cache_data(ttl=3600)
+@cache_manager.cache_data(ttl_seconds=3600)
 def estimate_request_cost(model: str, text_length: int) -> float:
     """
     Stima il costo di una richiesta LLM.
@@ -65,6 +65,12 @@ def estimate_request_cost(model: str, text_length: int) -> float:
         float: Costo stimato in USD
     """
     tokens = calculate_tokens(text_length)
+    
+    # Assicura che la configurazione esista in session state
+    if 'config' not in st.session_state:
+        from src.utils.config import load_config
+        st.session_state.config = load_config()
+    
     cost_map = st.session_state.config['MODEL_CONFIG'][model]['cost_per_1k']
     
     # Stima 40% input, 60% output
@@ -89,6 +95,7 @@ def format_file_size(size_bytes: int) -> str:
         size_bytes /= 1024
     return f"{size_bytes:.1f} GB"
 
+@cache_manager.cache_data(ttl_seconds=60)
 def parse_code_context(files: Dict[str, Any]) -> str:
     """
     Genera un contesto leggibile dai file di codice.
@@ -101,14 +108,17 @@ def parse_code_context(files: Dict[str, Any]) -> str:
     """
     context = []
     total_size = 0
-    for name, (content, lang, size) in files.items():
+    
+    for name, info in files.items():
+        size = info.get('size', 0)
+        lang = info.get('language', 'text')
         total_size += size
         context.append(f"- {name}: {format_file_size(size)} ({lang})")
     
-    header = f"Progetto ({format_file_size(total_size)}, {len(files)} files):"
+    header = f"Progetto ({format_file_size(total_size)}, {len(files)} file):"
     return header + "\n" + "\n".join(context)
 
-@cache_manager.cache_data(ttl=60)
+@cache_manager.cache_data(ttl_seconds=60)
 def analyze_code_complexity(content: str) -> Dict[str, Any]:
     """
     Analisi base della complessità del codice.
@@ -121,9 +131,44 @@ def analyze_code_complexity(content: str) -> Dict[str, Any]:
     """
     lines = content.split('\n')
     return {
-        'lines': len(lines),
-        'characters': len(content),
-        'functions': len(re.findall(r'def\s+\w+\s*\(', content)),
-        'classes': len(re.findall(r'class\s+\w+[:\(]', content)),
-        'comments': len([l for l in lines if l.strip().startswith('#')])
+        'righe': len(lines),
+        'caratteri': len(content),
+        'funzioni': len(re.findall(r'def\s+\w+\s*\(', content)),
+        'classi': len(re.findall(r'class\s+\w+[:\(]', content)),
+        'commenti': len([l for l in lines if l.strip().startswith('#')]),
+        'righe_vuote': len([l for l in lines if not l.strip()]),
+        'complessita': {
+            'nesting_max': max(
+                (len(re.findall(r'^[ \t]+', l)) for l in lines if l.strip()),
+                default=0
+            ) // 4,
+            'lunghezza_media_riga': sum(len(l) for l in lines) / len(lines) if lines else 0
+        }
     }
+
+def validate_file_content(content: str, file_type: str) -> bool:
+    """
+    Valida il contenuto di un file in base al suo tipo.
+    
+    Args:
+        content: Contenuto del file
+        file_type: Tipo/estensione del file
+        
+    Returns:
+        bool: True se il contenuto è valido
+    """
+    if not content:
+        return False
+        
+    # Validazione per tipo di file
+    validators = {
+        'py': lambda x: 'import' in x or 'def ' in x or 'class ' in x,
+        'js': lambda x: 'function' in x or 'const' in x or 'let' in x or 'var' in x,
+        'html': lambda x: '<html' in x.lower() or '<body' in x.lower(),
+        'css': lambda x: '{' in x and '}' in x and ':' in x,
+        'json': lambda x: (x.strip().startswith('{') and x.strip().endswith('}')) or 
+                         (x.strip().startswith('[') and x.strip().endswith(']'))
+    }
+    
+    validator = validators.get(file_type.lower().lstrip('.'))
+    return validator(content) if validator else True
