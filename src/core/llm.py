@@ -245,24 +245,20 @@ class LLMManager:
     def _handle_claude_completion(self, prompt_data: Dict[str, Any]) -> Generator[str, None, None]:
         """
         Gestisce le chiamate a Claude con gestione errori robusta.
-        Usa esclusivamente il modello claude-3-5-sonnet-20241022.
-        
-        Args:
-            prompt_data: Dizionario contenente messages e system
-            
-        Yields:
-            str: Chunks della risposta
+        Usa esclusivamente un modello valido.
         """
-        MODEL = "claude-3-5-sonnet-20241022"
+        MODEL = "claude-2"  # Assicurati che il modello sia valido
         try:
             self._enforce_rate_limit("claude")
             
             # Prepara il messaggio base
-            messages.append({
-                "role": msg["role"],
-                "content": msg["content"] if isinstance(msg["content"], str) 
-                        else msg["content"][0]["text"]
-            })
+            messages = []
+            for msg in prompt_data["messages"]:
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"] if isinstance(msg["content"], str) 
+                            else msg["content"][0]["text"]
+                })
 
             # Retry logic
             max_retries = 3
@@ -271,21 +267,18 @@ class LLMManager:
 
             while retry_count < max_retries:
                 try:
-                    stream = self.anthropic_client.messages.create(
+                    stream = self.anthropic_client.completions.create(
                         model=MODEL,
                         max_tokens=1000,
                         temperature=0,
-                        system=prompt_data.get("system"),
                         messages=messages,
                         stream=True
                     )
                     
                     # Process stream
                     for chunk in stream:
-                        if hasattr(chunk, 'content') and chunk.content:
-                            for content_block in chunk.content:
-                                if hasattr(content_block, 'text'):
-                                    yield content_block.text
+                        if hasattr(chunk, 'completion') and chunk.completion:
+                            yield chunk.completion
                     
                     # Se arriviamo qui, tutto ok
                     return
@@ -310,7 +303,7 @@ class LLMManager:
             if prompt_data.get("system"):
                 o1_messages.append({"role": "system", "content": prompt_data["system"]})
             for msg in prompt_data["messages"]:
-                text_content = msg["content"][0]["text"] if isinstance(msg["content"], list) else msg["content"]
+                text_content = msg["content"] if isinstance(msg["content"], str) else msg["content"][0]["text"]
                 o1_messages.append({
                     "role": msg["role"],
                     "content": text_content
@@ -320,10 +313,12 @@ class LLMManager:
             yield from self._handle_o1_completion(o1_messages, "o1-preview")
 
         except Exception as e:
-            error_msg = f"Errore Claude: {str(e)}"
+            import traceback
+            error_msg = f"Errore Claude: {traceback.format_exc()}"
             st.error(error_msg)
             self._log(error_msg, level="ERROR")
             yield error_msg
+
 
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
                        file_content: Optional[str] = None, 
