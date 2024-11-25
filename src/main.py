@@ -23,225 +23,16 @@ sys.path.append(str(root_path))
 from src.core.session import SessionManager
 from src.core.llm import LLMManager
 from src.core.files import FileManager
-from src.ui.components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay
-
-# Carica variabili d'ambiente
-load_dotenv()
-
-def load_custom_css():
-    """Carica stili CSS personalizzati."""
-    st.markdown("""
-        <style>
-        /* Layout generale */
-        .main {
-            padding: 0 !important;
-        }
-        
-        .block-container {
-            padding-top: 1rem !important;
-            max-width: 100% !important;
-        }
-        
-        /* Sidebar migliorata */
-        [data-testid="stSidebar"] {
-            background-color: #f8f9fa;
-            padding: 1rem;
-        }
-        
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-            font-size: 0.9rem;
-            margin-bottom: 0.5rem;
-        }
-        
-        /* Chat UI */
-        .stChatFloatingInputContainer {
-            position: fixed !important;
-            bottom: 0 !important;
-            left: 18rem !important;
-            right: 0 !important;
-            padding: 1rem 2rem !important;
-            background: white !important;
-            border-top: 1px solid #eee !important;
-            z-index: 1000 !important;
-        }
-        
-        .stChatMessage {
-            max-width: none !important;
-            width: 100% !important;
-            margin: 0.5rem 0 !important;
-        }
-        
-        /* Spazio per l'input fisso */
-        [data-testid="stChatMessageContainer"] {
-            padding-bottom: 80px !important;
-            position: fixed !important;
-            bottom: 0 !important;
-        }
-        
-        /* Code viewer */
-        .code-viewer {
-            background: #ffffff;
-            border-radius: 0.5rem;
-            border: 1px solid #eee;
-            padding: 1rem;
-            height: calc(100vh - 130px);
-            overflow-y: auto;
-        }
-        
-        .source {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 14px;
-            line-height: 1.4;
-            background-color: #272822;
-            padding: 10px;
-            border-radius: 5px;
-            overflow-x: auto;
-        }
-        
-        /* File explorer minimalista */
-        .file-tree button {
-            background: none !important;
-            border: none !important;
-            padding: 0.2rem 0.5rem !important;
-            text-align: left !important;
-            font-size: 0.9rem !important;
-            color: #0e1117 !important;
-            width: 100% !important;
-            margin: 0 !important;
-        }
-        
-        .file-tree button:hover {
-            background-color: #eef2f5 !important;
-        }
-        
-        /* Loader animation */
-        .thinking-loader {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 1rem;
-            background: #f8f9fa;
-            border-radius: 0.5rem;
-            margin: 1rem 0;
-        }
-        
-        .loader-dots {
-            display: inline-flex;
-            gap: 0.3rem;
-        }
-        
-        .loader-dots span {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: #666;
-            animation: loader 1.4s infinite;
-        }
-        
-        .loader-dots span:nth-child(2) { animation-delay: 0.2s; }
-        .loader-dots span:nth-child(3) { animation-delay: 0.4s; }
-        
-        @keyframes loader {
-            0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
-            40% { opacity: 1; transform: scale(1); }
-        }
-        
-        /* Stats display */
-        .stats-container {
-            display: flex;
-            justify-content: flex-end;
-            gap: 1rem;
-            padding: 0.5rem;
-            background: #f8f9fa;
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
-        }
-        
-        /* Scrollbars */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-        
-        ::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-            background: #555;
-        }
-        
-        /* Tooltips */
-        .tooltip {
-            position: relative;
-            display: inline-block;
-        }
-        
-        .tooltip .tooltiptext {
-            visibility: hidden;
-            background-color: #555;
-            color: #fff;
-            text-align: center;
-            padding: 5px;
-            border-radius: 4px;
-            position: absolute;
-            z-index: 1;
-            bottom: 125%;
-            left: 50%;
-            transform: translateX(-50%);
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-        
-        .tooltip:hover .tooltiptext {
-            visibility: visible;
-            opacity: 1;
-        }
-                
-        [data-testid="stSidebar"] {
-        background-color: var(--surface-container);  /* Usa la variabile del tema corrente */
-        }
-
-        /* Adatta il colore del testo nella sidebar al tema */
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-            color: var(--text-color);
-        }
-
-        /* Bottoni e input nella sidebar */
-        [data-testid="stSidebar"] button {
-            background-color: var(--surface-container-highest) !important;
-            color: var(--text-color) !important;
-        }
-
-        [data-testid="stSidebar"] input {
-            background-color: var(--surface-container-highest) !important;
-            color: var(--text-color) !important;
-        }
-
-        /* File explorer nella sidebar */
-        [data-testid="stSidebar"] .file-tree button {
-            color: var(--text-color) !important;
-        }
-
-        [data-testid="stSidebar"] .file-tree button:hover {
-            background-color: var(--surface-container-highest) !important;
-        }        
-        </style>
-    """, unsafe_allow_html=True)
+from src.ui.layout import render_app_layout, render_error_message
+from src.utils.config import load_config
 
 def check_environment():
-    """Verifica la presenza delle secrets necessari."""
+    """Verifica la presenza delle secrets necessarie."""
     required_vars = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']
     missing_vars = [var for var in required_vars if var not in st.secrets]
     
     if missing_vars:
-        st.error(f"⚠️ Secrets mancanti: {', '.join(missing_vars)}")
+        render_error_message(f"Secrets mancanti: {', '.join(missing_vars)}")
         st.info("ℹ️ Configura le API keys in .streamlit/secrets.toml")
         st.stop()
 
@@ -265,93 +56,71 @@ def init_clients():
         'file_manager': FileManager()
     }
 
-def render_main_layout():
-    """Renderizza il layout principale dell'applicazione."""
-    # CSS per gestire correttamente il layout di pagina
+def load_custom_css():
+    """Carica stili CSS personalizzati."""
     st.markdown("""
         <style>
-            /* Layout principale */
-            .main .block-container {
-                max-width: 100% !important;
-                padding-top: 1rem !important;
-                padding-right: 1rem !important;
-                padding-left: 1rem !important;
-                padding-bottom: 80px !important;   /* Spazio per il footer */
-            }
-
-            /* Stile input chat */
-            .stChatFloatingInputContainer {
-                bottom: 0;
-                background: white;
-                padding: 1rem;
-                z-index: 999999;
-                width: 100%;
-            }
+        /* Layout generale */
+        .main {
+            padding: 0 !important;
+        }
+        
+        .block-container {
+            padding-top: 1rem !important;
+            max-width: 100% !important;
+        }
+        
+        /* Sidebar migliorata */
+        [data-testid="stSidebar"] {
+            background-color: var(--surface-container);
+        }
+        
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+            color: var(--text-color);
+        }
+        
+        /* Chat UI */
+        .stChatFloatingInputContainer {
+            bottom: 0 !important;
+            background: white !important;
+            padding: 1rem !important;
+            z-index: 999999 !important;
+            width: 100% !important;
+        }
+        
+        /* ... resto del CSS ... */
         </style>
     """, unsafe_allow_html=True)
-    
-    # Setup iniziale della sessione
-    clients = init_clients()
-    clients['session'].init_session()
-    
-    # Title Area con Stats
-    col1, col2, col3 = st.columns([4, 1, 1])
-    with col1:
-        st.title("👲🏿 Allegro IO")
-    with col2:
-        st.metric("Tokens Used", f"{st.session_state.get('token_count', 0):,}")
-    with col3:
-        st.metric("Cost ($)", f"${st.session_state.get('cost', 0):.3f}")
-    
-    # Sidebar con File Manager e Model Selector
-    with st.sidebar:
-        st.markdown("### 📁 File Manager")
-        FileExplorer().render()
-        st.markdown("---")
-        st.markdown("### 🤖 Model Settings")
-        ModelSelector().render()
-    
-    # Main Content Area con Chat e Code Viewer
-    col1, col2 = st.columns([3, 2])
-    
-    with col1:
-        st.markdown("### 💬 Chat")
-        ChatInterface().render()
-    
-    with col2:
-        st.markdown("### 📝 Code Viewer")
-        CodeViewer().render()
-    
-    # Chat input al fondo della pagina
-    chat_input_container = st.empty()
-    
-    # Inserisci l'input nel container vuoto
-    with chat_input_container:
-        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
-            current_chat = st.session_state.chats[st.session_state.current_chat]
-            current_chat['messages'].append({"role": "user", "content": prompt})
-            
-            with st.spinner("Elaborazione in corso..."):
-                response = clients['llm'].process_request(prompt)
-                current_chat['messages'].append({
-                    "role": "assistant", 
-                    "content": "".join(response)
-                })
-            st.rerun()
 
 def main():
     """Funzione principale dell'applicazione."""
     try:
+        # Carica variabili d'ambiente
+        load_dotenv()
+        
         # Controlli iniziali
         check_environment()
         check_directories()
+        
+        # Carica configurazione
+        load_config()
+        
+        # Inizializza clients
+        clients = init_clients()
+        
+        # Inizializza sessione
+        clients['session'].init_session()
+        
+        # Carica CSS personalizzato
         load_custom_css()
         
-        # Renderizza il layout principale
-        render_main_layout()
+        # Renderizza layout dell'applicazione
+        render_app_layout(clients)
         
     except Exception as e:
-        st.error(f"❌ Si è verificato un errore: {str(e)}")
+        render_error_message(f"Si è verificato un errore: {str(e)}")
         if os.getenv('DEBUG') == 'True':
             st.exception(e)
 

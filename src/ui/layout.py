@@ -2,8 +2,8 @@
 Main layout management for Allegro IO Code Assistant.
 """
 
-from src.ui.components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay
 import streamlit as st
+from src.ui.components import FileExplorer, ChatInterface, CodeViewer, ModelSelector
 
 def render_error_message(error: str):
     """Renderizza un messaggio di errore."""
@@ -17,13 +17,13 @@ def render_info_message(message: str):
     """Renderizza un messaggio informativo."""
     st.info(f"ℹ️ {message}")
 
-def render_main_layout():
+def render_app_layout(clients: dict):
     """
     Renderizza il layout principale dell'applicazione.
-    Include il setup della pagina, sidebar e area principale.
-    """
-    st.set_page_config(page_title="Allegro IO", page_icon="👲🏿", layout="wide")
     
+    Args:
+        clients: Dictionary contenente i client necessari (llm, session, file_manager)
+    """
     # Title Area con Stats
     col1, col2, col3 = st.columns([4, 1, 1])
     with col1:
@@ -51,10 +51,27 @@ def render_main_layout():
     with col2:
         st.markdown("### 📝 Code Viewer")
         CodeViewer().render()
+    
+    # Chat input al fondo della pagina
+    chat_input_container = st.empty()
+    
+    # Inserisci l'input nel container vuoto
+    with chat_input_container:
+        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
+            current_chat = st.session_state.chats[st.session_state.current_chat]
+            current_chat['messages'].append({"role": "user", "content": prompt})
+            
+            with st.spinner("Elaborazione in corso..."):
+                response = clients['llm'].process_request(prompt)
+                current_chat['messages'].append({
+                    "role": "assistant", 
+                    "content": "".join(response)
+                })
+            st.rerun()
 
 # Esporta le funzioni necessarie
 __all__ = [
-    'render_main_layout',
+    'render_app_layout',
     'render_error_message',
     'render_success_message',
     'render_info_message'
