@@ -240,13 +240,14 @@ class LLMManager:
         self._call_count[model] += 1
         self._last_call_time[model] = current_time
     
-    def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
+    def _handle_o1_completion(self, messages: List[Dict], model: str, is_fallback: bool = False) -> Generator[str, None, None]:
         """
-        Gestisce le chiamate ai modelli o1 con i parametri corretti.
+        Gestisce le chiamate ai modelli o1.
         
         Args:
             messages: Lista di messaggi
             model: Nome del modello o1
+            is_fallback: Se True, non esegue ulteriori fallback
             
         Yields:
             str: Chunks della risposta
@@ -254,12 +255,12 @@ class LLMManager:
         try:
             self._enforce_rate_limit(model)
             
-            # Usa max_completion_tokens invece di max_tokens per o1
             completion = self.openai_client.chat.completions.create(
                 model=model,
                 messages=messages,
                 stream=True,
-                max_completion_tokens=32768 if model == "o1-preview" else 65536
+                max_completion_tokens=32768 if model == "o1-preview" else 65536,
+                temperature=1
             )
             
             for chunk in completion:
@@ -269,15 +270,20 @@ class LLMManager:
         except Exception as e:
             error_msg = f"Errore con {model}: {str(e)}"
             st.error(error_msg)
-            # Fallback a Claude in caso di errore
-            yield from self._handle_claude_completion({"messages": messages})
-    
-    def _handle_claude_completion(self, prompt_data: Dict[str, Any]) -> Generator[str, None, None]:
+            # Fallback a Claude solo se non siamo già in fallback
+            if not is_fallback:
+                yield "Mi scuso per l'errore. Proverò con un modello alternativo.\n\n"
+                yield from self._handle_claude_completion({"messages": messages}, is_fallback=True)
+            else:
+                yield "Mi dispiace, si è verificato un errore con entrambi i modelli. Per favore, riprova tra qualche momento."
+
+    def _handle_claude_completion(self, prompt_data: Dict[str, Any], is_fallback: bool = False) -> Generator[str, None, None]:
         """
-        Gestisce le chiamate a Claude con il nuovo formato Claude 3.
+        Gestisce le chiamate a Claude.
         
         Args:
             prompt_data: Dizionario contenente i messaggi e il system prompt
+            is_fallback: Se True, non esegue ulteriori fallback
             
         Yields:
             str: Chunks della risposta
@@ -308,25 +314,30 @@ class LLMManager:
             stream = self.anthropic_client.messages.create(
                 model=MODEL,
                 messages=messages,
-                stream=True
+                stream=True,
+                max_tokens=4096  # Impostiamo un limite ragionevole
             )
             
             # Processa lo stream nel nuovo formato
-            for message in stream:
-                if message.type == "content_block_delta" and message.delta.text:
-                    yield message.delta.text
+            async for message in stream:
+                if hasattr(message, 'content'):
+                    yield message.content[0].text
                     
         except Exception as e:
             error_msg = f"Errore Claude: {str(e)}"
             st.error(error_msg)
-            # Fallback a O1 in caso di errore
-            fallback_messages = [{"role": "user", "content": msg["content"]} 
-                            for msg in prompt_data.get("messages", [])]
-            yield from self._handle_o1_completion(fallback_messages, "o1-preview")
-    
+            # Fallback a O1 solo se non siamo già in fallback
+            if not is_fallback:
+                yield "Mi scuso per l'errore. Proverò con un modello alternativo.\n\n"
+                fallback_messages = [{"role": "user", "content": msg["content"]} 
+                                for msg in prompt_data.get("messages", [])]
+                yield from self._handle_o1_completion(fallback_messages, "o1-preview", is_fallback=True)
+            else:
+                yield "Mi dispiace, si è verificato un errore con entrambi i modelli. Per favore, riprova tra qualche momento."
+
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
-                   file_content: Optional[str] = None, 
-                   context: Optional[str] = None) -> Generator[str, None, None]:
+                    file_content: Optional[str] = None, 
+                    context: Optional[str] = None) -> Generator[str, None, None]:
         """
         Processa una richiesta completa.
         
@@ -342,30 +353,37 @@ class LLMManager:
         # Determina se il task richiede gestione file
         requires_file_handling = bool(file_content)
         
-        # Seleziona il modello appropriato
-        if analysis_type and file_content:
-            model = self.select_model(
-                analysis_type, 
-                len(file_content), 
-                requires_file_handling
+        try:
+            # Seleziona il modello appropriato
+            if analysis_type and file_content:
+                model = self.select_model(
+                    analysis_type, 
+                    len(file_content), 
+                    requires_file_handling
+                )
+            else:
+                model = st.session_state.current_model
+            
+            # Prepara i messaggi
+            prompt_data = self.prepare_prompt(
+                prompt=prompt,
+                analysis_type=analysis_type,
+                file_content=file_content,
+                context=context,
+                model=model
             )
-        else:
-            model = st.session_state.current_model
-        
-        # Prepara i messaggi
-        prompt_data = self.prepare_prompt(
-            prompt=prompt,
-            analysis_type=analysis_type,
-            file_content=file_content,
-            context=context,
-            model=model
-        )
-        
-        # Processa la richiesta con il modello appropriato
-        if model.startswith('o1'):
-            yield from self._handle_o1_completion(prompt_data["messages"], model)
-        else:
-            yield from self._handle_claude_completion(prompt_data)
+            
+            # Processa la richiesta con il modello appropriato
+            if model.startswith('o1'):
+                async for chunk in self._handle_o1_completion(prompt_data["messages"], model):
+                    yield chunk
+            else:
+                async for chunk in self._handle_claude_completion(prompt_data):
+                    yield chunk
+                    
+        except Exception as e:
+            st.error(f"Errore generale: {str(e)}")
+            yield "Si è verificato un errore. Per favore, riprova più tardi."
     
     def calculate_cost(self, model: str, input_tokens: int, 
                       output_tokens: int) -> float:
