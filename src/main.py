@@ -41,7 +41,7 @@ def load_custom_css():
         
         /* Sidebar migliorata */
         [data-testid="stSidebar"] {
-            background-color: #f8f9fa;
+            background-color: var(--background-color);
             padding: 1rem;
         }
         
@@ -52,14 +52,10 @@ def load_custom_css():
         
         /* Chat UI */
         .stChatFloatingInputContainer {
-            position: fixed !important;
             bottom: 0 !important;
-            left: 18rem !important;
-            right: 0 !important;
             padding: 1rem 2rem !important;
-            background: white !important;
-            border-top: 1px solid #eee !important;
-            z-index: 1000 !important;
+            background: var(--background-color) !important;
+            border-top: 1px solid var(--secondary-background-color) !important;
         }
         
         .stChatMessage {
@@ -68,18 +64,11 @@ def load_custom_css():
             margin: 0.5rem 0 !important;
         }
         
-        /* Spazio per l'input fisso */
-        [data-testid="stChatMessageContainer"] {
-            padding-bottom: 80px !important;
-            position: fixed !important;
-            bottom: 0 !important;
-        }
-        
         /* Code viewer */
         .code-viewer {
-            background: #ffffff;
+            background: var(--background-color);
             border-radius: 0.5rem;
-            border: 1px solid #eee;
+            border: 1px solid var(--secondary-background-color);
             padding: 1rem;
             height: calc(100vh - 130px);
             overflow-y: auto;
@@ -89,58 +78,29 @@ def load_custom_css():
             font-family: 'Courier New', Courier, monospace;
             font-size: 14px;
             line-height: 1.4;
-            background-color: #272822;
             padding: 10px;
             border-radius: 5px;
             overflow-x: auto;
         }
         
-        /* File explorer minimalista */
-        .file-tree button {
+        /* File explorer */
+        .stButton > button {
+            width: 100%;
+            text-align: left !important;
+            padding: 2px 8px !important;
             background: none !important;
             border: none !important;
-            padding: 0.2rem 0.5rem !important;
-            text-align: left !important;
-            font-size: 0.9rem !important;
-            color: #0e1117 !important;
-            width: 100% !important;
+            font-weight: normal !important;
+        }
+        
+        .stButton > button:hover {
+            background-color: var(--primary-color-light) !important;
+            color: var(--primary-color) !important;
+        }
+        
+        .element-container:has(button[kind="secondary"]) {
             margin: 0 !important;
-        }
-        
-        .file-tree button:hover {
-            background-color: #eef2f5 !important;
-        }
-        
-        /* Loader animation */
-        .thinking-loader {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 1rem;
-            background: #f8f9fa;
-            border-radius: 0.5rem;
-            margin: 1rem 0;
-        }
-        
-        .loader-dots {
-            display: inline-flex;
-            gap: 0.3rem;
-        }
-        
-        .loader-dots span {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: #666;
-            animation: loader 1.4s infinite;
-        }
-        
-        .loader-dots span:nth-child(2) { animation-delay: 0.2s; }
-        .loader-dots span:nth-child(3) { animation-delay: 0.4s; }
-        
-        @keyframes loader {
-            0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
-            40% { opacity: 1; transform: scale(1); }
+            padding: 0 !important;
         }
         
         /* Stats display */
@@ -149,7 +109,7 @@ def load_custom_css():
             justify-content: flex-end;
             gap: 1rem;
             padding: 0.5rem;
-            background: #f8f9fa;
+            background: var(--secondary-background-color);
             border-radius: 0.5rem;
             margin-bottom: 1rem;
         }
@@ -161,82 +121,18 @@ def load_custom_css():
         }
         
         ::-webkit-scrollbar-track {
-            background: #f1f1f1;
+            background: var(--secondary-background-color);
             border-radius: 4px;
         }
         
         ::-webkit-scrollbar-thumb {
-            background: #888;
+            background: var(--primary-color);
             border-radius: 4px;
         }
         
         ::-webkit-scrollbar-thumb:hover {
-            background: #555;
+            background: var(--primary-color-dark);
         }
-        
-        /* Tooltips */
-        .tooltip {
-            position: relative;
-            display: inline-block;
-        }
-        
-        .tooltip .tooltiptext {
-            visibility: hidden;
-            background-color: #555;
-            color: #fff;
-            text-align: center;
-            padding: 5px;
-            border-radius: 4px;
-            position: absolute;
-            z-index: 1;
-            bottom: 125%;
-            left: 50%;
-            transform: translateX(-50%);
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-        
-        .tooltip:hover .tooltiptext {
-            visibility: visible;
-            opacity: 1;
-        }
-                
-        [data-testid="stSidebar"] {
-            background-color: var(--surface-container);
-        }
-
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-            color: var(--text-color);
-        }
-
-        [data-testid="stSidebar"] button {
-            background-color: var(--surface-container-highest) !important;
-            color: var(--text-color) !important;
-        }
-
-        [data-testid="stSidebar"] input {
-            background-color: var(--surface-container-highest) !important;
-            color: var(--text-color) !important;
-        }
-
-        [data-testid="stSidebar"] .file-tree button {
-            color: var(--text-color) !important;
-        }
-
-        [data-testid="stSidebar"] .file-tree button:hover {
-            background-color: var(--surface-container-highest) !important;
-        }        
-        /* File Tree styles */
-        .file-button:hover {
-            background-color: var(--hover-color, rgba(151, 166, 195, 0.15)) !important;
-        }
-        [data-testid="stButton"] {
-            display: none;
-        }
-        .element-container:has(button[kind="secondary"]) {
-            margin: auto;
-            padding: auto;
-        }        
         </style>
     """, unsafe_allow_html=True)
 

@@ -53,48 +53,48 @@ class FileExplorer:
             current[parts[-1]] = content
         return tree
 
-
-    def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", is_last: bool = True, full_path: str = ""):
-        """Renderizza un nodo dell'albero dei file con chiavi uniche."""
-        PIPE = "│"
-        ELBOW = "└─"
-        TEE = "├─"
-        
-        connector = ELBOW if is_last else TEE
-        current_full_path = f"{full_path}/{path}" if full_path else path
+    def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", level: int = 0):
+        """Renderizza un nodo dell'albero dei file."""
+        indent = "    " * level
         
         if isinstance(node, dict) and 'content' not in node:
-            st.markdown(f"""<div style='font-family: monospace; white-space: pre; 
-                    font-size: 0.85em; height: 16px; line-height: 16px;'>{prefix}{connector}{path}/</div>""", 
-                    unsafe_allow_html=True)
-            
-            items = sorted(node.items())
-            for i, (name, child) in enumerate(items):
-                is_last_item = i == len(items) - 1
-                new_prefix = prefix + (PIPE if not is_last else " ")
-                self._render_tree_node(name, child, new_prefix, is_last_item, current_full_path)
+            # Directory
+            st.markdown(f"{indent}📁 **{path}/**")
+            sorted_items = sorted(node.items())
+            for name, child in sorted_items:
+                self._render_tree_node(name, child, prefix, level + 1)
         else:
-            unique_key = f"file_{current_full_path.replace('/', '_')}"
-            st.markdown(f"""
-                <div style='font-family: monospace; white-space: pre; font-size: 0.85em;
-                            height: 16px; line-height: 16px;'>
-                    <button class='file-button' 
-                            data-key='{unique_key}' 
-                            style='background: none; border: none; padding: 0; margin: 0;
-                                height: 16px; line-height: 16px;
-                                font-family: monospace; cursor: pointer; width: 100%; 
-                                font-size: inherit; text-align: left; color: inherit;'>
-                        {prefix}{connector}{self._get_file_icon(path)} {path}
-                    </button>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            if st.button("", key=unique_key, type="secondary"):
-                st.session_state.selected_file = current_full_path
-                st.session_state.current_file = current_full_path
+            # File
+            icon = self._get_file_icon(path)
+            if st.button(f"{indent}{icon} {path}", key=f"file_{path}", use_container_width=True):
+                st.session_state.selected_file = path
+                st.session_state.current_file = path
 
     def render(self):
         """Renderizza il componente."""
+        st.markdown("""
+            <style>
+                /* Stile per i bottoni file */
+                .stButton > button {
+                    width: 100%;
+                    text-align: left !important;
+                    padding: 2px 8px !important;
+                    background: none !important;
+                    border: none !important;
+                    font-weight: normal !important;
+                }
+                .stButton > button:hover {
+                    background-color: var(--primary-color-light) !important;
+                    color: var(--primary-color) !important;
+                }
+                /* Nascondi il bordo del container dei bottoni */
+                .element-container:has(button[kind="secondary"]) {
+                    margin: 0 !important;
+                    padding: 0 !important;
+                }
+            </style>
+        """, unsafe_allow_html=True)
+
         uploaded_files = st.file_uploader(
             "Drag and drop files here",
             type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
@@ -102,7 +102,6 @@ class FileExplorer:
             key="file_uploader"
         )
 
-        # Processa nuovi file caricati
         if uploaded_files:
             new_files = []
             for file in uploaded_files:
@@ -116,7 +115,6 @@ class FileExplorer:
                         for zip_file in zip_content.namelist():
                             if not zip_file.startswith('__') and not zip_file.startswith('.'):
                                 try:
-                                    # Skip se il file è già stato processato
                                     if zip_file in st.session_state.uploaded_files:
                                         continue
                                         
@@ -127,10 +125,9 @@ class FileExplorer:
                                         'name': zip_file
                                     }
                                     new_files.append(zip_file)
-                                except Exception as e:
+                                except Exception:
                                     continue
                     else:
-                        # Skip se il file è già stato processato
                         if file.name in st.session_state.uploaded_files:
                             continue
                             
@@ -143,14 +140,12 @@ class FileExplorer:
                         new_files.append(file.name)
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {str(e)}")
-            
-            # Se ci sono nuovi file, aggiungi il messaggio alla chat
+
             if new_files and 'chats' in st.session_state and st.session_state.current_chat in st.session_state.chats:
                 files_message = "📂 Nuovi file caricati:\n"
                 for filename in new_files:
                     files_message += f"- {self._get_file_icon(filename)} {filename}\n"
                 
-                # Check se il messaggio non è già stato inviato
                 message_hash = hash(files_message)
                 if message_hash not in st.session_state.file_messages_sent:
                     st.session_state.chats[st.session_state.current_chat]['messages'].append({
@@ -159,29 +154,12 @@ class FileExplorer:
                     })
                     st.session_state.file_messages_sent.add(message_hash)
 
-        # Visualizza il tree dei file
         if st.session_state.uploaded_files:
-            st.markdown("### 📁 Files:")
+            st.markdown("### Files")
             tree = self._create_file_tree(st.session_state.uploaded_files)
-            
-            # Stili per i bottoni del file tree
-            st.markdown("""
-                <style>
-                    .stButton button {
-                        text-align: left !important;
-                        padding: 0.2rem 0.5rem !important;
-                        font-family: monospace !important;
-                    }
-                    .stButton button:hover {
-                        background-color: rgba(151, 166, 195, 0.15) !important;
-                    }
-                </style>
-            """, unsafe_allow_html=True)
-            
             items = sorted(tree.items())
-            for i, (name, node) in enumerate(items):
-                is_last = i == len(items) - 1
-                self._render_tree_node(name, node, "", is_last)
+            for name, node in items:
+                self._render_tree_node(name, node)
 
 class ChatInterface:
     """Componente per l'interfaccia chat."""
