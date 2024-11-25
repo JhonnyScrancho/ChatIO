@@ -208,7 +208,6 @@ class ChatInterface:
                 }
             }
             st.session_state.current_chat = 'Chat principale'
-        self.update_metrics = StatsDisplay.render_metrics()    
 
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
@@ -264,7 +263,7 @@ class ChatInterface:
                         with st.chat_message("assistant"):
                             st.markdown(response)
                     # Aggiorna le metriche dopo ogni chunk
-                    self.update_metrics()
+                    StatsDisplay.update_metrics()
 
         # Se abbiamo una risposta valida, la aggiungiamo alla chat
         if response.strip():
@@ -273,7 +272,7 @@ class ChatInterface:
                 "content": response
             })
             # Aggiornamento finale delle metriche
-            self.update_metrics()
+            StatsDisplay.update_metrics()
 
 
 
@@ -384,29 +383,35 @@ class ModelSelector:
             self.session.set_current_model(selected)
 
 class StatsDisplay:
-    """Componente per visualizzazione statistiche in tempo reale."""
+    """Componente per visualizzazione statistiche unificata."""
     
     @staticmethod
-    def render_metrics():
-        """Renderizza metriche con aggiornamento in tempo reale."""
-        placeholder = st.empty()
+    def get_metrics_container():
+        """
+        Crea un container singleton per le metriche.
+        """
+        if 'metrics_container' not in st.session_state:
+            st.session_state.metrics_container = st.empty()
+        return st.session_state.metrics_container
+
+    @staticmethod
+    def update_metrics():
+        """
+        Aggiorna tutte le visualizzazioni delle metriche simultaneamente.
+        """
+        metrics_container = StatsDisplay.get_metrics_container()
         
-        def update_display():
-            with placeholder.container():
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric(
-                        "Tokens Used", 
-                        f"{st.session_state.get('token_count', 0):,}",
-                        help="Numero totale di token utilizzati"
-                    )
-                with col2:
-                    st.metric(
-                        "Cost ($)", 
-                        f"${st.session_state.get('cost', 0):.4f}",
-                        help="Costo totale stimato"
-                    )
-        
-        # Initial display
-        update_display()
-        return update_display
+        with metrics_container.container():
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric(
+                    "Tokens Used", 
+                    f"{st.session_state.get('token_count', 0):,}",
+                    help="Numero totale di token utilizzati"
+                )
+            with col2:
+                st.metric(
+                    "Cost ($)", 
+                    f"${st.session_state.get('cost', 0):.4f}",
+                    help="Costo totale stimato"
+                )

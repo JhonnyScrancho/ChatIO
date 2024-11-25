@@ -203,14 +203,11 @@ def render_main_layout():
     clients = init_clients()
     clients['session'].init_session()
     
-    # Title Area con Stats
-    col1, col2, col3 = st.columns([4, 1, 1])
-    with col1:
-        st.title("👲🏿 Allegro IO")
-    with col2:
-        st.metric("Tokens Used", f"{st.session_state.get('token_count', 0):,}")
-    with col3:
-        st.metric("Cost ($)", f"${st.session_state.get('cost', 0):.3f}")
+    # Title Area (senza metriche duplicate)
+    st.title("👲🏿 Allegro IO")
+    
+    # Unified metrics display
+    StatsDisplay.update_metrics()
     
     # Sidebar con File Manager e Model Selector
     with st.sidebar:
