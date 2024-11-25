@@ -24,6 +24,7 @@ from src.core.session import SessionManager
 from src.core.llm import LLMManager
 from src.core.files import FileManager
 from src.ui.components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay
+from src.ui.layout import render_error_message, render_success_message, render_info_message
 
 # Carica variabili d'ambiente
 load_dotenv()
