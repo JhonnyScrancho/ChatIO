@@ -259,23 +259,53 @@ class LLMManager:
         except Exception as e:
             return False, str(e)
 
+    def _prepare_file_context(self, files: Dict[str, Dict]) -> str:
+        """
+        Prepara il contesto dei file in un formato strutturato.
+        
+        Args:
+            files: Dizionario dei file processati
+            
+        Returns:
+            str: Contesto formattato dei file
+        """
+        if not files:
+            return ""
+            
+        context = "\n### File Context ###\n"
+        for filename, file_info in files.items():
+            context += f"\nFile: {filename} (language: {file_info['language']})\n"
+            context += f"```{file_info['language']}\n{file_info['content']}\n```\n"
+        return context
+    
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
                     file_content: Optional[str] = None, 
                     context: Optional[str] = None,
                     model: str = "claude-3-5-sonnet-20241022") -> List[Dict]:
         """
-        Prepara il prompt senza system message.
+        Prepara il prompt includendo il contesto dei file.
         """
+        # Prepara il contesto dei file caricati
+        file_context = ""
+        if 'uploaded_files' in st.session_state:
+            file_context = self._prepare_file_context(st.session_state.uploaded_files)
+        
         # Prepara il contenuto principale
         main_content = prompt
         
+        # Aggiungi il contesto dei file se presente
+        if file_context:
+            main_content = f"{file_context}\n\n{prompt}"
+        
+        # Aggiungi file_content specifico se fornito
         if file_content:
-            main_content += f"\nFile content:\n```\n{file_content}\n```"
+            main_content += f"\nSpecific file content:\n```\n{file_content}\n```"
         
+        # Aggiungi contesto aggiuntivo se fornito
         if context:
-            main_content += f"\nContext: {context}"
+            main_content += f"\nAdditional context: {context}"
         
-        # Restituisce solo il messaggio utente
+        # Restituisce il messaggio utente con il contesto completo
         return [{
             "role": "user",
             "content": main_content
