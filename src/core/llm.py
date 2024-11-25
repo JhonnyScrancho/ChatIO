@@ -20,22 +20,12 @@ import traceback
 # Third-party imports
 import streamlit as st
 from openai import OpenAI
-from anthropic import Anthropic
+import anthropic
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionChunk,
     ChatCompletionMessage,
     ChatCompletionMessageParam
-)
-from anthropic.types import (
-    Message,
-    MessageParam,
-    MessageStreamEvent,
-    ContentBlockDelta,
-    MessageStartEvent,
-    ContentBlockStartEvent,
-    ContentBlockStopEvent,
-    MessageStopEvent
 )
 
 # Local imports
