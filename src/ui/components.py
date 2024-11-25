@@ -164,18 +164,6 @@ class ChatInterface:
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
         try:
-            # Crea messaggio di contesto per i file analizzati
-            if st.session_state.uploaded_files:
-                files_context = "🔍 Analizzo i seguenti file:\n"
-                for filename, file_info in st.session_state.uploaded_files.items():
-                    files_context += f"- {filename} ({file_info['language']})\n"
-                
-                # Aggiungi il messaggio di contesto alla chat
-                st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                    "role": "assistant",
-                    "content": files_context
-                })
-
             # Prepara il contesto completo per l'LLM
             context = ""
             for filename, file_info in st.session_state.uploaded_files.items():
@@ -230,13 +218,11 @@ class ChatInterface:
                     'created_at': datetime.now().isoformat()
                 }
                 st.session_state.current_chat = new_chat_name
-                st.rerun()
 
         with col3:
             # Pulsante rinomina
             if st.button("✏️ Rinomina", use_container_width=True):
                 st.session_state.renaming = True
-                st.rerun()
 
         with col4:
             # Pulsante elimina
@@ -244,7 +230,6 @@ class ChatInterface:
                 if st.session_state.current_chat in st.session_state.chats:
                     del st.session_state.chats[st.session_state.current_chat]
                     st.session_state.current_chat = list(st.session_state.chats.keys())[0]
-                    st.rerun()
 
         # Dialog per rinominare la chat
         if getattr(st.session_state, 'renaming', False):
@@ -258,21 +243,26 @@ class ChatInterface:
                             st.session_state.chats[new_name] = st.session_state.chats.pop(st.session_state.current_chat)
                             st.session_state.current_chat = new_name
                         st.session_state.renaming = False
-                        st.rerun()
                 with col2:
                     if st.form_submit_button("Annulla"):
                         st.session_state.renaming = False
-                        st.rerun()
 
     def process_user_message(self, prompt: str):
         """Processa un nuovo messaggio utente."""
         if not prompt.strip():
             return
             
-        current_chat = st.session_state.chats[st.session_state.current_chat]
-        
         # Aggiungi il messaggio utente
-        current_chat['messages'].append({
+        if st.session_state.uploaded_files:
+            files_context = "\n🔍 Files in analisi:\n"
+            for filename, file_info in st.session_state.uploaded_files.items():
+                files_context += f"- {filename} ({file_info['language']})\n"
+            st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                "role": "system",
+                "content": files_context
+            })
+            
+        st.session_state.chats[st.session_state.current_chat]['messages'].append({
             "role": "user",
             "content": prompt
         })
@@ -281,7 +271,7 @@ class ChatInterface:
         response = self._process_response(prompt)
         
         # Aggiungi la risposta dell'assistente
-        current_chat['messages'].append({
+        st.session_state.chats[st.session_state.current_chat]['messages'].append({
             "role": "assistant",
             "content": response
         })
@@ -303,24 +293,6 @@ class ChatInterface:
         # Input della chat
         if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
             self.process_user_message(prompt)
-            st.rerun()
-
-    def clear_current_chat(self):
-        """Pulisce i messaggi della chat corrente."""
-        if st.session_state.current_chat in st.session_state.chats:
-            st.session_state.chats[st.session_state.current_chat]['messages'] = []
-            st.rerun()
-
-    def export_chat_history(self) -> Dict[str, Any]:
-        """Esporta la cronologia della chat corrente."""
-        if st.session_state.current_chat in st.session_state.chats:
-            return {
-                'chat_name': st.session_state.current_chat,
-                'messages': st.session_state.chats[st.session_state.current_chat]['messages'],
-                'created_at': st.session_state.chats[st.session_state.current_chat]['created_at'],
-                'exported_at': datetime.now().isoformat()
-            }
-        return {}
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
