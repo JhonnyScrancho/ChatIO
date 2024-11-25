@@ -28,7 +28,7 @@ class LLMManager:
         self.cost_map = {
             'o1-preview': {'input': 0.01, 'output': 0.03},
             'o1-mini': {'input': 0.001, 'output': 0.002},
-            'claude-3-5-sonnet': {'input': 0.008, 'output': 0.024}
+            'claude-3-5-sonnet-20241022': {'input': 0.008, 'output': 0.024}
         }
         
         # Limiti dei modelli
@@ -47,7 +47,7 @@ class LLMManager:
                 'supports_system_message': False,
                 'supports_functions': False
             },
-            'claude-3-5-sonnet': {
+            'claude-3-5-sonnet-20241022': {
                 'max_tokens': 200000,
                 'context_window': 200000,
                 'supports_files': True,
@@ -100,14 +100,14 @@ class LLMManager:
         """
         # Se richiede gestione file, usa Claude
         if requires_file_handling:
-            return "claude-3-5-sonnet"
+            return "claude-3-5-sonnet-20241022"
         
         # Stima tokens (1 token ~ 4 caratteri)
         estimated_tokens = content_length // 4
         
         # Se supera i limiti di o1-preview, usa Claude
         if estimated_tokens > 32000:
-            return "claude-3-5-sonnet"
+            return "claude-3-5-sonnet-20241022"
         
         # Per task complessi usa o1-preview
         if task_type in ["architecture", "review", "security"]:
@@ -119,7 +119,7 @@ class LLMManager:
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
                       file_content: Optional[str] = None, 
                       context: Optional[str] = None,
-                      model: str = "claude-3-5-sonnet") -> Dict[str, Any]:
+                      model: str = "claude-3-5-sonnet-20241022") -> Dict[str, Any]:
         """
         Prepara il prompt completo in base al modello.
         
@@ -133,16 +133,13 @@ class LLMManager:
         Returns:
             Dict[str, Any]: Messaggio formattato per il modello
         """
+        system_content = None
         messages = []
         
-        # Aggiungi system message se supportato
+        # Prepara il contenuto del sistema se supportato e richiesto
         if self.model_limits[model]['supports_system_message'] and analysis_type:
             template = self.system_templates[analysis_type]
-            system_msg = {
-                "role": "system",
-                "content": f"{template['role']} Focus su: {', '.join(template['focus'])}"
-            }
-            messages.append(system_msg)
+            system_content = f"{template['role']} Focus su: {', '.join(template['focus'])}"
         
         # Prepara il contenuto principale
         main_content = prompt
@@ -157,13 +154,31 @@ class LLMManager:
             context_section = f"\nContext: {context}"
             main_content += context_section
         
-        # Aggiungi il messaggio utente
-        messages.append({
-            "role": "user",
-            "content": main_content
-        })
+        # Formatta il messaggio in base al modello
+        if model.startswith('claude'):
+            if system_content:
+                messages = [{
+                    "role": "user",
+                    "content": [{"type": "text", "text": main_content}]
+                }]
+            else:
+                messages = [{
+                    "role": "user",
+                    "content": [{"type": "text", "text": main_content}]
+                }]
+        else:
+            if system_content:
+                messages = [
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": main_content}
+                ]
+            else:
+                messages = [{"role": "user", "content": main_content}]
         
-        return messages
+        return {
+            "messages": messages,
+            "system": system_content if model.startswith('claude') else None
+        }
     
     def _enforce_rate_limit(self, model: str):
         """
@@ -214,7 +229,7 @@ class LLMManager:
                 model=model,
                 messages=messages,
                 stream=True,
-                max_completion_tokens=32768 if model == "o1-preview" else 65536
+                max_tokens=32768 if model == "o1-preview" else 65536
             )
             
             for chunk in completion:
@@ -227,40 +242,48 @@ class LLMManager:
             # Fallback a Claude in caso di errore
             yield from self._handle_claude_completion(messages)
     
-    def _handle_claude_completion(self, messages: List[Dict]) -> Generator[str, None, None]:
+    def _handle_claude_completion(self, prompt_data: Dict[str, Any]) -> Generator[str, None, None]:
         """
         Gestisce le chiamate a Claude.
         
         Args:
-            messages: Lista di messaggi
+            prompt_data: Dizionario contenente messages e system
             
         Yields:
             str: Chunks della risposta
         """
         try:
-            self._enforce_rate_limit("claude-3-5-sonnet")
+            self._enforce_rate_limit("claude-3-5-sonnet-20241022")
             
-            # Converte i messaggi nel formato Claude
-            claude_messages = []
-            for msg in messages:
-                if msg["role"] == "system":
-                    claude_messages.append({
-                        "role": "assistant",
-                        "content": f"I understand. I will act as: {msg['content']}"
-                    })
+            try:
+                message = self.anthropic_client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=4096,
+                    temperature=0.7,
+                    system=prompt_data.get("system"),
+                    messages=prompt_data["messages"],
+                    stream=True
+                )
+                
+                for chunk in message:
+                    if chunk.delta.text:
+                        yield chunk.delta.text
+                        
+            except Exception as e:
+                if "not_found_error" in str(e):
+                    st.warning("Claude API issue - falling back to O1")
+                    # Convert messages format for O1
+                    o1_messages = []
+                    if prompt_data.get("system"):
+                        o1_messages.append({"role": "system", "content": prompt_data["system"]})
+                    for msg in prompt_data["messages"]:
+                        o1_messages.append({
+                            "role": msg["role"],
+                            "content": msg["content"][0]["text"]
+                        })
+                    yield from self._handle_o1_completion(o1_messages, "o1-preview")
                 else:
-                    claude_messages.append(msg)
-            
-            message = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet",
-                max_tokens=4096,
-                messages=claude_messages,
-                stream=True
-            )
-            
-            for chunk in message:
-                if chunk.delta.text:
-                    yield chunk.delta.text
+                    raise
                     
         except Exception as e:
             error_msg = f"Errore Claude: {str(e)}"
@@ -296,7 +319,7 @@ class LLMManager:
             model = st.session_state.current_model
         
         # Prepara i messaggi
-        messages = self.prepare_prompt(
+        prompt_data = self.prepare_prompt(
             prompt=prompt,
             analysis_type=analysis_type,
             file_content=file_content,
@@ -306,9 +329,9 @@ class LLMManager:
         
         # Processa la richiesta con il modello appropriato
         if model.startswith('o1'):
-            yield from self._handle_o1_completion(messages, model)
+            yield from self._handle_o1_completion(prompt_data["messages"], model)
         else:
-            yield from self._handle_claude_completion(messages)
+            yield from self._handle_claude_completion(prompt_data)
     
     def calculate_cost(self, model: str, input_tokens: int, 
                       output_tokens: int) -> float:
