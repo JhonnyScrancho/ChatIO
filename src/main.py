@@ -33,7 +33,7 @@ sys.path.append(str(root_path))
 from src.core.session import SessionManager
 from src.core.llm import LLMManager
 from src.core.files import FileManager
-from src.ui.layout import render_app_layout, render_error_message
+from src.ui.layout import render_app_layout, render_error_message, render_success_message, render_info_message
 from src.utils.config import load_config
 
 def setup_directory_structure():
