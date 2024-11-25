@@ -17,6 +17,8 @@ class FileExplorer:
         self.file_manager = FileManager()
         if 'uploaded_files' not in st.session_state:
             st.session_state.uploaded_files = {}
+        if 'file_messages_sent' not in st.session_state:
+            st.session_state.file_messages_sent = set()
 
     def _get_file_icon(self, filename: str) -> str:
         """Restituisce l'icona appropriata per il tipo di file."""
@@ -84,7 +86,7 @@ class FileExplorer:
             # È un file - usa il path completo per la chiave
             unique_key = f"file_{current_full_path.replace('/', '_')}"
             if st.button(
-                f"{prefix}{connector}{path}",
+                f"{prefix}{connector}{self._get_file_icon(path)} {path}",
                 key=unique_key,
                 use_container_width=True,
                 type="secondary"
@@ -101,47 +103,86 @@ class FileExplorer:
             key="file_uploader"
         )
 
+        # Processa nuovi file caricati
         if uploaded_files:
-            files_message = "📂 File caricati:\n"
+            new_files = []
             for file in uploaded_files:
                 try:
+                    # Gestione file ZIP
                     if file.name.endswith('.zip'):
                         import zipfile
                         import io
                         
                         zip_content = zipfile.ZipFile(io.BytesIO(file.read()))
-                        zip_files = []
                         for zip_file in zip_content.namelist():
                             if not zip_file.startswith('__') and not zip_file.startswith('.'):
                                 try:
+                                    # Skip se il file è già stato processato
+                                    if zip_file in st.session_state.uploaded_files:
+                                        continue
+                                        
                                     content = zip_content.read(zip_file).decode('utf-8', errors='ignore')
                                     st.session_state.uploaded_files[zip_file] = {
                                         'content': content,
                                         'language': zip_file.split('.')[-1],
                                         'name': zip_file
                                     }
-                                    zip_files.append(zip_file)
+                                    new_files.append(zip_file)
                                 except Exception as e:
                                     continue
-                        files_message += f"- {file.name} (contiene: {', '.join(zip_files)})\n"
                     else:
+                        # Skip se il file è già stato processato
+                        if file.name in st.session_state.uploaded_files:
+                            continue
+                            
                         content = file.read().decode('utf-8')
                         st.session_state.uploaded_files[file.name] = {
                             'content': content,
                             'language': file.name.split('.')[-1],
                             'name': file.name
                         }
-                        files_message += f"- {file.name}\n"
+                        new_files.append(file.name)
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {str(e)}")
             
-            # Aggiungi messaggio di sistema per i file caricati
-            if 'chats' in st.session_state and st.session_state.current_chat in st.session_state.chats:
-                st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                    "role": "system",
-                    "content": files_message
-                })
-                st.rerun()
+            # Se ci sono nuovi file, aggiungi il messaggio alla chat
+            if new_files and 'chats' in st.session_state and st.session_state.current_chat in st.session_state.chats:
+                files_message = "📂 Nuovi file caricati:\n"
+                for filename in new_files:
+                    files_message += f"- {self._get_file_icon(filename)} {filename}\n"
+                
+                # Check se il messaggio non è già stato inviato
+                message_hash = hash(files_message)
+                if message_hash not in st.session_state.file_messages_sent:
+                    st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                        "role": "system",
+                        "content": files_message
+                    })
+                    st.session_state.file_messages_sent.add(message_hash)
+
+        # Visualizza il tree dei file
+        if st.session_state.uploaded_files:
+            st.markdown("### 📁 Files:")
+            tree = self._create_file_tree(st.session_state.uploaded_files)
+            
+            # Stili per i bottoni del file tree
+            st.markdown("""
+                <style>
+                    .stButton button {
+                        text-align: left !important;
+                        padding: 0.2rem 0.5rem !important;
+                        font-family: monospace !important;
+                    }
+                    .stButton button:hover {
+                        background-color: rgba(151, 166, 195, 0.15) !important;
+                    }
+                </style>
+            """, unsafe_allow_html=True)
+            
+            items = sorted(tree.items())
+            for i, (name, node) in enumerate(items):
+                is_last = i == len(items) - 1
+                self._render_tree_node(name, node, "", is_last)
 
 class ChatInterface:
     """Componente per l'interfaccia chat."""
