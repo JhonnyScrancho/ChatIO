@@ -301,7 +301,9 @@ class ChatInterface:
                         st.session_state.renaming = False
 
     def process_user_message(self, prompt: str):
-        """Processa un nuovo messaggio utente."""
+        """
+        Processa un nuovo messaggio utente.
+        """
         if not prompt.strip():
             return
             
@@ -309,32 +311,44 @@ class ChatInterface:
         chat_container = st.container()
         
         with chat_container:
-            # Aggiungi il messaggio utente
+            # Aggiungi il messaggio utente SOLO UNA VOLTA
             if st.session_state.uploaded_files:
                 files_context = "\n🔍 Files in analisi:\n"
                 for filename, file_info in st.session_state.uploaded_files.items():
                     files_context += f"- {filename} ({file_info['language']})\n"
-                st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                    "role": "system",
-                    "content": files_context
-                })
                 
+                # Usa un hash per evitare messaggi duplicati
+                message_hash = hash(files_context)
+                if message_hash not in st.session_state.get('file_messages_sent', set()):
+                    st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                        "role": "system",
+                        "content": files_context
+                    })
+                    if 'file_messages_sent' not in st.session_state:
+                        st.session_state.file_messages_sent = set()
+                    st.session_state.file_messages_sent.add(message_hash)
+            
+            # Aggiungi il messaggio utente
             st.session_state.chats[st.session_state.current_chat]['messages'].append({
                 "role": "user",
                 "content": prompt
             })
 
             # Processa la risposta
-            response = self._process_response(prompt)
+            response = ""
+            with st.spinner("Elaborazione in corso..."):
+                for chunk in self.llm.process_request(prompt=prompt):
+                    if chunk:  # Verifica che il chunk non sia vuoto
+                        response += chunk
             
-            # Aggiungi la risposta dell'assistente
-            st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                "role": "assistant",
-                "content": response
-            })
-            
-            # Forza il refresh della chat
-            st.rerun()
+            # Solo se abbiamo una risposta non vuota, la aggiungiamo
+            if response.strip():
+                st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                    "role": "assistant",
+                    "content": response
+                })
+            else:
+                st.error("Non è stato possibile ottenere una risposta. Riprova.")
 
 
     def render(self):
@@ -345,11 +359,32 @@ class ChatInterface:
         # Container per i messaggi della chat
         messages_container = st.container()
         
+        # Evita di renderizzare messaggi duplicati usando un set di hash
+        rendered_messages = set()
+        
         current_chat = st.session_state.chats[st.session_state.current_chat]
         with messages_container:
             for message in current_chat['messages']:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
+                # Crea un hash univoco per il messaggio
+                message_hash = hash(f"{message['role']}:{message['content']}")
+                
+                # Renderizza solo se non è già stato mostrato
+                if message_hash not in rendered_messages:
+                    with st.chat_message(message["role"]):
+                        st.markdown(message["content"])
+                    rendered_messages.add(message_hash)
+
+    def handle_user_input(self, prompt: str):
+        """
+        Gestisce l'input dell'utente in modo sicuro.
+        """
+        if not hasattr(st.session_state, 'processing'):
+            st.session_state.processing = False
+            
+        if not st.session_state.processing and prompt:
+            st.session_state.processing = True
+            self.process_user_message(prompt)
+            st.session_state.processing = False                
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
