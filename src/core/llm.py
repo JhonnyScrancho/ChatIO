@@ -266,23 +266,26 @@ class LLMManager:
     def _handle_claude_completion(self, prompt_data: Dict[str, Any]) -> Generator[str, None, None]:
         """
         Gestisce le chiamate a Claude con gestione errori robusta.
-        Usa esclusivamente un modello valido (claude-3.5-sonnet).
+        Usa esclusivamente un modello valido (claude-3-5-sonnet-20241022).
         """
-        MODEL = "claude-3.5-sonnet"
+        MODEL = "claude-3-5-sonnet-20241022"
         try:
             # Applica il limite di richieste per evitare throttling
             self._enforce_rate_limit("claude")
             
-            # Prepara i messaggi
-            messages = []
+            # Prepara il prompt
+            system_message = prompt_data.get("system", "You are a helpful assistant.")
+            human_messages = []
+            
+            # Converte i messaggi in un formato concatenato
             for msg in prompt_data.get("messages", []):
-                content = msg.get("content")
-                if isinstance(content, str):
-                    messages.append({"role": msg.get("role"), "content": content})
-                elif isinstance(content, list) and "text" in content[0]:
-                    messages.append({"role": msg.get("role"), "content": content[0]["text"]})
-                else:
-                    raise ValueError(f"Formato messaggio non valido: {msg}")
+                if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                    human_messages.append(msg["content"])
+                elif msg.get("role") == "user" and isinstance(msg.get("content"), list):
+                    human_messages.append(msg["content"][0].get("text", ""))
+            
+            # Costruisce il prompt usando i delimitatori di Anthropic
+            full_prompt = f"{HUMAN_PROMPT}{system_message}\n" + "\n".join(human_messages) + f"{AI_PROMPT}"
 
             # Logica di Retry
             max_retries = 3
@@ -293,9 +296,9 @@ class LLMManager:
                 try:
                     stream = self.anthropic_client.completions.create(
                         model=MODEL,
-                        max_tokens_to_sample=1000,  # Modificato secondo la documentazione
+                        prompt=full_prompt,
+                        max_tokens_to_sample=1000,  # Numero massimo di token
                         temperature=0.7,  # Livello di casualità moderato
-                        messages=messages,
                         stream=True  # Abilita lo streaming
                     )
                     
@@ -323,10 +326,9 @@ class LLMManager:
             st.error(f"Errore Claude: {last_error}")
             
             # Passa al modello di fallback
-            o1_messages = [{"role": "system", "content": prompt_data.get("system", "")}]
-            o1_messages += messages
             st.info("Passaggio al modello di fallback O1...")
-            yield from self._handle_o1_completion(o1_messages, "o1-preview")
+            fallback_prompt = f"{HUMAN_PROMPT}{system_message}\n" + "\n".join(human_messages) + f"{AI_PROMPT}"
+            yield from self._handle_o1_completion(fallback_prompt, "o1-preview")
 
         except ValueError as ve:
             self._log(f"Errore formato dati: {ve}", level="ERROR")
@@ -337,6 +339,7 @@ class LLMManager:
             st.error(error_msg)
             self._log(error_msg, level="ERROR")
             yield error_msg
+
 
 
 
