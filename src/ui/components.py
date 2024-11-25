@@ -61,28 +61,31 @@ class FileExplorer:
                     current[part] = {}
                 current = current[part]
             
-            # Aggiungi il file
-            current[parts[-1]] = content
+            # Aggiungi il file con il path completo
+            current[parts[-1]] = {'content': content, 'full_path': path}
             
         return tree
 
-    def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", is_last: bool = True):
+    def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = ""):
         """Renderizza un nodo dell'albero dei file con pipe style."""
-        if isinstance(node, dict) and 'content' not in node:
-            # Directory
-            st.markdown(f"{prefix}{'└── ' if is_last else '├── '}📁 **{path}/**", unsafe_allow_html=True)
-            items = list(sorted(node.items()))
-            for i, (name, child) in enumerate(items):
-                is_last_item = i == len(items) - 1
+        items = list(sorted(node.items()))
+        for i, (name, content) in enumerate(items):
+            is_last = i == len(items) - 1
+            
+            if isinstance(content, dict) and 'content' not in content:
+                # Directory
+                st.markdown(f"{prefix}{'└── ' if is_last else '├── '}📁 **{name}/**", unsafe_allow_html=True)
                 new_prefix = prefix + ("    " if is_last else "│   ")
-                self._render_tree_node(name, child, new_prefix, is_last_item)
-        else:
-            # File
-            icon = self._get_file_icon(path)
-            file_button = f"{prefix}{'└── ' if is_last else '├── '}{icon} {path}"
-            if st.button(file_button, key=f"file_{path}", use_container_width=True):
-                st.session_state.selected_file = path
-                st.session_state.current_file = path
+                self._render_tree_node(f"{path}/{name}", content, new_prefix)
+            else:
+                # File
+                icon = self._get_file_icon(name)
+                full_path = content['full_path']
+                file_button = f"{prefix}{'└── ' if is_last else '├── '}{icon} {name}"
+                
+                if st.button(file_button, key=f"file_{full_path}", use_container_width=True):
+                    st.session_state.selected_file = full_path
+                    st.session_state.current_file = full_path
 
     def render(self):
         """Renderizza il componente."""
@@ -183,10 +186,7 @@ class FileExplorer:
         if st.session_state.uploaded_files:
             st.markdown("### 📁 Files")
             tree = self._create_file_tree(st.session_state.uploaded_files)
-            items = sorted(tree.items())
-            for i, (name, node) in enumerate(items):
-                is_last = i == len(items) - 1
-                self._render_tree_node(name, node, "", is_last)
+            self._render_tree_node("", tree, "")
 
 class ChatInterface:
     """Componente per l'interfaccia chat."""
