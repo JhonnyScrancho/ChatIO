@@ -279,7 +279,7 @@ class LLMManager:
 
     def _handle_claude_completion(self, prompt_data: Dict[str, Any], is_fallback: bool = False) -> Generator[str, None, None]:
         """
-        Gestisce le chiamate a Claude con logging dettagliato.
+        Gestisce le chiamate a Claude con logging minimale.
         
         Args:
             prompt_data: Dizionario contenente i messaggi e il system prompt
@@ -291,41 +291,24 @@ class LLMManager:
         MODEL = "claude-3-5-sonnet-20241022"
         
         try:
-            # Log 1: Inizio della funzione
-            st.info("🔄 Inizializzando chiamata Claude...")
-            
-            # Log 2: Verifica rate limiting
-            st.info("👮 Verificando rate limits...")
-            self._enforce_rate_limit("claude")
-            
-            # Log 3: Preparazione messaggi
+            # Preparazione messaggi senza logging
             messages = []
             if system := prompt_data.get("system"):
-                st.info("📝 System prompt trovato, aggiungendo...")
                 messages.append({
                     "role": "system",
                     "content": system
                 })
             
-            # Log 4: Aggiunta messaggi utente
-            st.info("📨 Preparazione messaggi utente...")
             for msg in prompt_data.get("messages", []):
                 messages.append({
                     "role": msg["role"],
                     "content": msg["content"]
                 })
             
-            # Log 5: Debug struttura messaggi
-            st.info("🔍 Struttura messaggi preparata:")
-            st.write({
-                "model": MODEL,
-                "message_count": len(messages),
-                "roles": [msg["role"] for msg in messages]
-            })
-
-            # Log 6: Inizio chiamata API
-            st.info("🚀 Avvio chiamata API Claude...")
+            # Rate limiting
+            self._enforce_rate_limit("claude")
             
+            # Chiamata API diretta
             stream = self.anthropic_client.messages.create(
                 model=MODEL,
                 messages=messages,
@@ -333,53 +316,23 @@ class LLMManager:
                 max_tokens=4096
             )
             
-            # Log 7: Chiamata API riuscita
-            st.success("✅ Connessione API stabilita, inizio streaming risposta...")
-            
-            # Log 8: Processo di streaming
-            chunks_received = 0
+            # Streaming senza logging intermedio
             for chunk in stream:
                 if chunk.type == "content_block_delta" and chunk.delta.text:
-                    chunks_received += 1
-                    if chunks_received % 10 == 0:  # Log ogni 10 chunks
-                        st.info(f"📊 Ricevuti {chunks_received} chunks...")
                     yield chunk.delta.text
-            
-            # Log 9: Completamento streaming
-            st.success(f"✅ Streaming completato. Totale chunks: {chunks_received}")
                         
         except Exception as e:
-            # Log 10: Gestione errori dettagliata
-            error_type = type(e).__name__
-            error_msg = str(e)
-            
-            st.error(f"""❌ Errore Claude:
-            - Tipo: {error_type}
-            - Messaggio: {error_msg}
-            - Traceback disponibile nei log del server
-            """)
-            
-            # Log dello stack trace completo se in debug mode
-            if st.session_state.get('debug_mode', False):
-                import traceback
-                st.error("🔍 Debug Stack Trace:")
-                st.code(traceback.format_exc())
+            error_msg = f"Errore Claude: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
             
             if not is_fallback:
-                st.warning("⚠️ Tentativo di fallback a modello alternativo...")
-                yield "Mi scuso per l'errore. Proverò con un modello alternativo.\n\n"
                 fallback_messages = [{"role": "user", "content": msg["content"]} 
                                 for msg in prompt_data.get("messages", [])]
                 for chunk in self._handle_o1_completion(fallback_messages, "o1-preview", is_fallback=True):
                     yield chunk
             else:
-                st.error("❌ Fallback fallito. Impossibile completare la richiesta.")
                 yield "Mi dispiace, si è verificato un errore con entrambi i modelli."
-            
-            # Log 11: Registrazione errore nel logger
-            self.logger.error(f"Errore Claude: {error_type} - {error_msg}",
-                            exc_info=True)
-
+                
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
                     file_content: Optional[str] = None, 
                     context: Optional[str] = None) -> Generator[str, None, None]:
