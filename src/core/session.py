@@ -4,8 +4,9 @@ Handles global state and caching through Streamlit's session state.
 """
 
 import streamlit as st
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union, List
 from datetime import datetime
+from src.utils.helpers import TokenCounter  # Aggiungi questo import
 
 class SessionManager:
     """Gestisce lo stato globale dell'applicazione e il caching."""
@@ -181,7 +182,7 @@ class SessionManager:
                 for key, value in distribution.items():
                     st.session_state.token_distribution[key] = \
                         st.session_state.token_distribution.get(key, 0) + value
-                    
+    
     @staticmethod
     def get_token_stats() -> Dict[str, Any]:
         """
@@ -198,19 +199,19 @@ class SessionManager:
         if st.session_state.get('debug_mode', False):
             stats['distribution'] = st.session_state.get('token_distribution', {})
             
-        return stats                
+        return stats
     
     @staticmethod
     def update_cost(amount: float):
         """Aggiorna il costo totale delle richieste LLM."""
-        st.session_state.cost += amount
+        st.session_state.cost = st.session_state.get('cost', 0.0) + amount
     
     @staticmethod
     def get_stats() -> Dict[str, Any]:
         """Restituisce le statistiche correnti della sessione."""
         return {
-            'token_count': st.session_state.token_count,
-            'cost': st.session_state.cost,
+            'token_count': st.session_state.get('token_count', 0),
+            'cost': st.session_state.get('cost', 0.0),
             'files_count': len(st.session_state.files),
             'chats_count': len(st.session_state.chats)
         }
