@@ -192,11 +192,30 @@ def initialize_session_state():
     """
     Inizializza o recupera lo stato della sessione.
     """
+    # Inizializzazione base della sessione
     if 'initialized' not in st.session_state:
         st.session_state.initialized = True
         st.session_state.start_time = datetime.now().isoformat()
         st.session_state.error_log = []
         st.session_state.debug_mode = os.getenv('DEBUG', 'False').lower() == 'true'
+        st.session_state.current_model = 'o1-mini'  # Default model
+        st.session_state.uploaded_files = {}
+        st.session_state.selected_file = None
+        st.session_state.current_file = None
+        st.session_state.token_count = 0
+        st.session_state.cost = 0.0
+        
+        # Inizializza la chat principale
+        st.session_state.chats = {
+            'Chat principale': {
+                'messages': [{
+                    "role": "assistant",
+                    "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
+                }],
+                'created_at': datetime.now().isoformat()
+            }
+        }
+        st.session_state.current_chat = 'Chat principale'
 
 def main():
     """
@@ -217,16 +236,19 @@ def main():
         # Step 4: Inizializzazione stato
         initialize_session_state()
         
-        # Step 5: Inizializzazione clients
+        # Step 5: Inizializzazione SessionManager
+        SessionManager.init_session()
+        
+        # Step 6: Inizializzazione clients
         clients = initialize_clients()
         
-        # Step 6: Caricamento CSS
+        # Step 7: Caricamento CSS
         load_custom_css()
         
-        # Step 7: Renderizza l'interfaccia
+        # Step 8: Renderizza l'interfaccia
         render_app_layout(clients)
         
-        # Step 8: Debug mode
+        # Step 9: Debug mode
         if st.session_state.debug_mode:
             with st.expander("Debug Information", expanded=False):
                 st.json({
@@ -249,6 +271,9 @@ def main():
             st.exception(e)
         
         # Aggiungi l'errore al log
+        if 'error_log' not in st.session_state:
+            st.session_state.error_log = []
+        
         st.session_state.error_log.append({
             'timestamp': datetime.now().isoformat(),
             'error': str(e),
