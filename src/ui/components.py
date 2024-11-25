@@ -262,7 +262,29 @@ class ChatInterface:
                 with col2:
                     if st.form_submit_button("Annulla"):
                         st.session_state.renaming = False
-                        st.rerun()    
+                        st.rerun()
+
+    def process_user_message(self, prompt: str):
+        """Processa un nuovo messaggio utente."""
+        if not prompt.strip():
+            return
+            
+        current_chat = st.session_state.chats[st.session_state.current_chat]
+        
+        # Aggiungi il messaggio utente
+        current_chat['messages'].append({
+            "role": "user",
+            "content": prompt
+        })
+
+        # Processa la risposta
+        response = self._process_response(prompt)
+        
+        # Aggiungi la risposta dell'assistente
+        current_chat['messages'].append({
+            "role": "assistant",
+            "content": response
+        })
 
     def render(self):
         """Renderizza l'interfaccia chat."""
@@ -277,6 +299,28 @@ class ChatInterface:
             for message in current_chat['messages']:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
+
+        # Input della chat
+        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
+            self.process_user_message(prompt)
+            st.rerun()
+
+    def clear_current_chat(self):
+        """Pulisce i messaggi della chat corrente."""
+        if st.session_state.current_chat in st.session_state.chats:
+            st.session_state.chats[st.session_state.current_chat]['messages'] = []
+            st.rerun()
+
+    def export_chat_history(self) -> Dict[str, Any]:
+        """Esporta la cronologia della chat corrente."""
+        if st.session_state.current_chat in st.session_state.chats:
+            return {
+                'chat_name': st.session_state.current_chat,
+                'messages': st.session_state.chats[st.session_state.current_chat]['messages'],
+                'created_at': st.session_state.chats[st.session_state.current_chat]['created_at'],
+                'exported_at': datetime.now().isoformat()
+            }
+        return {}
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""

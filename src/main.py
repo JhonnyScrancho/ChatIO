@@ -24,10 +24,6 @@ from src.core.session import SessionManager
 from src.core.llm import LLMManager
 from src.core.files import FileManager
 from src.ui.components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay
-from src.ui.layout import render_error_message, render_success_message, render_info_message
-
-# Carica variabili d'ambiente
-load_dotenv()
 
 def load_custom_css():
     """Carica stili CSS personalizzati."""
@@ -206,15 +202,13 @@ def load_custom_css():
         }
                 
         [data-testid="stSidebar"] {
-        background-color: var(--surface-container);  /* Usa la variabile del tema corrente */
+            background-color: var(--surface-container);
         }
 
-        /* Adatta il colore del testo nella sidebar al tema */
         [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
             color: var(--text-color);
         }
 
-        /* Bottoni e input nella sidebar */
         [data-testid="stSidebar"] button {
             background-color: var(--surface-container-highest) !important;
             color: var(--text-color) !important;
@@ -225,7 +219,6 @@ def load_custom_css():
             color: var(--text-color) !important;
         }
 
-        /* File explorer nella sidebar */
         [data-testid="stSidebar"] .file-tree button {
             color: var(--text-color) !important;
         }
@@ -271,22 +264,12 @@ def render_main_layout():
     # CSS per gestire correttamente il layout di pagina
     st.markdown("""
         <style>
-            /* Layout principale */
             .main .block-container {
                 max-width: 100% !important;
                 padding-top: 1rem !important;
                 padding-right: 1rem !important;
                 padding-left: 1rem !important;
-                padding-bottom: 80px !important;   /* Spazio per il footer */
-            }
-
-            /* Stile input chat */
-            .stChatFloatingInputContainer {
-                bottom: 0;
-                background: white;
-                padding: 1rem;
-                z-index: 999999;
-                width: 100%;
+                padding-bottom: 80px !important;
             }
         </style>
     """, unsafe_allow_html=True)
@@ -322,51 +305,10 @@ def render_main_layout():
     with col2:
         st.markdown("### 📝 Code Viewer")
         CodeViewer().render()
-    
-    # Chat input al fondo della pagina
-    chat_input_container = st.empty()
-    
-    # Inserisci l'input nel container vuoto
-    with chat_input_container:
-        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
-            current_chat = st.session_state.chats[st.session_state.current_chat]
-            
-            # Aggiungi il contesto dei file se presenti e non ancora mostrati
-            if st.session_state.uploaded_files:
-                last_messages = current_chat['messages'][-3:]  # Controlla gli ultimi 3 messaggi
-                files_already_shown = any(
-                    msg["content"].startswith("📂 File caricati:") 
-                    for msg in last_messages 
-                    if msg["role"] == "system"
-                )
-                
-                if not files_already_shown:
-                    files_context = "📂 File in analisi:\n" + "\n".join(
-                        f"- {name} ({info['language']})" 
-                        for name, info in st.session_state.uploaded_files.items()
-                    )
-                    current_chat['messages'].append({
-                        "role": "system",
-                        "content": files_context
-                    })
-            
-            # Aggiungi il messaggio dell'utente
-            current_chat['messages'].append({
-                "role": "user", 
-                "content": prompt
-            })
-            
-            # Processa la risposta
-            with st.spinner("Elaborazione in corso..."):
-                response = clients['llm'].process_request(prompt)
-                current_chat['messages'].append({
-                    "role": "assistant", 
-                    "content": "".join(response)
-                })
-            st.rerun()
 
 def main():
     """Funzione principale dell'applicazione."""
+    load_dotenv()
     try:
         # Controlli iniziali
         check_environment()
