@@ -81,7 +81,7 @@ def validate_environment() -> bool:
         )
         return False
     
-    required_packages = ['openai', 'anthropic', 'python-dotenv', 'watchdog']
+    required_packages = ['openai', 'anthropic', 'watchdog']
     try:
         for package in required_packages:
             __import__(package)
