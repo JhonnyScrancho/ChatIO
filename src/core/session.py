@@ -1,256 +1,252 @@
 """
-Inizializzazione della sessione per Allegro IO Code Assistant.
+Gestione delle sessioni per Allegro IO Code Assistant.
+Gestisce lo stato globale e il caching attraverso Streamlit session state.
 """
 
-import os
-from datetime import datetime
 import streamlit as st
-from typing import Dict, Any
-from src.utils.cache_manager import cache_manager
-from src.core.llm import LLMManager
-from src.core.session import SessionManager
-from src.core.files import FileManager
+from typing import Dict, Any, Optional, List
+from datetime import datetime
 
-def initialize_session_state():
-    """
-    Inizializza o recupera lo stato completo della sessione.
-    Include inizializzazione cache, configurazione e stato applicativo.
-    """
-    # 1. Inizializzazione cache manager
-    if 'cache_manager' not in st.session_state:
-        st.session_state.cache_manager = {
-            'last_modified': datetime.now().timestamp(),
-            'cache_keys': {},
-            'last_clear_time': datetime.now().isoformat(),
-            'stats': {
-                'hits': 0,
-                'misses': 0,
-                'total_cached': 0
-            }
-        }
+class SessionManager:
+    """Gestisce lo stato globale dell'applicazione e il caching."""
     
-    # 2. Inizializzazione stato base
-    if 'initialized' not in st.session_state:
-        st.session_state.initialized = True
-        st.session_state.start_time = datetime.now().isoformat()
-        st.session_state.error_log = []
-        st.session_state.debug_mode = os.getenv('DEBUG', 'False').lower() == 'true'
-        st.session_state.token_count = 0
-        st.session_state.cost = 0.0
-
-    # 3. Inizializzazione stato modelli e file
-        if 'current_model' not in st.session_state:
-            st.session_state.current_model = 'o1-mini'
-        if 'uploaded_files' not in st.session_state:
-            st.session_state.uploaded_files = {}
-        if 'selected_file' not in st.session_state:
-            st.session_state.selected_file = None
-        if 'current_file' not in st.session_state:
-            st.session_state.current_file = None
-        
-        # 4. Inizializzazione chat e messaggi
-        if 'chats' not in st.session_state:
+    @staticmethod
+    def init_session():
+        """Inizializza o recupera lo stato della sessione."""
+        if 'initialized' not in st.session_state:
+            st.session_state.initialized = True
             st.session_state.chats = {
                 'Chat principale': {
                     'messages': [{
                         "role": "assistant",
-                        "content": "Ciao! Carica dei file e fammi delle domande su di essi. "
-                                 "Posso aiutarti ad analizzarli."
+                        "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
                     }],
-                    'created_at': datetime.now().isoformat(),
-                    'settings': {
-                        'model': st.session_state.current_model,
-                        'temperature': 0.7,
-                        'context_window': 4096
-                    }
+                    'created_at': datetime.now().isoformat()
                 }
             }
             st.session_state.current_chat = 'Chat principale'
-        
-        # 5. Inizializzazione statistiche e metriche
-        if 'stats' not in st.session_state:
-            st.session_state.stats = {
-                'requests_total': 0,
-                'tokens_total': 0,
-                'cost_total': 0.0,
-                'files_processed': 0,
-                'chat_messages': 0,
-                'errors': 0,
-                'performance': {
-                    'response_times': [],
-                    'token_usage': [],
-                    'cost_history': []
-                }
+            st.session_state.current_model = 'o1-mini'  # Modello di default
+            st.session_state.files = {}
+            st.session_state.current_file = None
+            st.session_state.selected_file = None       # Per il file viewer
+            st.session_state.token_count = 0
+            st.session_state.cost = 0.0
+            st.session_state.last_error = None
+            st.session_state.debug_mode = False
+            st.session_state.start_time = datetime.now().isoformat()
+            st.session_state.uploaded_files = {}
+    
+    @staticmethod
+    def get_current_model() -> str:
+        """Restituisce il modello LLM attualmente selezionato."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        return st.session_state.current_model
+    
+    @staticmethod
+    def set_current_model(model: str):
+        """Imposta il modello LLM corrente."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        st.session_state.current_model = model
+    
+    @staticmethod
+    def get_current_chat() -> Dict:
+        """Restituisce la chat corrente."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        return st.session_state.chats[st.session_state.current_chat]
+    
+    @staticmethod
+    def set_current_chat(chat_name: str):
+        """Imposta la chat corrente."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        if chat_name in st.session_state.chats:
+            st.session_state.current_chat = chat_name
+    
+    @staticmethod
+    def get_all_chats() -> Dict[str, Dict]:
+        """Restituisce tutte le chat."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        return st.session_state.chats
+    
+    @staticmethod
+    def add_message_to_current_chat(message: Dict[str, str]):
+        """Aggiunge un messaggio alla chat corrente."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        st.session_state.chats[st.session_state.current_chat]['messages'].append(message)
+    
+    @staticmethod
+    def get_messages_from_current_chat() -> List[Dict[str, str]]:
+        """Restituisce i messaggi della chat corrente."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        return st.session_state.chats[st.session_state.current_chat]['messages']
+    
+    @staticmethod
+    def clear_current_chat():
+        """Pulisce i messaggi della chat corrente."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        if st.session_state.current_chat in st.session_state.chats:
+            st.session_state.chats[st.session_state.current_chat]['messages'] = []
+    
+    @staticmethod
+    def create_new_chat(name: str) -> bool:
+        """Crea una nuova chat."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        if name not in st.session_state.chats:
+            st.session_state.chats[name] = {
+                'messages': [],
+                'created_at': datetime.now().isoformat()
             }
-        
-        # 6. Inizializzazione preferenze utente
-        if 'user_preferences' not in st.session_state:
-            st.session_state.user_preferences = {
-                'theme': 'light',
-                'code_theme': 'monokai',
-                'font_size': 'medium',
-                'show_line_numbers': True,
-                'wrap_code': False,
-                'auto_save': True,
-                'notifications': True
-            }
-
-@cache_manager.cache_data(ttl_seconds=3600)
-def initialize_clients() -> Dict[str, Any]:
-    """
-    Inizializza e cachea i client necessari per l'applicazione.
-    Include gestione errori e logging dettagliato.
+            st.session_state.current_chat = name
+            return True
+        return False
     
-    Returns:
-        Dict[str, Any]: Dictionary contenente i client inizializzati
-    
-    Raises:
-        RuntimeError: Se l'inizializzazione di un client fallisce
-    """
-    try:
-        # 1. Verifica prerequisiti
-        _verify_environment()
+    @staticmethod
+    def rename_chat(old_name: str, new_name: str) -> bool:
+        """
+        Rinomina una chat esistente.
         
-        # 2. Inizializza i client principali
-        clients = {
-            'llm': LLMManager(),
-            'session': SessionManager(),
-            'file_manager': FileManager()
+        Args:
+            old_name: Nome attuale della chat
+            new_name: Nuovo nome della chat
+            
+        Returns:
+            bool: True se la chat è stata rinominata, False se non è possibile
+        """
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        if old_name in st.session_state.chats and new_name not in st.session_state.chats:
+            st.session_state.chats[new_name] = st.session_state.chats.pop(old_name)
+            if st.session_state.current_chat == old_name:
+                st.session_state.current_chat = new_name
+            return True
+        return False
+    
+    @staticmethod
+    def delete_chat(name: str) -> bool:
+        """Elimina una chat esistente."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        if name in st.session_state.chats and len(st.session_state.chats) > 1:
+            del st.session_state.chats[name]
+            if st.session_state.current_chat == name:
+                st.session_state.current_chat = list(st.session_state.chats.keys())[0]
+            return True
+        return False
+    
+    @staticmethod
+    def add_file(file_name: str, content: Any):
+        """Aggiunge un file processato allo stato."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        st.session_state.files[file_name] = content
+    
+    @staticmethod
+    def get_file(file_name: str) -> Optional[Any]:
+        """Recupera un file dallo stato."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        return st.session_state.files.get(file_name)
+    
+    @staticmethod
+    def get_all_files() -> Dict[str, Any]:
+        """Recupera tutti i file dallo stato."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        return st.session_state.files
+    
+    @staticmethod
+    def set_current_file(file_name: str):
+        """Imposta il file correntemente selezionato."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        st.session_state.current_file = file_name
+    
+    @staticmethod
+    def get_current_file() -> Optional[str]:
+        """Restituisce il nome del file correntemente selezionato."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        return st.session_state.current_file
+    
+    @staticmethod
+    def update_token_count(tokens: int):
+        """Aggiorna il conteggio dei token utilizzati."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        st.session_state.token_count += tokens
+    
+    @staticmethod
+    def update_cost(amount: float):
+        """Aggiorna il costo totale delle richieste LLM."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        st.session_state.cost += amount
+    
+    @staticmethod
+    def get_stats() -> Dict[str, Any]:
+        """Restituisce le statistiche correnti della sessione."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        return {
+            'token_count': st.session_state.token_count,
+            'cost': st.session_state.cost,
+            'files_count': len(st.session_state.files),
+            'chats_count': len(st.session_state.chats)
         }
-        
-        # 3. Verifica inizializzazione
-        _verify_clients(clients)
-        
-        # 4. Aggiorna statistiche
-        st.session_state.stats['initialization'] = {
-            'timestamp': datetime.now().isoformat(),
-            'status': 'success',
-            'clients': list(clients.keys())
-        }
-        
-        return clients
-        
-    except Exception as e:
-        # Logging dettagliato dell'errore
-        error_details = {
-            'timestamp': datetime.now().isoformat(),
-            'error_type': type(e).__name__,
-            'error_message': str(e),
-            'status': 'failed'
-        }
-        
-        if 'error_log' not in st.session_state:
-            st.session_state.error_log = []
-        st.session_state.error_log.append(error_details)
-        
-        # Aggiorna statistiche
-        st.session_state.stats['errors'] += 1
-        st.session_state.stats['last_error'] = error_details
-        
-        raise RuntimeError(f"Errore durante l'inizializzazione dei client: {str(e)}")
-
-def _verify_environment() -> None:
-    """
-    Verifica l'ambiente di esecuzione e i prerequisiti.
     
-    Raises:
-        ValueError: Se mancano variabili d'ambiente o dipendenze necessarie
-    """
-    required_env = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']
-    missing_env = [env for env in required_env if env not in st.secrets]
+    @staticmethod
+    def set_error(error: str):
+        """Imposta l'ultimo errore verificatosi."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        st.session_state.last_error = error
     
-    if missing_env:
-        raise ValueError(
-            f"Variabili d'ambiente mancanti: {', '.join(missing_env)}. "
-            "Configurare le API keys in .streamlit/secrets.toml"
-        )
+    @staticmethod
+    def get_error() -> Optional[str]:
+        """Recupera l'ultimo errore."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        return st.session_state.last_error
     
-    required_packages = ['openai', 'anthropic', 'watchdog']
-    missing_packages = []
+    @staticmethod
+    def clear_error():
+        """Pulisce l'ultimo errore."""
+        SessionManager.init_session()  # Assicura l'inizializzazione
+        st.session_state.last_error = None
     
-    for package in required_packages:
-        try:
-            __import__(package)
-        except ImportError:
-            missing_packages.append(package)
-    
-    if missing_packages:
-        raise ValueError(
-            f"Pacchetti mancanti: {', '.join(missing_packages)}. "
-            "Installare i pacchetti richiesti con pip install -r requirements.txt"
-        )
-
-def _verify_clients(clients: Dict[str, Any]) -> None:
-    """
-    Verifica che tutti i client siano stati inizializzati correttamente.
-    
-    Args:
-        clients: Dictionary dei client da verificare
-    
-    Raises:
-        RuntimeError: Se un client non è stato inizializzato correttamente
-    """
-    required_clients = ['llm', 'session', 'file_manager']
-    
-    for client_name in required_clients:
-        if client_name not in clients:
-            raise RuntimeError(f"Client mancante: {client_name}")
-        
-        client = clients[client_name]
-        if client is None:
-            raise RuntimeError(f"Client {client_name} non inizializzato")
-        
-        # Verifica metodi richiesti per ogni tipo di client
-        if client_name == 'llm':
-            required_methods = ['process_request', 'select_model']
-        elif client_name == 'session':
-            required_methods = ['init_session', 'get_current_model']
-        elif client_name == 'file_manager':
-            required_methods = ['process_file', 'process_zip']
-        
-        for method in required_methods:
-            if not hasattr(client, method):
-                raise RuntimeError(
-                    f"Client {client_name} manca del metodo richiesto: {method}"
-                )
-
-def cleanup_session():
-    """
-    Esegue la pulizia della sessione e libera le risorse.
-    Da chiamare quando l'applicazione viene chiusa o resettata.
-    """
-    try:
-        # 1. Salva statistiche importanti
-        if 'stats' in st.session_state:
-            st.session_state.stats['last_cleanup'] = datetime.now().isoformat()
-        
-        # 2. Pulisci le cache
-        cache_manager.clear_all_caches()
-        
-        # 3. Chiudi le connessioni dei client
-        if hasattr(st.session_state, 'clients'):
-            for client in st.session_state.clients.values():
-                if hasattr(client, 'cleanup'):
-                    client.cleanup()
-        
-        # 4. Resetta lo stato della sessione
-        session_keys_to_keep = {'user_preferences', 'error_log'}
-        keys_to_delete = [
-            key for key in st.session_state.keys()
-            if key not in session_keys_to_keep
-        ]
-        
-        for key in keys_to_delete:
+    @staticmethod
+    def reset_session():
+        """Resetta completamente la sessione."""
+        for key in list(st.session_state.keys()):
             del st.session_state[key]
+        SessionManager.init_session()
+    
+    @staticmethod
+    def export_session_data() -> Dict[str, Any]:
+        """
+        Esporta tutti i dati della sessione per backup.
         
-        # 5. Reinizializza lo stato base
-        initialize_session_state()
+        Returns:
+            Dict[str, Any]: Dati completi della sessione
+        """
+        SessionManager.init_session()
+        return {
+            'chats': st.session_state.chats,
+            'files': st.session_state.files,
+            'stats': SessionManager.get_stats(),
+            'current_model': st.session_state.current_model,
+            'current_chat': st.session_state.current_chat,
+            'current_file': st.session_state.current_file,
+            'start_time': st.session_state.start_time
+        }
+    
+    @staticmethod
+    def import_session_data(data: Dict[str, Any]) -> bool:
+        """
+        Importa dati di sessione da un backup.
         
-    except Exception as e:
-        # Log dell'errore ma non sollevare l'eccezione
-        if 'error_log' in st.session_state:
-            st.session_state.error_log.append({
-                'timestamp': datetime.now().isoformat(),
-                'error_type': 'cleanup_error',
-                'error_message': str(e)
-            })    
+        Args:
+            data: Dati della sessione da importare
+            
+        Returns:
+            bool: True se l'importazione è riuscita
+        """
+        try:
+            SessionManager.reset_session()
+            st.session_state.chats = data['chats']
+            st.session_state.files = data['files']
+            st.session_state.current_model = data['current_model']
+            st.session_state.current_chat = data['current_chat']
+            st.session_state.current_file = data['current_file']
+            st.session_state.start_time = data['start_time']
+            return True
+        except Exception as e:
+            SessionManager.set_error(f"Errore nell'importazione: {str(e)}")
+            return False
