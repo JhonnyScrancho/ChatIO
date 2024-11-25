@@ -365,6 +365,8 @@ class ModelSelector:
     def render(self):
         """Renderizza il componente."""
         models = {
+            'gpt-4': '🧠 GPT-4 (Expert)',
+            'gpt-4-mini': '⚡ GPT-4 Mini (Fast)',
             'o1-mini': '🚀 O1 Mini (Fast)',
             'o1-preview': '🔍 O1 Preview (Advanced)',
             'claude-3-5-sonnet-20241022': '🎭 Claude 3.5 Sonnet (Detailed)'
@@ -406,3 +408,39 @@ class StatsDisplay:
                 f"${stats['cost']:.3f}",
                 delta=None
             )
+
+class DataAnalysisInterface:
+    """Interfaccia per l'analisi dei dati."""
+    
+    def __init__(self):
+        if 'data_analyzer' not in st.session_state:
+            st.session_state.data_analyzer = DataAnalysisManager()
+    
+    def render(self):
+        """Renderizza l'interfaccia di analisi dati."""
+        if not st.session_state.get('analysis_mode'):
+            return
+            
+        st.markdown("### 📊 Analisi Dati")
+        
+        # Mostra sommario
+        with st.expander("📝 Sommario Analisi", expanded=True):
+            summary = st.session_state.data_analyzer.get_analysis_summary()
+            st.markdown(summary)
+        
+        # Input per query
+        query = st.text_input("🔍 Fai una domanda sui tuoi dati...")
+        if query:
+            response = st.session_state.data_analyzer.query_data(query)
+            st.markdown(response)
+        
+        # Visualizzazioni base
+        if hasattr(st.session_state.data_analyzer, 'current_dataset'):
+            df = st.session_state.data_analyzer.current_dataset
+            if df is not None:
+                st.dataframe(df.head())
+                
+                # Grafici base se ci sono dati numerici
+                numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+                if len(numeric_cols) > 0:
+                    st.line_chart(df[numeric_cols])            

@@ -27,10 +27,12 @@ class LLMManager:
         
         # Costi per 1K tokens (in USD)
         self.cost_map = {
-            'o1-preview': {'input': 0.01, 'output': 0.03},
-            'o1-mini': {'input': 0.001, 'output': 0.002},
-            'claude-3-5-sonnet-20241022': {'input': 0.008, 'output': 0.024}
-        }
+        'gpt-4': {'input': 0.03, 'output': 0.06},
+        'gpt-4-mini': {'input': 0.01, 'output': 0.03},
+        'o1-preview': {'input': 0.01, 'output': 0.03},
+        'o1-mini': {'input': 0.001, 'output': 0.002},
+        'claude-3-5-sonnet-20241022': {'input': 0.008, 'output': 0.024}
+    }
         
         # Limiti dei modelli
         self.model_limits = {
@@ -47,6 +49,20 @@ class LLMManager:
                 'supports_files': False,
                 'supports_system_message': False,
                 'supports_functions': False
+            },
+            'gpt-4': {
+                'max_tokens': 128000,
+                'context_window': 128000,
+                'supports_files': True,
+                'supports_system_message': True,
+                'supports_functions': True
+            },
+            'gpt-4-mini': {
+                'max_tokens': 128000,
+                'context_window': 128000,
+                'supports_files': True,
+                'supports_system_message': True,
+                'supports_functions': True
             },
             'claude-3-5-sonnet-20241022': {
                 'max_tokens': 200000,
@@ -87,35 +103,78 @@ class LLMManager:
         self._reset_time = {}
 
     def select_model(self, task_type: str, content_length: int, 
-                    requires_file_handling: bool = False) -> str:
+                requires_file_handling: bool = False) -> str:
         """
         Seleziona automaticamente il modello più appropriato.
         
         Args:
-            task_type: Tipo di task (es. 'architecture', 'review', 'debug')
+            task_type: Tipo di task (es. 'architecture', 'review', 'debug', 'analysis')
             content_length: Lunghezza del contenuto in caratteri
             requires_file_handling: Se il task richiede manipolazione di file
             
         Returns:
             str: Nome del modello selezionato
         """
-        # Se richiede gestione file, usa Claude
-        if requires_file_handling:
-            return "claude-3-5-sonnet-20241022"
-        
         # Stima tokens (1 token ~ 4 caratteri)
         estimated_tokens = content_length // 4
         
-        # Se supera i limiti di o1-preview, usa Claude
+        # Gestione file di grandi dimensioni
+        if estimated_tokens > 128000:
+            return "claude-3-5-sonnet-20241022"  # Massima capacità di contesto
+        
+        # Mapping task -> modello preferito
+        task_model_mapping = {
+            # Task complessi che richiedono esperienza e profondità
+            'architecture': 'gpt-4',
+            'security': 'gpt-4',
+            'complex_analysis': 'gpt-4',
+            'system_design': 'gpt-4',
+            
+            # Task di media complessità
+            'review': 'gpt-4-mini',
+            'refactoring': 'gpt-4-mini',
+            'optimization': 'gpt-4-mini',
+            'analysis': 'gpt-4-mini',
+            
+            # Task rapidi o semplici
+            'debug': 'o1-mini',
+            'quick_fix': 'o1-mini',
+            'formatting': 'o1-mini',
+            'documentation': 'o1-mini',
+            
+            # Task che richiedono contesto ampio
+            'project_analysis': 'claude-3-5-sonnet-20241022',
+            'codebase_review': 'claude-3-5-sonnet-20241022'
+        }
+        
+        # Se il task richiede gestione file specifica
+        if requires_file_handling:
+            if task_type in ['analysis', 'quick_fix', 'debug']:
+                return 'gpt-4-mini'  # Buon compromesso per task comuni
+            return 'claude-3-5-sonnet-20241022'  # Migliore per file handling complesso
+        
+        # Selezione basata sulla dimensione del contenuto
+        if estimated_tokens > 64000:
+            if task_type in task_model_mapping:
+                # Per task noti usiamo il modello preferito se gestibile
+                preferred_model = task_model_mapping[task_type]
+                if self.model_limits[preferred_model]['max_tokens'] >= estimated_tokens:
+                    return preferred_model
+            return 'claude-3-5-sonnet-20241022'
+        
+        # Per contenuti di dimensioni medie
         if estimated_tokens > 32000:
-            return "claude-3-5-sonnet-20241022"
+            if task_type in task_model_mapping:
+                return task_model_mapping[task_type]
+            return 'gpt-4-mini'
         
-        # Per task complessi usa o1-preview
-        if task_type in ["architecture", "review", "security"]:
-            return "o1-preview"
+        # Per contenuti piccoli, usa il mapping task -> modello
+        if task_type in task_model_mapping:
+            return task_model_mapping[task_type]
         
-        # Per task più semplici usa o1-mini
-        return "o1-mini"
+        # Default per task sconosciuti o non specificati
+        # Sceglie o1-mini per la velocità e il costo ridotto
+        return 'o1-mini'
 
     def _enforce_rate_limit(self, model: str):
         """
@@ -193,6 +252,49 @@ class LLMManager:
             st.error(error_msg)
             yield error_msg
 
+    def _handle_gpt4_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
+        """
+        Gestisce le chiamate ai modelli GPT-4.
+        
+        Args:
+            messages: Lista di messaggi
+            model: Nome del modello GPT-4
+            
+        Yields:
+            str: Chunks della risposta
+        """
+        try:
+            self._enforce_rate_limit(model)
+            
+            completion = self.openai_client.chat.completions.create(
+                model=model,
+                messages=messages,
+                stream=True,
+                temperature=0.7,
+                max_tokens=self.model_limits[model]['max_tokens'],
+                top_p=1,
+                frequency_penalty=0,
+                presence_penalty=0
+            )
+            
+            for chunk in completion:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+                    
+        except Exception as e:
+            error_msg = f"Errore con {model}: {str(e)}"
+            st.error(error_msg)
+            
+            # Gestione fallback
+            if "rate_limit" in str(e).lower():
+                st.warning("Rate limit raggiunto, tentativo di fallback su modello alternativo...")
+                if model == 'gpt-4':
+                    yield from self._handle_gpt4_completion(messages, 'gpt-4-mini')
+                else:
+                    yield from self._handle_o1_completion(messages, 'o1-mini')
+            else:
+                yield error_msg
+    
     def _handle_claude_completion_with_user_control(self, messages: List[Dict], 
                                                   placeholder: st.empty) -> Generator[str, None, None]:
         """
@@ -362,19 +464,10 @@ class LLMManager:
         }]
 
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
-                       file_content: Optional[str] = None, 
-                       context: Optional[str] = None) -> Generator[str, None, None]:
+                   file_content: Optional[str] = None, 
+                   context: Optional[str] = None) -> Generator[str, None, None]:
         """
         Processa una richiesta completa con controllo utente sul retry e fallback.
-        
-        Args:
-            prompt: Prompt dell'utente
-            analysis_type: Tipo di analisi
-            file_content: Contenuto del file
-            context: Contesto aggiuntivo
-            
-        Yields:
-            str: Chunks della risposta
         """
         requires_file_handling = bool(file_content)
         
@@ -391,11 +484,12 @@ class LLMManager:
             model=model
         )
         
-        # Placeholder per i controlli utente
         placeholder = st.empty()
         
         try:
-            if model.startswith('o1'):
+            if model.startswith('gpt-4'):
+                yield from self._handle_gpt4_completion(messages, model)
+            elif model.startswith('o1'):
                 yield from self._handle_o1_completion(messages, model)
             else:
                 yield from self._handle_claude_completion_with_user_control(messages, placeholder)
@@ -404,7 +498,7 @@ class LLMManager:
             error_msg = f"Errore generale: {str(e)}"
             st.error(error_msg)
             with placeholder.container():
-                if st.button("🔄 Riprova con O1-mini"):
+                if st.button("🔄 Riprova con modello alternativo"):
                     yield from self._handle_o1_completion(messages, "o1-mini")
 
     def calculate_cost(self, model: str, input_tokens: int, 

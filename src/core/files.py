@@ -30,16 +30,23 @@ class FileManager:
         self.current_path = None
     
     def process_file(self, uploaded_file) -> Optional[Dict]:
-        """
-        Processa un file caricato.
+        """Processa un file caricato."""
+        result = self._process_file_cached(uploaded_file)
         
-        Args:
-            uploaded_file: File caricato tramite st.file_uploader
-            
-        Returns:
-            Optional[Dict]: Informazioni sul file processato
-        """
-        return self._process_file_cached(uploaded_file)
+        if result:
+            # Verifica se il file è un formato dati supportato
+            if uploaded_file.name.endswith(('.json', '.csv', '.pdf')):
+                st.session_state.analysis_mode = True
+                if 'data_analyzer' not in st.session_state:
+                    st.session_state.data_analyzer = DataAnalysisManager()
+                analysis = st.session_state.data_analyzer.initialize_analysis(
+                    result['content'], 
+                    uploaded_file.name
+                )
+                if analysis:
+                    result['analysis'] = analysis
+        
+        return result
     
     @staticmethod
     @st.cache_data
