@@ -158,25 +158,22 @@ class LLMManager:
     def _enforce_rate_limit(self, model: str):
         """
         Implementa rate limiting per le chiamate API.
-        
-        Args:
-            model: Nome del modello
         """
         current_time = time.time()
         
-        # Inizializza contatori se necessario
+        # Initialize counters if needed
         if model not in self._last_call_time:
             self._last_call_time[model] = current_time
             self._call_count[model] = 0
             self._reset_time[model] = current_time + 60
         
-        # Resetta contatori se necessario
+        # Reset counters if needed
         if current_time > self._reset_time[model]:
             self._call_count[model] = 0
             self._reset_time[model] = current_time + 60
         
-        # Applica rate limiting
-        if self._call_count[model] >= 50:  # 50 richieste al minuto
+        # Apply rate limiting
+        if self._call_count[model] >= 50:  # 50 requests per minute
             sleep_time = self._reset_time[model] - current_time
             if sleep_time > 0:
                 time.sleep(sleep_time)
@@ -185,16 +182,10 @@ class LLMManager:
         
         self._call_count[model] += 1
         self._last_call_time[model] = current_time
-
+    
     def _exponential_backoff(self, attempt: int) -> float:
         """
         Calcola il tempo di attesa per il retry con jitter.
-        
-        Args:
-            attempt: Numero del tentativo
-            
-        Returns:
-            float: Tempo di attesa in secondi
         """
         delay = min(self.MAX_RETRY_DELAY, 
                    self.INITIAL_RETRY_DELAY * (2 ** attempt))
@@ -348,47 +339,75 @@ class LLMManager:
             st.error(error_msg)
             yield error_msg
 
-    async def process_request(self, prompt: str, analysis_type: Optional[str] = None,
-                    file_content: Optional[str] = None, 
-                    context: Optional[str] = None) -> Generator[str, None, None]:
+    def process_request(self, prompt: str, analysis_type: Optional[str] = None,
+                       file_content: Optional[str] = None, 
+                       context: Optional[str] = None) -> Generator[str, None, None]:
         """
-        Processa una richiesta completa con controllo utente sul retry e fallback.
+        Processa una richiesta in modo sincrono.
         """
-        # [previous token counting and content preparation code remains the same]
+        # Prepare messages
+        messages = []
+        if context:
+            messages.append({"role": "system", "content": context})
+        messages.append({"role": "user", "content": prompt})
         
-        # Placeholder per i controlli utente
-        placeholder = st.empty()
-        response = ""
-        start_time = time.time()
+        # Get current model
+        current_model = SessionManager.get_current_model()
         
         try:
-            # Processa la risposta del modello
-            async for chunk in self.process_model_response(messages, current_model, placeholder):
-                if chunk:
-                    response += chunk
-                    yield chunk
-            
-            # Processa la risposta ottenuta
-            if response:
-                self._process_successful_response(
-                    response=response,
-                    initial_tokens=initial_tokens,
-                    current_model=current_model,
-                    start_time=start_time,
-                    placeholder=placeholder
+            if current_model.startswith('o1'):
+                # Handle OpenAI models
+                self._enforce_rate_limit(current_model)
+                
+                response = self.openai_client.chat.completions.create(
+                    model=current_model,
+                    messages=[{"role": m["role"], "content": m["content"]} for m in messages],
+                    stream=True
                 )
                 
+                for chunk in response:
+                    if chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+                        
+            else:  # Claude model
+                # Create event loop
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                try:
+                    # Handle Claude responses in chunks
+                    self._enforce_rate_limit(current_model)
+                    
+                    # Convert messages to Claude format
+                    claude_messages = []
+                    for msg in messages:
+                        if msg["role"] == "user":
+                            claude_messages.append({
+                                "role": "user",
+                                "content": msg["content"]
+                            })
+                    
+                    response = self.anthropic_client.messages.create(
+                        model=current_model,
+                        max_tokens=4096,
+                        messages=claude_messages,
+                        stream=True
+                    )
+                    
+                    # Process streaming response
+                    for chunk in response:
+                        if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'text'):
+                            yield chunk.delta.text
+                        elif hasattr(chunk, 'content') and chunk.content:
+                            yield chunk.content[0].text
+                            
+                finally:
+                    loop.close()
+                    
         except Exception as e:
-            self._handle_request_error(
-                error=e,
-                current_model=current_model,
-                analysis_type=analysis_type,
-                initial_tokens=initial_tokens,
-                prompt=prompt,
-                file_content=file_content,
-                context=context,
-                placeholder=placeholder
-            )
+            error_msg = f"Error processing request: {str(e)}"
+            self.logger.error(f"{error_msg}\n{traceback.format_exc()}")
+            yield error_msg
 
     def _process_successful_response(self, response: str, initial_tokens: int,
                                 current_model: str, start_time: float,
@@ -462,25 +481,11 @@ class LLMManager:
     def calculate_cost(self, model: str, input_tokens: int, output_tokens: int) -> float:
         """
         Calcola il costo di una richiesta.
-        
-        Args:
-            model: Nome del modello
-            input_tokens: Numero di token in input
-            output_tokens: Numero di token in output
-            
-        Returns:
-            float: Costo in USD
         """
         if model not in self.cost_map:
             return 0.0
             
         costs = self.cost_map[model]
-        
-        # Validate token counts
-        if input_tokens < 0 or output_tokens < 0:
-            self.logger.warning(f"Token count negativo rilevato: input={input_tokens}, output={output_tokens}")
-            return 0.0
-            
         input_cost = (input_tokens * costs['input']) / 1000
         output_cost = (output_tokens * costs['output']) / 1000
         
