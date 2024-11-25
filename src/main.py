@@ -10,6 +10,8 @@ import os
 from datetime import datetime
 from typing import Dict, Any
 import logging
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 # Configurazione logging
 logging.basicConfig(
@@ -35,6 +37,53 @@ from src.core.llm import LLMManager
 from src.core.files import FileManager
 from src.ui.layout import render_app_layout, render_error_message, render_success_message, render_info_message
 from src.utils.config import load_config
+from src.utils.cache_manager import CacheManager, cache_manager
+
+class FileChangeHandler(FileSystemEventHandler):
+    """Gestisce gli eventi di modifica dei file."""
+    
+    def __init__(self, cache_manager: CacheManager):
+        self.cache_manager = cache_manager
+    
+    def on_modified(self, event):
+        if not event.is_directory:
+            logger.info(f"File modificato: {event.src_path}")
+            self.cache_manager.clear_all_caches()
+            # Forza il ricaricamento della pagina
+            st.experimental_rerun()
+
+def setup_file_monitoring(cache_manager: CacheManager):
+    """
+    Configura il monitoraggio dei file per il ricaricamento automatico.
+    
+    Args:
+        cache_manager: Istanza del CacheManager
+    """
+    # Lista dei percorsi da monitorare
+    paths_to_watch = [
+        'src/core',
+        'src/ui',
+        'src/utils',
+        'templates'
+    ]
+    
+    # Configura l'observer per ogni percorso
+    observer = Observer()
+    for path in paths_to_watch:
+        if os.path.exists(path):
+            observer.schedule(
+                FileChangeHandler(cache_manager),
+                path=path,
+                recursive=True
+            )
+    
+    # Avvia l'observer
+    observer.start()
+    logger.info("File monitoring attivato")
+    
+    # Registra l'observer per lo shutdown
+    import atexit
+    atexit.register(lambda: observer.stop())
 
 def setup_directory_structure():
     """
@@ -91,7 +140,7 @@ def validate_environment() -> bool:
     
     return True
 
-@st.cache_resource
+@cache_manager.cache_data(ttl_seconds=3600)  # Cache per 1 ora
 def initialize_clients() -> Dict[str, Any]:
     """
     Inizializza e cachea i client necessari per l'applicazione.
@@ -185,6 +234,19 @@ def load_custom_css():
         .status-error {
             background-color: #dc3545;
         }
+        
+        /* Cache status indicator */
+        .cache-status {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            font-size: 0.8rem;
+            z-index: 9999;
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -239,16 +301,25 @@ def main():
         # Step 5: Inizializzazione SessionManager
         SessionManager.init_session()
         
-        # Step 6: Inizializzazione clients
+        # Step 6: Setup monitoraggio file
+        setup_file_monitoring(cache_manager)
+        
+        # Step 7: Inizializzazione clients
         clients = initialize_clients()
         
-        # Step 7: Caricamento CSS
+        # Step 8: Caricamento CSS
         load_custom_css()
         
-        # Step 8: Renderizza l'interfaccia
+        # Step 9: Pulsante per pulire la cache
+        if st.sidebar.button("🧹 Pulisci Cache"):
+            cache_manager.clear_all_caches()
+            st.success("Cache pulita con successo!")
+            st.experimental_rerun()
+        
+        # Step 10: Renderizza l'interfaccia
         render_app_layout(clients)
         
-        # Step 9: Debug mode
+        # Step 11: Debug mode
         if st.session_state.debug_mode:
             with st.expander("Debug Information", expanded=False):
                 st.json({
@@ -257,8 +328,19 @@ def main():
                         if k not in ['client_config', 'secrets']
                     },
                     'start_time': st.session_state.start_time,
-                    'error_log': st.session_state.error_log
+                    'error_log': st.session_state.error_log,
+                    'cache_info': cache_manager.get_cache_info()
                 })
+        
+        # Step 12: Indicatore stato cache
+        st.markdown(
+            f"""
+            <div class="cache-status">
+                Cache last cleared: {cache_manager.get_last_clear_time()}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
         
     except Exception as e:
         logger.error(f"Application error: {e}", exc_info=True)

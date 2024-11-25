@@ -6,6 +6,7 @@ import re
 import html
 from typing import List, Dict, Any, Optional
 import streamlit as st
+from src.utils.cache_manager import cache_manager
 
 def truncate_text(text: str, max_length: int = 100) -> str:
     """
@@ -51,7 +52,7 @@ def sanitize_input(text: str) -> str:
     text = html.escape(text)
     return text
 
-@st.cache_data(ttl=3600)
+@cache_manager.cache_data(ttl=3600)
 def estimate_request_cost(model: str, text_length: int) -> float:
     """
     Stima il costo di una richiesta LLM.
@@ -107,7 +108,7 @@ def parse_code_context(files: Dict[str, Any]) -> str:
     header = f"Progetto ({format_file_size(total_size)}, {len(files)} files):"
     return header + "\n" + "\n".join(context)
 
-@st.cache_data(ttl=60)
+@cache_manager.cache_data(ttl=60)
 def analyze_code_complexity(content: str) -> Dict[str, Any]:
     """
     Analisi base della complessità del codice.
