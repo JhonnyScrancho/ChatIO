@@ -237,21 +237,25 @@ def render_main_layout():
         ChatInterface().process_user_message(prompt)
 
 def main():
-    """Funzione principale dell'applicazione."""
-    load_dotenv()
-    try:
-        # Controlli iniziali
-        check_environment()
-        check_directories()
-        load_custom_css()
-        
-        # Renderizza il layout principale
-        render_main_layout()
-        
-    except Exception as e:
-        st.error(f"❌ Si è verificato un errore: {str(e)}")
-        if os.getenv('DEBUG') == 'True':
-            st.exception(e)
+    """Main interface."""
+    # Inizializza sessione
+    SessionManager.init_session()
+    
+    # Titolo
+    st.title("👲🏿 Allegro IO")
+    
+    # Statistiche
+    StatsDisplay.render()
+    st.markdown("---")
+    
+    # Chat interface
+    chat = ChatInterface()
+    chat.render()
+    
+    # Input chat
+    if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
+        chat.process_message(prompt)
+        st.rerun()
 
 if __name__ == "__main__":
     main()
