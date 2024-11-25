@@ -228,29 +228,34 @@ class LLMManager:
             
             # Converti i messaggi nel formato corretto per Claude 3
             claude_messages = []
-            system_content = None
+            system_message = None
             
             for msg in messages:
                 if msg["role"] == "system":
-                    system_content = msg["content"]
+                    system_message = [{
+                        "type": "text",
+                        "text": msg["content"]
+                    }]
                 else:
                     claude_messages.append({
                         "role": msg["role"],
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": msg["content"]
-                            }
-                        ]
+                        "content": [{
+                            "type": "text",
+                            "text": msg["content"]
+                        }]
                     })
             
             try:
+                # Debug: stampa i messaggi prima dell'invio
+                st.write("Debug - System message:", system_message)
+                st.write("Debug - Messages:", claude_messages)
+                
                 response = self.anthropic_client.messages.create(
                     model="claude-3-5-sonnet-20241022",
                     max_tokens=4096,
                     temperature=0.7,
-                    system=system_content,  # Passa il system message separatamente
-                    messages=claude_messages,  # Lista di messaggi nel formato corretto
+                    system=system_message,  # Ora è una lista di oggetti content
+                    messages=claude_messages,
                     stream=True
                 )
                 
@@ -266,6 +271,7 @@ class LLMManager:
             error_msg = f"Errore Claude: {str(e)}"
             st.error(error_msg)
             yield error_msg
+
     
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
                        file_content: Optional[str] = None, 
