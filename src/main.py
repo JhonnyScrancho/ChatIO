@@ -329,8 +329,33 @@ def render_main_layout():
     with chat_input_container:
         if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
             current_chat = st.session_state.chats[st.session_state.current_chat]
-            current_chat['messages'].append({"role": "user", "content": prompt})
             
+            # Aggiungi il contesto dei file se presenti e non ancora mostrati
+            if st.session_state.uploaded_files:
+                last_messages = current_chat['messages'][-3:]  # Controlla gli ultimi 3 messaggi
+                files_already_shown = any(
+                    msg["content"].startswith("📂 File caricati:") 
+                    for msg in last_messages 
+                    if msg["role"] == "system"
+                )
+                
+                if not files_already_shown:
+                    files_context = "📂 File in analisi:\n" + "\n".join(
+                        f"- {name} ({info['language']})" 
+                        for name, info in st.session_state.uploaded_files.items()
+                    )
+                    current_chat['messages'].append({
+                        "role": "system",
+                        "content": files_context
+                    })
+            
+            # Aggiungi il messaggio dell'utente
+            current_chat['messages'].append({
+                "role": "user", 
+                "content": prompt
+            })
+            
+            # Processa la risposta
             with st.spinner("Elaborazione in corso..."):
                 response = clients['llm'].process_request(prompt)
                 current_chat['messages'].append({

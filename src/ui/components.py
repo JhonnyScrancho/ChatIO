@@ -98,10 +98,11 @@ class FileExplorer:
             "Drag and drop files here",
             type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
             accept_multiple_files=True,
-            key="file_uploader"  # Added unique key for uploader
+            key="file_uploader"
         )
 
         if uploaded_files:
+            files_message = "📂 File caricati:\n"
             for file in uploaded_files:
                 try:
                     if file.name.endswith('.zip'):
@@ -109,6 +110,7 @@ class FileExplorer:
                         import io
                         
                         zip_content = zipfile.ZipFile(io.BytesIO(file.read()))
+                        zip_files = []
                         for zip_file in zip_content.namelist():
                             if not zip_file.startswith('__') and not zip_file.startswith('.'):
                                 try:
@@ -118,8 +120,10 @@ class FileExplorer:
                                         'language': zip_file.split('.')[-1],
                                         'name': zip_file
                                     }
+                                    zip_files.append(zip_file)
                                 except Exception as e:
                                     continue
+                        files_message += f"- {file.name} (contiene: {', '.join(zip_files)})\n"
                     else:
                         content = file.read().decode('utf-8')
                         st.session_state.uploaded_files[file.name] = {
@@ -127,45 +131,17 @@ class FileExplorer:
                             'language': file.name.split('.')[-1],
                             'name': file.name
                         }
+                        files_message += f"- {file.name}\n"
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {str(e)}")
-
-        # File tree visualization
-        if st.session_state.uploaded_files:
-            st.markdown("""
-                <style>
-                    .stButton button {
-                        background: none !important;
-                        border: none !important;
-                        padding: 0 !important;
-                        font-family: monospace !important;
-                        color: inherit !important;
-                        text-align: left !important;
-                        width: 100% !important;
-                        margin: 0 !important;
-                        height: auto !important;
-                        line-height: 1.5 !important;
-                    }
-                    .stButton button:hover {
-                        color: #ff4b4b !important;
-                    }
-                    .directory {
-                        color: #666;
-                        font-family: monospace;
-                    }
-                </style>
-            """, unsafe_allow_html=True)
             
-            tree = self._create_file_tree(st.session_state.uploaded_files)
-            st.markdown(
-                "<div style='font-family: monospace;'>allegro-io/</div>", 
-                unsafe_allow_html=True
-            )
-            
-            items = sorted(tree.items())
-            for i, (name, node) in enumerate(items):
-                is_last = i == len(items) - 1
-                self._render_tree_node(name, node, "", is_last)
+            # Aggiungi messaggio di sistema per i file caricati
+            if 'chats' in st.session_state and st.session_state.current_chat in st.session_state.chats:
+                st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                    "role": "system",
+                    "content": files_message
+                })
+                st.rerun()
 
 class ChatInterface:
     """Componente per l'interfaccia chat."""
@@ -188,6 +164,19 @@ class ChatInterface:
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
         try:
+            # Crea messaggio di contesto per i file analizzati
+            if st.session_state.uploaded_files:
+                files_context = "🔍 Analizzo i seguenti file:\n"
+                for filename, file_info in st.session_state.uploaded_files.items():
+                    files_context += f"- {filename} ({file_info['language']})\n"
+                
+                # Aggiungi il messaggio di contesto alla chat
+                st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                    "role": "assistant",
+                    "content": files_context
+                })
+
+            # Prepara il contesto completo per l'LLM
             context = ""
             for filename, file_info in st.session_state.uploaded_files.items():
                 context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
@@ -201,7 +190,9 @@ class ChatInterface:
                     response += chunk
             return response
         except Exception as e:
-            return f"Mi dispiace, si è verificato un errore: {str(e)}"
+            error_msg = f"Mi dispiace, si è verificato un errore: {str(e)}"
+            st.error(error_msg)
+            return error_msg
         
     def render_chat_controls(self):
         """Renderizza i controlli per la gestione delle chat."""
