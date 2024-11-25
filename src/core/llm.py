@@ -154,8 +154,8 @@ class LLMManager:
         Returns:
             Dict[str, Any]: Messaggio formattato per il modello
         """
-        system_content = None
         messages = []
+        system_content = None
         
         # Prepara il contenuto del sistema se supportato e richiesto
         if self.model_limits[model]['supports_system_message'] and analysis_type:
@@ -178,15 +178,23 @@ class LLMManager:
         # Formatta il messaggio in base al modello
         if model.startswith('claude'):
             if system_content:
-                messages = [{
-                    "role": "user",
-                    "content": [{"type": "text", "text": main_content}]
-                }]
+                messages = [
+                    {
+                        "role": "system",
+                        "content": system_content
+                    },
+                    {
+                        "role": "user",
+                        "content": main_content
+                    }
+                ]
             else:
-                messages = [{
-                    "role": "user",
-                    "content": [{"type": "text", "text": main_content}]
-                }]
+                messages = [
+                    {
+                        "role": "user",
+                        "content": main_content
+                    }
+                ]
         else:
             if system_content:
                 messages = [
@@ -198,7 +206,7 @@ class LLMManager:
         
         return {
             "messages": messages,
-            "system": system_content if model.startswith('claude') else None
+            "system": system_content
         }
     
     def _enforce_rate_limit(self, model: str):
@@ -261,88 +269,61 @@ class LLMManager:
             error_msg = f"Errore con {model}: {str(e)}"
             st.error(error_msg)
             # Fallback a Claude in caso di errore
-            yield from self._handle_claude_completion(messages)
+            yield from self._handle_claude_completion({"messages": messages})
     
     def _handle_claude_completion(self, prompt_data: Dict[str, Any]) -> Generator[str, None, None]:
         """
         Gestisce le chiamate a Claude con gestione errori robusta.
-        Usa esclusivamente un modello valido (claude-3-5-sonnet-20241022).
+        
+        Args:
+            prompt_data: Dizionario contenente i messaggi e il system prompt
+            
+        Yields:
+            str: Chunks della risposta
         """
         MODEL = "claude-3-5-sonnet-20241022"
+        
         try:
-            # Applica il limite di richieste per evitare throttling
             self._enforce_rate_limit("claude")
             
-            # Prepara il prompt
-            system_message = prompt_data.get("system", "You are a helpful assistant.")
-            human_messages = []
+            # Costruisce il messaggio nel formato corretto per Claude 3
+            messages = []
             
-            # Converte i messaggi in un formato concatenato
+            # Aggiunge il system message se presente
+            if system := prompt_data.get("system"):
+                messages.append({
+                    "role": "system",
+                    "content": system
+                })
+            
+            # Aggiunge i messaggi dell'utente nel formato corretto
             for msg in prompt_data.get("messages", []):
-                if msg.get("role") == "user" and isinstance(msg.get("content"), str):
-                    human_messages.append(msg["content"])
-                elif msg.get("role") == "user" and isinstance(msg.get("content"), list):
-                    human_messages.append(msg["content"][0].get("text", ""))
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
+
+            # Crea la completion con il nuovo client Claude 3
+            stream = self.anthropic_client.messages.create(
+                model=MODEL,
+                messages=messages,
+                max_tokens=4096,
+                stream=True
+            )
             
-            # Costruisce il prompt usando i delimitatori di Anthropic
-            full_prompt = f"{HUMAN_PROMPT}{system_message}\n" + "\n".join(human_messages) + f"{AI_PROMPT}"
-
-            # Logica di Retry
-            max_retries = 3
-            retry_count = 0
-            last_error = None
-
-            while retry_count < max_retries:
-                try:
-                    stream = self.anthropic_client.completions.create(
-                        model=MODEL,
-                        prompt=full_prompt,
-                        max_tokens_to_sample=1000,  # Numero massimo di token
-                        temperature=0.7,  # Livello di casualità moderato
-                        stream=True  # Abilita lo streaming
-                    )
+            # Processa lo stream nel nuovo formato
+            for chunk in stream:
+                if chunk.delta and chunk.delta.text:
+                    yield chunk.delta.text
                     
-                    # Elabora lo stream
-                    for chunk in stream:
-                        if chunk and hasattr(chunk, 'completion'):
-                            yield chunk.completion
-                    return  # Esce se completato correttamente
-
-                except Exception as e:
-                    last_error = str(e)
-                    retry_count += 1
-                    
-                    # Logica specifica per errori not_found
-                    if "not_found_error" in last_error:
-                        self._log("Modello non trovato: impossibile continuare", level="ERROR")
-                        break
-                    
-                    # Ritenta in caso di errori transitori
-                    if retry_count < max_retries:
-                        time.sleep(1 + retry_count)
-                        self._log(f"Retry {retry_count}: {last_error}")
-
-            # Se tutti i retry falliscono
-            st.error(f"Errore Claude: {last_error}")
-            
-            # Passa al modello di fallback
-            st.info("Passaggio al modello di fallback O1...")
-            fallback_prompt = f"{HUMAN_PROMPT}{system_message}\n" + "\n".join(human_messages) + f"{AI_PROMPT}"
-            yield from self._handle_o1_completion(fallback_prompt, "o1-preview")
-
-        except ValueError as ve:
-            self._log(f"Errore formato dati: {ve}", level="ERROR")
-            yield f"Errore formato dati: {ve}"
         except Exception as e:
-            import traceback
-            error_msg = f"Errore generico: {traceback.format_exc()}"
+            error_msg = f"Errore Claude: {str(e)}"
             st.error(error_msg)
-            self._log(error_msg, level="ERROR")
-            yield error_msg
-
-
-
-
+            # Fallback a O1 in caso di errore
+            fallback_messages = [{"role": "user", "content": msg["content"]} 
+                               for msg in prompt_data.get("messages", [])]
+            yield from self._handle_o1_completion(fallback_messages, "o1-preview")
+    
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
                        file_content: Optional[str] = None, 
                        context: Optional[str] = None) -> Generator[str, None, None]:
@@ -431,3 +412,135 @@ class LLMManager:
                 ).strftime('%Y-%m-%d %H:%M:%S')
             }
         }
+    
+    def _validate_model_availability(self, model: str) -> bool:
+        """
+        Verifica la disponibilità di un modello.
+        
+        Args:
+            model: Nome del modello da verificare
+            
+        Returns:
+            bool: True se il modello è disponibile
+        """
+        if model not in self.model_limits:
+            self._log(f"Modello {model} non supportato", "WARNING")
+            return False
+            
+        if model.startswith('claude') and not hasattr(self, 'anthropic_client'):
+            self._log("Client Anthropic non inizializzato", "ERROR")
+            return False
+            
+        if model.startswith('o1') and not hasattr(self, 'openai_client'):
+            self._log("Client OpenAI non inizializzato", "ERROR")
+            return False
+            
+        return True
+    
+    def estimate_tokens(self, text: str) -> int:
+        """
+        Stima approssimativa del numero di token in un testo.
+        
+        Args:
+            text: Testo da analizzare
+            
+        Returns:
+            int: Numero stimato di token
+        """
+        # Approssimazione semplice: 1 token ~= 4 caratteri
+        return len(text) // 4
+    
+    def update_usage_stats(self, model: str, input_tokens: int, output_tokens: int):
+        """
+        Aggiorna le statistiche di utilizzo nella sessione.
+        
+        Args:
+            model: Nome del modello utilizzato
+            input_tokens: Numero di token in input
+            output_tokens: Numero di token in output
+        """
+        if 'usage_stats' not in st.session_state:
+            st.session_state.usage_stats = {
+                'total_tokens': 0,
+                'total_cost': 0.0,
+                'models': {}
+            }
+        
+        stats = st.session_state.usage_stats
+        stats['total_tokens'] += (input_tokens + output_tokens)
+        cost = self.calculate_cost(model, input_tokens, output_tokens)
+        stats['total_cost'] += cost
+        
+        if model not in stats['models']:
+            stats['models'][model] = {
+                'calls': 0,
+                'tokens': 0,
+                'cost': 0.0
+            }
+        
+        model_stats = stats['models'][model]
+        model_stats['calls'] += 1
+        model_stats['tokens'] += (input_tokens + output_tokens)
+        model_stats['cost'] += cost
+    
+    def get_usage_summary(self) -> Dict[str, Any]:
+        """
+        Restituisce un riepilogo dell'utilizzo.
+        
+        Returns:
+            Dict[str, Any]: Statistiche di utilizzo
+        """
+        if 'usage_stats' not in st.session_state:
+            return {
+                'total_tokens': 0,
+                'total_cost': 0.0,
+                'models': {}
+            }
+        
+        return st.session_state.usage_stats
+    
+    def reset_usage_stats(self):
+        """Resetta le statistiche di utilizzo."""
+        if 'usage_stats' in st.session_state:
+            del st.session_state.usage_stats
+    
+    def handle_error(self, error: Exception, context: str = ""):
+        """
+        Gestisce gli errori in modo centralizzato.
+        
+        Args:
+            error: Eccezione da gestire
+            context: Contesto dell'errore
+        """
+        error_msg = f"Error in {context}: {str(error)}"
+        self._log(error_msg, "ERROR")
+        
+        if 'error_log' not in st.session_state:
+            st.session_state.error_log = []
+            
+        st.session_state.error_log.append({
+            'timestamp': datetime.now().isoformat(),
+            'error': str(error),
+            'context': context,
+            'type': type(error).__name__
+        })
+        
+        # Notifica l'errore all'interfaccia
+        st.error(f"Si è verificato un errore: {str(error)}")
+        
+        if st.session_state.get('debug_mode', False):
+            st.exception(error)
+    
+    def cleanup(self):
+        """Esegue le operazioni di pulizia necessarie."""
+        # Resetta i contatori del rate limiting
+        self._last_call_time = {}
+        self._call_count = {}
+        self._reset_time = {}
+        
+        # Chiude le connessioni dei client
+        if hasattr(self, 'openai_client'):
+            del self.openai_client
+        
+        if hasattr(self, 'anthropic_client'):
+            del self.anthropic_client
