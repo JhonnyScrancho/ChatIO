@@ -258,18 +258,11 @@ class LLMManager:
             self._enforce_rate_limit("claude")
             
             # Prepara il messaggio base
-            messages = []
-            for msg in prompt_data["messages"]:
-                messages.append({
-                    "role": msg["role"],
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": msg["content"] if isinstance(msg["content"], str) 
-                                   else msg["content"][0]["text"]
-                        }
-                    ]
-                })
+            messages.append({
+                "role": msg["role"],
+                "content": msg["content"] if isinstance(msg["content"], str) 
+                        else msg["content"][0]["text"]
+            })
 
             # Retry logic
             max_retries = 3
