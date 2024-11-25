@@ -115,13 +115,13 @@ class LLMManager:
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
                   file_content: Optional[str] = None, 
                   context: Optional[str] = None,
-                  model: str = "claude-3-5-sonnet-20241022") -> Dict[str, Any]:
+                  model: str = "claude-3-5-sonnet-20241022") -> List[Dict]:
         """
-        Prepara il prompt completo in base al modello.
+        Prepara il prompt in formato semplificato.
         """
         messages = []
         
-        # Aggiungi system message se supportato e richiesto
+        # Aggiungi system message se necessario
         if self.model_limits[model]['supports_system_message'] and analysis_type:
             template = self.system_templates[analysis_type]
             system_msg = {
@@ -133,15 +133,11 @@ class LLMManager:
         # Prepara il contenuto principale
         main_content = prompt
         
-        # Aggiungi il contenuto del file se presente
         if file_content:
-            file_section = f"\nFile content:\n```\n{file_content}\n```"
-            main_content += file_section
+            main_content += f"\nFile content:\n```\n{file_content}\n```"
         
-        # Aggiungi il contesto se presente
         if context:
-            context_section = f"\nContext: {context}"
-            main_content += context_section
+            main_content += f"\nContext: {context}"
         
         # Aggiungi il messaggio utente
         messages.append({
@@ -215,7 +211,7 @@ class LLMManager:
     
     def _handle_claude_completion(self, messages: List[Dict]) -> Generator[str, None, None]:
         """
-        Gestisce le chiamate a Claude.
+        Gestisce le chiamate a Claude con formato semplificato.
         
         Args:
             messages: Lista di messaggi
@@ -226,51 +222,91 @@ class LLMManager:
         try:
             self._enforce_rate_limit("claude-3-5-sonnet-20241022")
             
-            # Converti i messaggi nel formato corretto per Claude 3
-            claude_messages = []
+            # Estrai il system message se presente
             system_message = None
+            user_messages = []
             
             for msg in messages:
                 if msg["role"] == "system":
-                    system_message = [{
-                        "type": "text",
-                        "text": msg["content"]
-                    }]
-                else:
-                    claude_messages.append({
-                        "role": msg["role"],
-                        "content": [{
-                            "type": "text",
-                            "text": msg["content"]
-                        }]
+                    system_message = [{"type": "text", "text": msg["content"]}]
+                elif msg["role"] == "user":
+                    user_messages.append({
+                        "role": "user",
+                        "content": [{"type": "text", "text": msg["content"]}]
                     })
             
+            # Per debug: stampiamo i parametri esatti che stiamo inviando
+            params = {
+                "model": "claude-3-5-sonnet-20241022",
+                "max_tokens": 4096,
+                "system": system_message if system_message else None,
+                "messages": user_messages,
+                "stream": True
+            }
+            
+            st.write("Debug - API Parameters:", params)
+            
             try:
-                # Debug: stampa i messaggi prima dell'invio
-                st.write("Debug - System message:", system_message)
-                st.write("Debug - Messages:", claude_messages)
-                
-                response = self.anthropic_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=4096,
-                    temperature=0.7,
-                    system=system_message,  # Ora è una lista di oggetti content
-                    messages=claude_messages,
-                    stream=True
-                )
+                # Chiamata API semplificata
+                if system_message:
+                    response = self.anthropic_client.messages.create(
+                        model="claude-3-5-sonnet-20241022",
+                        max_tokens=4096,
+                        messages=user_messages,
+                        system=system_message,
+                        stream=True
+                    )
+                else:
+                    response = self.anthropic_client.messages.create(
+                        model="claude-3-5-sonnet-20241022",
+                        max_tokens=4096,
+                        messages=user_messages,
+                        stream=True
+                    )
                 
                 for chunk in response:
                     if chunk.delta.text:
                         yield chunk.delta.text
                         
             except Exception as e:
-                st.error(f"Errore nella chiamata API: {str(e)}")
-                yield f"Mi dispiace, si è verificato un errore: {str(e)}"
+                error_details = f"Errore nella chiamata API: {str(e)}"
+                st.error(error_details)
+                yield error_details
                 
         except Exception as e:
             error_msg = f"Errore Claude: {str(e)}"
             st.error(error_msg)
             yield error_msg
+
+    # Metodo di test semplificato
+    def test_claude(self):
+        """
+        Metodo di test per verificare la connessione con Claude.
+        """
+        try:
+            test_message = {
+                "role": "user",
+                "content": "Ciao, questo è un test."
+            }
+            
+            response = self.anthropic_client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=100,
+                messages=[{
+                    "role": "user",
+                    "content": [{"type": "text", "text": test_message["content"]}]
+                }],
+                stream=True
+            )
+            
+            result = ""
+            for chunk in response:
+                if chunk.delta.text:
+                    result += chunk.delta.text
+            
+            return True, result
+        except Exception as e:
+            return False, str(e)
 
     
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
