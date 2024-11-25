@@ -244,7 +244,7 @@ class LLMManager:
     
     def _handle_claude_completion(self, prompt_data: Dict[str, Any]) -> Generator[str, None, None]:
         """
-        Gestisce le chiamate a Claude.
+        Gestisce le chiamate a Claude con fallback automatico tra diversi modelli.
         
         Args:
             prompt_data: Dizionario contenente messages e system
@@ -252,15 +252,30 @@ class LLMManager:
         Yields:
             str: Chunks della risposta
         """
-        try:
-            self._enforce_rate_limit("claude-3-5-sonnet-20241022")
-            
+        # Lista di modelli Claude in ordine di preferenza
+        claude_models = [
+            "claude-3-5-sonnet-20241022",  # Ultima versione specifica
+            "claude-3-sonnet",             # Versione base Sonnet
+            "claude-3-opus",               # Versione Opus
+            "claude-3-haiku",              # Versione Haiku
+            "claude-3",                    # Versione generica
+            "claude-2.1",                  # Fallback a versione precedente
+            "claude-2.0",                  # Fallback ulteriore
+            "claude-instant-1.2"           # Ultimo fallback
+        ]
+
+        tried_models = []
+        last_error = None
+
+        for model in claude_models:
             try:
-                # Ensure correct message format for Claude
+                self._enforce_rate_limit(model)
+                tried_models.append(model)
+
                 message = self.anthropic_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
+                    model=model,
                     max_tokens=1000,
-                    temperature=0,  # Using 0 for more deterministic responses
+                    temperature=0,
                     system=prompt_data.get("system"),
                     messages=[{
                         "role": msg["role"],
@@ -272,35 +287,58 @@ class LLMManager:
                         ]
                     } for msg in prompt_data["messages"]]
                 )
+
+                # Se arriviamo qui, il modello ha funzionato
+                if len(tried_models) > 1:
+                    st.success(f"Modello funzionante trovato: {model}")
                 
-                # Handle the response correctly - content is a list of TextBlock objects
+                # Aggiorna il modello di default per le future chiamate
+                if model != claude_models[0]:
+                    self.cost_map[model] = self.cost_map[claude_models[0]]
+                    self.model_limits[model] = self.model_limits[claude_models[0]]
+                    st.session_state.current_model = model
+                
+                # Processa la risposta
                 if message.content:
                     for block in message.content:
                         if hasattr(block, 'text'):
                             yield block.text
-                
+
+                # Se abbiamo successo, usciamo dal loop
+                return
+
             except Exception as e:
-                if "not_found_error" in str(e):
-                    st.warning("Claude API issue - falling back to O1")
-                    # Convert messages format for O1
-                    o1_messages = []
-                    if prompt_data.get("system"):
-                        o1_messages.append({"role": "system", "content": prompt_data["system"]})
-                    for msg in prompt_data["messages"]:
-                        text_content = msg["content"][0]["text"] if isinstance(msg["content"], list) else msg["content"]
-                        o1_messages.append({
-                            "role": msg["role"],
-                            "content": text_content
-                        })
-                    yield from self._handle_o1_completion(o1_messages, "o1-preview")
-                else:
-                    raise
-                    
-        except Exception as e:
-            error_msg = f"Errore Claude: {str(e)}"
-            st.error(error_msg)
-            yield error_msg
-            
+                last_error = e
+                error_msg = str(e)
+
+                # Se non è un errore di "modello non trovato", non proviamo altri modelli
+                if "not_found_error" not in error_msg:
+                    break
+
+                # Se siamo all'ultimo modello, loghiamo tutti i tentativi
+                if model == claude_models[-1]:
+                    st.warning(f"Tutti i modelli Claude tentati hanno fallito: {', '.join(tried_models)}")
+
+        # Se arriviamo qui, tutti i modelli Claude hanno fallito
+        st.warning("Fallback a O1 dopo che tutti i modelli Claude hanno fallito")
+        
+        # Log dell'errore finale
+        st.error(f"Ultimo errore Claude: {str(last_error)}")
+
+        # Convertiamo i messaggi per O1
+        o1_messages = []
+        if prompt_data.get("system"):
+            o1_messages.append({"role": "system", "content": prompt_data["system"]})
+        for msg in prompt_data["messages"]:
+            text_content = msg["content"][0]["text"] if isinstance(msg["content"], list) else msg["content"]
+            o1_messages.append({
+                "role": msg["role"],
+                "content": text_content
+            })
+
+        # Fallback finale a O1
+        yield from self._handle_o1_completion(o1_messages, "o1-preview")
+
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
                        file_content: Optional[str] = None, 
                        context: Optional[str] = None) -> Generator[str, None, None]:
