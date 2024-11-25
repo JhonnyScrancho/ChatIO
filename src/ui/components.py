@@ -302,77 +302,123 @@ class ChatInterface:
 
     def process_user_message(self, prompt: str):
         """
-        Processa un nuovo messaggio utente.
+        Processa un nuovo messaggio utente con debug dettagliato.
         """
         if not prompt.strip():
             return
             
-        # Crea un container per i messaggi
+        # Container per debug
+        debug_container = st.empty()
+        
+        def show_debug(title: str, content: Any):
+            """Helper per mostrare informazioni di debug."""
+            with debug_container:
+                st.write(f"🔍 DEBUG - {title}:")
+                st.code(str(content))
+        
         chat_container = st.container()
         
         with chat_container:
-            # Aggiungi il messaggio utente SOLO UNA VOLTA
-            if st.session_state.uploaded_files:
-                files_context = "\n🔍 Files in analisi:\n"
-                for filename, file_info in st.session_state.uploaded_files.items():
-                    files_context += f"- {filename} ({file_info['language']})\n"
-                
-                # Usa un hash per evitare messaggi duplicati
-                message_hash = hash(files_context)
-                if message_hash not in st.session_state.get('file_messages_sent', set()):
-                    st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                        "role": "system",
-                        "content": files_context
-                    })
-                    if 'file_messages_sent' not in st.session_state:
-                        st.session_state.file_messages_sent = set()
-                    st.session_state.file_messages_sent.add(message_hash)
+            show_debug("Prompt ricevuto", prompt)
             
             # Aggiungi il messaggio utente
             st.session_state.chats[st.session_state.current_chat]['messages'].append({
                 "role": "user",
                 "content": prompt
             })
+            
+            show_debug("Stato messaggi pre-elaborazione", 
+                      st.session_state.chats[st.session_state.current_chat]['messages'])
 
-            # Processa la risposta
+            # Processa la risposta con debug
             response = ""
             with st.spinner("Elaborazione in corso..."):
-                for chunk in self.llm.process_request(prompt=prompt):
-                    if chunk:  # Verifica che il chunk non sia vuoto
-                        response += chunk
+                try:
+                    show_debug("Inizia elaborazione LLM", "Chiamata a process_request")
+                    
+                    chunks_received = 0
+                    total_length = 0
+                    
+                    for chunk in self.llm.process_request(prompt=prompt):
+                        chunks_received += 1
+                        if chunk:
+                            total_length += len(chunk)
+                            response += chunk
+                            
+                        # Aggiorna debug ogni 5 chunks
+                        if chunks_received % 5 == 0:
+                            show_debug("Stato streaming", {
+                                "chunks_ricevuti": chunks_received,
+                                "lunghezza_totale": total_length,
+                                "ultimo_chunk": chunk,
+                                "risposta_parziale": response[-100:] + "..." # ultimi 100 caratteri
+                            })
+                    
+                    show_debug("Risposta completa ricevuta", {
+                        "lunghezza": len(response),
+                        "chunks_totali": chunks_received,
+                        "risposta": response[:200] + "..." # primi 200 caratteri
+                    })
+                    
+                except Exception as e:
+                    show_debug("ERRORE durante l'elaborazione", {
+                        "tipo": type(e).__name__,
+                        "messaggio": str(e),
+                        "risposta_parziale": response
+                    })
+                    st.error(f"Errore durante l'elaborazione: {str(e)}")
             
-            # Solo se abbiamo una risposta non vuota, la aggiungiamo
+            # Verifica e aggiunta risposta
             if response.strip():
                 st.session_state.chats[st.session_state.current_chat]['messages'].append({
                     "role": "assistant",
                     "content": response
                 })
+                show_debug("Risposta aggiunta alla chat", "Successo")
             else:
-                st.error("Non è stato possibile ottenere una risposta. Riprova.")
+                st.error("Risposta vuota ricevuta da Claude")
+                show_debug("ERRORE", "Risposta vuota da Claude")
+            
+            show_debug("Stato finale messaggi", 
+                      st.session_state.chats[st.session_state.current_chat]['messages'])
 
 
     def render(self):
-        """Renderizza l'interfaccia chat."""
-        # Renderizza i controlli delle chat
+        """Renderizza l'interfaccia chat con debug."""
         self.render_chat_controls()
         
-        # Container per i messaggi della chat
+        # Debug counter per i messaggi
+        message_count = {
+            "user": 0,
+            "assistant": 0,
+            "system": 0
+        }
+        
         messages_container = st.container()
         
-        # Evita di renderizzare messaggi duplicati usando un set di hash
         rendered_messages = set()
         
         current_chat = st.session_state.chats[st.session_state.current_chat]
         with messages_container:
-            for message in current_chat['messages']:
-                # Crea un hash univoco per il messaggio
-                message_hash = hash(f"{message['role']}:{message['content']}")
+            for idx, message in enumerate(current_chat['messages']):
+                message_count[message['role']] += 1
+                message_hash = hash(f"{idx}:{message['role']}:{message['content']}")
                 
-                # Renderizza solo se non è già stato mostrato
                 if message_hash not in rendered_messages:
                     with st.chat_message(message["role"]):
                         st.markdown(message["content"])
+                        st.caption(f"Message ID: {idx} | Hash: {message_hash}")
                     rendered_messages.add(message_hash)
+            
+            # Mostra statistiche debug
+            st.sidebar.markdown("### 📊 Debug Stats")
+            st.sidebar.write({
+                "Messaggi Utente": message_count["user"],
+                "Risposte Claude": message_count["assistant"],
+                "Messaggi Sistema": message_count["system"],
+                "Totale Messaggi": sum(message_count.values()),
+                "Messaggi Unici": len(rendered_messages)
+            })
 
     def handle_user_input(self, prompt: str):
         """
