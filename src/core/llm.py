@@ -242,7 +242,7 @@ class LLMManager:
     
     def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
         """
-        Gestisce le chiamate ai modelli o1.
+        Gestisce le chiamate ai modelli o1 con i parametri corretti.
         
         Args:
             messages: Lista di messaggi
@@ -254,11 +254,12 @@ class LLMManager:
         try:
             self._enforce_rate_limit(model)
             
+            # Usa max_completion_tokens invece di max_tokens per o1
             completion = self.openai_client.chat.completions.create(
                 model=model,
                 messages=messages,
                 stream=True,
-                max_tokens=32768 if model == "o1-preview" else 65536
+                max_completion_tokens=32768 if model == "o1-preview" else 65536
             )
             
             for chunk in completion:
@@ -273,7 +274,7 @@ class LLMManager:
     
     def _handle_claude_completion(self, prompt_data: Dict[str, Any]) -> Generator[str, None, None]:
         """
-        Gestisce le chiamate a Claude con gestione errori robusta.
+        Gestisce le chiamate a Claude con il nuovo formato Claude 3.
         
         Args:
             prompt_data: Dizionario contenente i messaggi e il system prompt
@@ -303,30 +304,29 @@ class LLMManager:
                     "content": msg["content"]
                 })
 
-            # Crea la completion con il nuovo client Claude 3
+            # Crea la completion con il client Claude 3
             stream = self.anthropic_client.messages.create(
                 model=MODEL,
                 messages=messages,
-                max_tokens=4096,
                 stream=True
             )
             
             # Processa lo stream nel nuovo formato
-            for chunk in stream:
-                if chunk.delta and chunk.delta.text:
-                    yield chunk.delta.text
+            for message in stream:
+                if message.type == "content_block_delta" and message.delta.text:
+                    yield message.delta.text
                     
         except Exception as e:
             error_msg = f"Errore Claude: {str(e)}"
             st.error(error_msg)
             # Fallback a O1 in caso di errore
             fallback_messages = [{"role": "user", "content": msg["content"]} 
-                               for msg in prompt_data.get("messages", [])]
+                            for msg in prompt_data.get("messages", [])]
             yield from self._handle_o1_completion(fallback_messages, "o1-preview")
     
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
-                       file_content: Optional[str] = None, 
-                       context: Optional[str] = None) -> Generator[str, None, None]:
+                   file_content: Optional[str] = None, 
+                   context: Optional[str] = None) -> Generator[str, None, None]:
         """
         Processa una richiesta completa.
         
