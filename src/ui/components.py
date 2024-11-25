@@ -40,33 +40,21 @@ class FileExplorer:
         }
         return icons.get(ext, '📄')
 
-    def _create_file_tree(self, files: Dict[str, Any]) -> Dict[str, Any]:
-        """Crea una struttura ad albero dai file."""
-        tree = {}
-        for path, content in files.items():
-            current = tree
-            parts = path.split('/')
-            for i, part in enumerate(parts[:-1]):
-                if part not in current:
-                    current[part] = {}
-                current = current[part]
-            current[parts[-1]] = content
-        return tree
-
-    def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", level: int = 0):
-        """Renderizza un nodo dell'albero dei file."""
-        indent = "    " * level
-        
+    def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", is_last: bool = True):
+        """Renderizza un nodo dell'albero dei file con pipe style."""
         if isinstance(node, dict) and 'content' not in node:
             # Directory
-            st.markdown(f"{indent}📁 **{path}/**")
-            sorted_items = sorted(node.items())
-            for name, child in sorted_items:
-                self._render_tree_node(name, child, prefix, level + 1)
+            st.markdown(f"{prefix}{'└── ' if is_last else '├── '}📁 **{path}/**", unsafe_allow_html=True)
+            items = list(sorted(node.items()))
+            for i, (name, child) in enumerate(items):
+                is_last_item = i == len(items) - 1
+                new_prefix = prefix + ("    " if is_last else "│   ")
+                self._render_tree_node(name, child, new_prefix, is_last_item)
         else:
             # File
             icon = self._get_file_icon(path)
-            if st.button(f"{indent}{icon} {path}", key=f"file_{path}", use_container_width=True):
+            file_button = f"{prefix}{'└── ' if is_last else '├── '}{icon} {path}"
+            if st.button(file_button, key=f"file_{path}", use_container_width=True):
                 st.session_state.selected_file = path
                 st.session_state.current_file = path
 
@@ -81,7 +69,11 @@ class FileExplorer:
                     padding: 2px 8px !important;
                     background: none !important;
                     border: none !important;
-                    font-weight: normal !important;
+                    font-family: monospace !important;
+                    font-size: 0.9em !important;
+                    white-space: pre !important;
+                    line-height: 1.5 !important;
+                    color: var(--text-color) !important;
                 }
                 .stButton > button:hover {
                     background-color: var(--primary-color-light) !important;
@@ -91,6 +83,14 @@ class FileExplorer:
                 .element-container:has(button[kind="secondary"]) {
                     margin: 0 !important;
                     padding: 0 !important;
+                }
+                /* Stile per i markdown delle directory */
+                [data-testid="stMarkdownContainer"] p {
+                    font-family: monospace !important;
+                    font-size: 0.9em !important;
+                    white-space: pre !important;
+                    line-height: 1.5 !important;
+                    margin: 0 !important;
                 }
             </style>
         """, unsafe_allow_html=True)
@@ -155,11 +155,11 @@ class FileExplorer:
                     st.session_state.file_messages_sent.add(message_hash)
 
         if st.session_state.uploaded_files:
-            st.markdown("### Files")
             tree = self._create_file_tree(st.session_state.uploaded_files)
             items = sorted(tree.items())
-            for name, node in items:
-                self._render_tree_node(name, node)
+            for i, (name, node) in enumerate(items):
+                is_last = i == len(items) - 1
+                self._render_tree_node(name, node, "", is_last)
 
 class ChatInterface:
     """Componente per l'interfaccia chat."""
