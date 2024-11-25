@@ -175,86 +175,120 @@ class LLMManager:
             st.error(error_msg)
             # Fallback a Claude in caso di errore
             yield from self._handle_claude_completion(messages)
-    
-    # src/core/llm.py
 
     def _handle_claude_completion(self, messages: List[Dict]) -> Generator[str, None, None]:
         """
-        Gestisce le chiamate a Claude senza system message.
-        
-        Args:
-            messages: Lista di messaggi
-            
-        Yields:
-            str: Chunks della risposta
+        Gestisce le chiamate a Claude con debug esteso.
         """
         try:
             self._enforce_rate_limit("claude-3-5-sonnet-20241022")
             
-            # Converti solo i messaggi utente, ignora i system messages
-            user_messages = []
+            # Debug: stampa i messaggi in arrivo
+            st.write("DEBUG - Messaggi in arrivo:", messages)
             
+            # Converti i messaggi nel formato Claude
+            claude_messages = []
             for msg in messages:
                 if msg["role"] == "user":
-                    user_messages.append({
+                    content_msg = {
                         "role": "user",
-                        "content": [{"type": "text", "text": msg["content"]}]
-                    })
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": msg["content"]
+                            }
+                        ]
+                    }
+                    claude_messages.append(content_msg)
+                    # Debug: stampa ogni messaggio convertito
+                    st.write("DEBUG - Messaggio convertito:", content_msg)
             
             try:
-                # Chiamata API semplificata senza system message
-                response = self.anthropic_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=4096,
-                    messages=user_messages,
-                    stream=True
-                )
+                # Debug: stampa parametri chiamata API
+                api_params = {
+                    "model": "claude-3-5-sonnet-20241022",
+                    "max_tokens": 4096,
+                    "messages": claude_messages,
+                    "stream": True
+                }
+                st.write("DEBUG - Parametri API:", api_params)
                 
-                for event in response:
-                    if hasattr(event, 'content') and event.content:
-                        yield event.content[0].text
-                        
+                # Chiamata API con gestione errori dettagliata
+                try:
+                    response = self.anthropic_client.messages.create(**api_params)
+                    st.write("DEBUG - Risposta API ricevuta")
+                    
+                    for chunk in response:
+                        st.write("DEBUG - Chunk ricevuto:", chunk)  # Stampa ogni chunk
+                        if hasattr(chunk, 'content') and chunk.content:
+                            chunk_text = chunk.content[0].text
+                            st.write("DEBUG - Testo estratto:", chunk_text)
+                            yield chunk_text
+                        else:
+                            st.write("DEBUG - Chunk senza contenuto:", vars(chunk))
+                            
+                except Exception as api_error:
+                    error_msg = f"Errore API: {str(api_error)}"
+                    st.error(error_msg)
+                    st.write("DEBUG - Dettagli errore API:", vars(api_error))
+                    yield error_msg
+                    
             except Exception as e:
-                error_details = f"Errore nella chiamata API: {str(e)}"
+                error_details = f"Errore preparazione: {str(e)}"
                 st.error(error_details)
-                st.write("Debug - Messages inviati:", user_messages)  # Debug
+                st.write("DEBUG - Errore preparazione:", vars(e))
                 yield error_details
                 
         except Exception as e:
-            error_msg = f"Errore Claude: {str(e)}"
+            error_msg = f"Errore generale: {str(e)}"
             st.error(error_msg)
+            st.write("DEBUG - Errore generale:", vars(e))
             yield error_msg
 
     def test_claude(self):
         """
-        Metodo di test base per Claude.
+        Test di connessione base con Claude con debug esteso.
         """
         try:
-            # Test con un singolo messaggio semplice
-            response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=100,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Ciao, puoi rispondere con 'ok' per verificare la connessione?"
-                        }
-                    ]
-                }],
-                stream=True
-            )
+            st.write("DEBUG - Inizio test Claude")
             
-            result = ""
-            for event in response:
-                if hasattr(event, 'content') and event.content:
-                    result += event.content[0].text
+            test_message = {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Ciao, questo è un test di connessione."
+                    }
+                ]
+            }
             
-            return True, result
+            st.write("DEBUG - Messaggio test:", test_message)
             
+            try:
+                response = self.anthropic_client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=100,
+                    messages=[test_message],
+                    stream=True
+                )
+                
+                st.write("DEBUG - Risposta test ricevuta")
+                
+                result = ""
+                for event in response:
+                    st.write("DEBUG - Evento test:", event)
+                    if hasattr(event, 'content') and event.content:
+                        result += event.content[0].text
+                
+                st.write("DEBUG - Test completato con successo")
+                return True, result
+                
+            except Exception as e:
+                st.write("DEBUG - Errore nel test:", vars(e))
+                return False, str(e)
+                
         except Exception as e:
-            st.error(f"Errore nel test: {str(e)}")
+            st.write("DEBUG - Errore generale nel test:", vars(e))
             return False, str(e)
 
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
