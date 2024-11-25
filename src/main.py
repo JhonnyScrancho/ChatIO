@@ -221,7 +221,7 @@ def render_main_layout():
         FileExplorer().render()
     
     # Main Content Area con Chat e Code Viewer
-    col1, col2 = st.columns([2, 3])
+    col1, col2 = st.columns([3, 2])
     
     with col1:
         st.markdown("### 💬 Chat")

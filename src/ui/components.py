@@ -262,7 +262,7 @@ class ChatInterface:
 
         with col2:
             # Pulsante nuova chat
-            if st.button("🆕 Nuova", use_container_width=True):
+            if st.button("🆕", use_container_width=True):
                 new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
                 st.session_state.chats[new_chat_name] = {
                     'messages': [],
@@ -272,12 +272,12 @@ class ChatInterface:
 
         with col3:
             # Pulsante rinomina
-            if st.button("✏️ Rinomina", use_container_width=True):
+            if st.button("✏️", use_container_width=True):
                 st.session_state.renaming = True
 
         with col4:
             # Pulsante elimina
-            if len(st.session_state.chats) > 1 and st.button("🗑️ Elimina", use_container_width=True):
+            if len(st.session_state.chats) > 1 and st.button("🗑️", use_container_width=True):
                 if st.session_state.current_chat in st.session_state.chats:
                     del st.session_state.chats[st.session_state.current_chat]
                     st.session_state.current_chat = list(st.session_state.chats.keys())[0]
