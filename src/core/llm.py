@@ -209,9 +209,11 @@ class LLMManager:
             # Fallback a Claude in caso di errore
             yield from self._handle_claude_completion(messages)
     
+    
+
     def _handle_claude_completion(self, messages: List[Dict]) -> Generator[str, None, None]:
         """
-        Gestisce le chiamate a Claude con formato semplificato.
+        Gestisce le chiamate a Claude con gestione corretta dello streaming.
         
         Args:
             messages: Lista di messaggi
@@ -222,51 +224,34 @@ class LLMManager:
         try:
             self._enforce_rate_limit("claude-3-5-sonnet-20241022")
             
-            # Estrai il system message se presente
-            system_message = None
+            # Prepara i messaggi
             user_messages = []
+            system_content = None
             
             for msg in messages:
                 if msg["role"] == "system":
-                    system_message = [{"type": "text", "text": msg["content"]}]
+                    system_content = [{"type": "text", "text": msg["content"]}]
                 elif msg["role"] == "user":
                     user_messages.append({
                         "role": "user",
                         "content": [{"type": "text", "text": msg["content"]}]
                     })
             
-            # Per debug: stampiamo i parametri esatti che stiamo inviando
-            params = {
-                "model": "claude-3-5-sonnet-20241022",
-                "max_tokens": 4096,
-                "system": system_message if system_message else None,
-                "messages": user_messages,
-                "stream": True
-            }
-            
-            st.write("Debug - API Parameters:", params)
-            
             try:
-                # Chiamata API semplificata
-                if system_message:
-                    response = self.anthropic_client.messages.create(
-                        model="claude-3-5-sonnet-20241022",
-                        max_tokens=4096,
-                        messages=user_messages,
-                        system=system_message,
-                        stream=True
-                    )
-                else:
-                    response = self.anthropic_client.messages.create(
-                        model="claude-3-5-sonnet-20241022",
-                        max_tokens=4096,
-                        messages=user_messages,
-                        stream=True
-                    )
+                # Chiamata API con gestione corretta dello streaming
+                response = self.anthropic_client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=4096,
+                    messages=user_messages,
+                    system=system_content,
+                    stream=True
+                )
                 
-                for chunk in response:
-                    if chunk.delta.text:
-                        yield chunk.delta.text
+                # Gestione corretta degli eventi di streaming
+                for event in response:
+                    # Verifica se l'evento ha del contenuto
+                    if hasattr(event, 'content') and event.content:
+                        yield event.content[0].text
                         
             except Exception as e:
                 error_details = f"Errore nella chiamata API: {str(e)}"
@@ -278,7 +263,6 @@ class LLMManager:
             st.error(error_msg)
             yield error_msg
 
-    # Metodo di test semplificato
     def test_claude(self):
         """
         Metodo di test per verificare la connessione con Claude.
@@ -300,11 +284,12 @@ class LLMManager:
             )
             
             result = ""
-            for chunk in response:
-                if chunk.delta.text:
-                    result += chunk.delta.text
+            for event in response:
+                if hasattr(event, 'content') and event.content:
+                    result += event.content[0].text
             
             return True, result
+            
         except Exception as e:
             return False, str(e)
 
