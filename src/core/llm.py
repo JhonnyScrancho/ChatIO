@@ -50,7 +50,7 @@ class LLMManager:
         """Inizializza le connessioni API e le configurazioni."""
         self.logger = logging.getLogger(__name__)
         self.openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-        self.anthropic_client = Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+        self.anthropic_client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
         
         # Costi per 1K tokens (in USD)
         self.cost_map = {
@@ -242,27 +242,19 @@ class LLMManager:
                                                   placeholder: st.empty) -> Generator[str, None, None]:
         """
         Gestisce le chiamate a Claude con retry controllato dall'utente.
-        
-        Args:
-            messages: Lista di messaggi per la chat
-            placeholder: Streamlit placeholder per l'UI
-            
-        Yields:
-            str: Chunks della risposta
         """
         for attempt in range(self.MAX_RETRIES):
             try:
                 self._enforce_rate_limit("claude-3-5-sonnet-20241022")
                 
-                # Converti messaggi nel formato Claude
+                # Convert messages to Claude format
                 claude_messages = []
                 for msg in messages:
                     if msg["role"] == "user":
-                        content_msg = {
+                        claude_messages.append({
                             "role": "user",
-                            "content": [{"type": "text", "text": msg["content"]}]
-                        }
-                        claude_messages.append(content_msg)
+                            "content": msg["content"]
+                        })
                 
                 response = await self.anthropic_client.messages.create(
                     model="claude-3-5-sonnet-20241022",
@@ -272,24 +264,16 @@ class LLMManager:
                 )
                 
                 async for chunk in response:
-                    if hasattr(chunk, 'type'):
-                        if chunk.type == 'content_block_delta':
-                            if hasattr(chunk.delta, 'text'):
-                                yield chunk.delta.text
-                        elif chunk.type == 'message_start':
-                            continue
-                        elif chunk.type == 'content_block_start':
-                            continue
-                        elif chunk.type == 'content_block_stop':
-                            continue
-                        elif chunk.type == 'message_stop':
-                            continue
+                    if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'text'):
+                        yield chunk.delta.text
+                    elif hasattr(chunk, 'content'):
+                        yield chunk.content[0].text
                 return
                 
             except Exception as e:
                 error_msg = str(e)
                 
-                if "overloaded_error" in error_msg:
+                if "overloaded_error" in error_msg.lower():
                     with placeholder.container():
                         st.error("⚠️ Server Claude sovraccarico")
                         col1, col2, col3 = st.columns(3)
