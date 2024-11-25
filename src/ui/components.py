@@ -377,7 +377,7 @@ class ModelSelector:
         models = {
             'o1-mini': '🚀 O1 Mini (Fast)',
             'o1-preview': '🔍 O1 Preview (Advanced)',
-            'claude-3-sonnet': '🎭 Claude 3 Sonnet (Detailed)'
+            'claude-3-5-sonnet-20241022': '🎭 Claude 3.5 Sonnet (Detailed)'
         }
         
         current_model = self.session.get_current_model()
