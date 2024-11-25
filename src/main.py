@@ -208,7 +208,7 @@ def render_main_layout():
         ModelSelector().render()
     
     # Main Content Area con Chat e Code Viewer
-    col1, col2 = st.columns([3, 2])
+    col1, col2 = st.columns([2, 3])
     
     with col1:
         st.markdown("### 💬 Chat")
