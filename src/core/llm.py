@@ -5,22 +5,22 @@ rate limiting, and model-specific optimizations.
 """
 
 from typing import Dict, Optional, Tuple, Generator, List, Any, Union, AsyncGenerator
+from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+import functools
+import asyncio
+import logging
+import random
+import json
+import time
+import sys
+import traceback
+
+# Third-party imports
 import streamlit as st
 from openai import OpenAI
 from anthropic import Anthropic
-import time
-import asyncio
-from datetime import datetime
-import json
-import random
-import logging
-from src.core.session import SessionManager
-from src.utils.helpers import TokenCounter
-from contextlib import asynccontextmanager
-from concurrent.futures import ThreadPoolExecutor
-import functools
-import sys
-import traceback
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -38,7 +38,11 @@ from anthropic.types import (
     MessageStopEvent
 )
 
-# Type aliases per maggiore chiarezza
+# Local imports
+from .session import SessionManager
+from ..utils.helpers import TokenCounter
+
+# Type aliases for better code clarity
 ModelName = str
 TokenCount = int
 Cost = float
@@ -370,7 +374,7 @@ class LLMManager:
             st.error(error_msg)
             yield error_msg
 
-    def process_request(self, prompt: str, analysis_type: Optional[str] = None,
+    async def process_request(self, prompt: str, analysis_type: Optional[str] = None,
                     file_content: Optional[str] = None, 
                     context: Optional[str] = None) -> Generator[str, None, None]:
         """
