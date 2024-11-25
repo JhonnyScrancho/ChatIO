@@ -68,29 +68,40 @@ class FileExplorer:
         
         if isinstance(node, dict) and 'content' not in node:
             # È una directory
-            st.markdown(f"<div style='font-family: monospace; white-space: pre;'>{prefix}{connector}{path}/</div>", 
-                       unsafe_allow_html=True)
+            st.markdown(f"""<div style='font-family: monospace; white-space: pre; 
+                    padding: 2px 0;'>{prefix}{connector}📁 {path}/</div>""", 
+                    unsafe_allow_html=True)
             
             items = sorted(node.items())
             for i, (name, child) in enumerate(items):
                 is_last_item = i == len(items) - 1
                 new_prefix = prefix + (PIPE if not is_last else "    ")
                 self._render_tree_node(
-                    name, 
-                    child, 
-                    new_prefix, 
-                    is_last_item, 
+                    name,
+                    child,
+                    new_prefix,
+                    is_last_item,
                     current_full_path
                 )
         else:
             # È un file - usa il path completo per la chiave
             unique_key = f"file_{current_full_path.replace('/', '_')}"
-            if st.button(
-                f"{prefix}{connector}{self._get_file_icon(path)} {path}",
-                key=unique_key,
-                use_container_width=True,
-                type="secondary"
-            ):
+            
+            # Crea il bottone con stile minimalista
+            st.markdown(f"""
+                <div style='font-family: monospace; white-space: pre; padding: 2px 0;'>
+                    <button class='file-button' 
+                            data-key='{unique_key}' 
+                            style='background: none; border: none; padding: 0; 
+                                font-family: monospace; cursor: pointer; width: 100%; 
+                                text-align: left; color: inherit;'>
+                        {prefix}{connector}{self._get_file_icon(path)} {path}
+                    </button>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Aggiungi il bottone Streamlit nascosto per la funzionalità
+            if st.button("", key=unique_key, type="secondary"):
                 st.session_state.selected_file = current_full_path
                 st.session_state.current_file = current_full_path
 
