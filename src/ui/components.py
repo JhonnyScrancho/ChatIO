@@ -215,6 +215,7 @@ class ChatInterface:
         if 'rendered_messages' not in st.session_state:
             st.session_state.rendered_messages = set()
 
+
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
         try:
@@ -255,14 +256,16 @@ class ChatInterface:
 
         # Processa la risposta
         response = ""
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            for chunk in self.llm.process_request(prompt=prompt):
-                if chunk:
-                    response += chunk
-                    message_placeholder.markdown(response)
-                    # Aggiorna le metriche
-                    StatsDisplay.update_metrics()
+        message_placeholder = st.empty()
+        
+        for chunk in self.llm.process_request(prompt=prompt):
+            if chunk:
+                response += chunk
+                with message_placeholder.container():
+                    with st.chat_message("assistant"):
+                        st.markdown(response)
+                # Aggiorna le metriche una sola volta per chunk
+                StatsDisplay.update_metrics()
 
         # Aggiungi la risposta completa alla chat
         if response.strip():
@@ -314,7 +317,7 @@ class ChatInterface:
             )
             if current_chat != st.session_state.current_chat:
                 st.session_state.current_chat = current_chat
-                st.session_state.rendered_messages.clear()  # Pulisci i messaggi renderizzati quando cambi chat
+                st.session_state.rendered_messages.clear()
         
         with col2:
             if st.button("🆕", help="Nuova chat", key="new_chat_button"):
@@ -392,19 +395,24 @@ class StatsDisplay:
     @staticmethod
     def update_metrics():
         """
-        Aggiorna le metriche in modo non distruttivo.
+        Aggiorna le metriche una sola volta per frame.
         """
-        # Usa direttamente columns invece di un container per le metriche
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric(
-                "Tokens Used", 
-                f"{st.session_state.get('token_count', 0):,}",
-                help="Numero totale di token utilizzati"
-            )
-        with col2:
-            st.metric(
-                "Cost ($)", 
-                f"${st.session_state.get('cost', 0):.4f}",
-                help="Costo totale stimato"
-            )
+        # Usa un container persistente per le metriche
+        if 'metrics_placeholder' not in st.session_state:
+            st.session_state.metrics_placeholder = st.empty()
+            
+        # Aggiorna solo all'interno del placeholder
+        with st.session_state.metrics_placeholder:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric(
+                    "Tokens Used", 
+                    f"{st.session_state.get('token_count', 0):,}",
+                    help="Numero totale di token utilizzati"
+                )
+            with col2:
+                st.metric(
+                    "Cost ($)", 
+                    f"${st.session_state.get('cost', 0):.4f}",
+                    help="Costo totale stimato"
+                )
