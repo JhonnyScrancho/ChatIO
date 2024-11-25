@@ -168,26 +168,37 @@ class ChatInterface:
             }
             st.session_state.current_chat = 'Chat principale'
 
-    def _process_response(self, prompt: str) -> str:
-        """Processa la richiesta e genera una risposta."""
-        try:
-            # Prepara il contesto con i file disponibili
-            context = ""
-            for filename, file_info in st.session_state.uploaded_files.items():
-                context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
+    def _get_context(self) -> str:
+        """Recupera il contesto dai file caricati."""
+        context = ""
+        if uploaded_files := st.session_state.get('uploaded_files', {}):
+            current_file = st.session_state.get('current_file')
+            if current_file and current_file in uploaded_files:
+                file_info = uploaded_files[current_file]
+                context = f"\nFile corrente: {current_file}\n```{file_info['language']}\n{file_info['content']}\n```"
+        return context
 
-            # Genera la risposta
-            response = ""
-            with st.spinner("Analyzing code..."):
-                for chunk in self.llm.process_request(
-                    prompt=prompt,
-                    context=context
-                ):
-                    response += chunk
-            return response
+    def _process_response(self, prompt: str) -> str:
+        """
+        Processa la richiesta e genera una risposta.
+        
+        Args:
+            prompt: Prompt dell'utente
             
+        Returns:
+            str: Risposta generata
+        """
+        try:
+            context = self._get_context()
+            response = "".join(list(self.llm.process_request(
+                prompt=prompt,
+                context=context
+            )))
+            return response
         except Exception as e:
-            return f"Mi dispiace, si è verificato un errore: {str(e)}"
+            error_msg = f"Errore durante l'elaborazione: {str(e)}"
+            st.error(error_msg)
+            return error_msg
 
     def render(self):
         """Renderizza l'interfaccia chat."""
@@ -203,8 +214,19 @@ class ChatInterface:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
         
-        # Aggiungi spazio per l'input
-        st.markdown("<div style='height: 100px;'></div>", unsafe_allow_html=True)
+        # Input chat con gestione diretta
+        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
+            with st.spinner("Elaborazione in corso..."):
+                response = self._process_response(prompt)
+                
+                # Aggiorna la chat
+                current_chat['messages'].extend([
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": response}
+                ])
+                
+                # Forza il refresh
+                st.rerun()
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""

@@ -4,16 +4,26 @@ Streamlit-based interface for code analysis using LLMs.
 """
 
 import streamlit as st
-from dotenv import load_dotenv
 from pathlib import Path
-import os
 import sys
+import os
+from datetime import datetime
+from typing import Dict, Any
+import logging
+
+# Configurazione logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Deve essere la prima chiamata Streamlit
 st.set_page_config(
     page_title="Allegro IO - Code Assistant",
     page_icon="🎯",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # Aggiungi la directory root al path per permettere gli import relativi
@@ -26,38 +36,83 @@ from src.core.files import FileManager
 from src.ui.layout import render_app_layout, render_error_message
 from src.utils.config import load_config
 
-def check_environment():
-    """Verifica la presenza delle secrets necessarie."""
-    required_vars = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']
-    missing_vars = [var for var in required_vars if var not in st.secrets]
+def setup_directory_structure():
+    """
+    Verifica e crea la struttura delle directory necessarie.
+    """
+    required_dirs = {
+        'templates': ['code_review', 'architecture', 'security'],
+        'src/core': [],
+        'src/ui': [],
+        'src/utils': [],
+        'logs': []
+    }
     
-    if missing_vars:
-        render_error_message(f"Secrets mancanti: {', '.join(missing_vars)}")
-        st.info("ℹ️ Configura le API keys in .streamlit/secrets.toml")
-        st.stop()
-
-def check_directories():
-    """Verifica e crea le cartelle necessarie se non esistono."""
-    required_dirs = ['templates', 'src/core', 'src/ui', 'src/utils']
     base_path = Path(__file__).parent.parent
     
-    for dir_name in required_dirs:
-        dir_path = base_path / dir_name
-        if not dir_path.exists():
-            st.warning(f"⚠️ Cartella {dir_name} mancante. Creazione in corso...")
+    try:
+        for dir_name, subdirs in required_dirs.items():
+            dir_path = base_path / dir_name
             dir_path.mkdir(parents=True, exist_ok=True)
+            
+            for subdir in subdirs:
+                subdir_path = dir_path / subdir
+                subdir_path.mkdir(exist_ok=True)
+                
+        logger.info("Directory structure setup completed")
+    except Exception as e:
+        logger.error(f"Error setting up directory structure: {e}")
+        raise
+
+def validate_environment() -> bool:
+    """
+    Valida l'ambiente e le configurazioni necessarie.
+    
+    Returns:
+        bool: True se la validazione ha successo
+    """
+    required_secrets = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']
+    missing_secrets = [secret for secret in required_secrets if secret not in st.secrets]
+    
+    if missing_secrets:
+        render_error_message(
+            f"Configurazione incompleta. Mancano le seguenti API keys: {', '.join(missing_secrets)}\n"
+            "Configura le API keys in .streamlit/secrets.toml"
+        )
+        return False
+    
+    required_packages = ['openai', 'anthropic', 'python-dotenv', 'watchdog']
+    try:
+        for package in required_packages:
+            __import__(package)
+    except ImportError as e:
+        render_error_message(f"Pacchetto mancante: {str(e)}")
+        return False
+    
+    return True
 
 @st.cache_resource
-def init_clients():
-    """Inizializza e cachea i clients API."""
-    return {
-        'llm': LLMManager(),
-        'session': SessionManager(),
-        'file_manager': FileManager()
-    }
+def initialize_clients() -> Dict[str, Any]:
+    """
+    Inizializza e cachea i client necessari per l'applicazione.
+    
+    Returns:
+        Dict[str, Any]: Dictionary contenente i client inizializzati
+    """
+    try:
+        return {
+            'llm': LLMManager(),
+            'session': SessionManager(),
+            'file_manager': FileManager()
+        }
+    except Exception as e:
+        logger.error(f"Error initializing clients: {e}")
+        raise
 
 def load_custom_css():
-    """Carica stili CSS personalizzati."""
+    """
+    Carica gli stili CSS personalizzati per l'applicazione.
+    """
     st.markdown("""
         <style>
         /* Layout generale */
@@ -72,13 +127,13 @@ def load_custom_css():
         
         /* Sidebar migliorata */
         [data-testid="stSidebar"] {
-            background-color: var(--surface-container);
+            background-color: #f8f9fa;
+            padding: 1rem;
         }
         
         [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
             font-size: 0.9rem;
             margin-bottom: 0.5rem;
-            color: var(--text-color);
         }
         
         /* Chat UI */
@@ -88,41 +143,117 @@ def load_custom_css():
             padding: 1rem !important;
             z-index: 999999 !important;
             width: 100% !important;
+            border-top: 1px solid #eee;
         }
         
-        /* ... resto del CSS ... */
+        .stChatMessage {
+            background: #f8f9fa;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        /* Code blocks */
+        pre {
+            background-color: #2d2d2d;
+            border-radius: 0.5rem;
+            padding: 1rem;
+        }
+        
+        code {
+            font-family: 'Fira Code', monospace;
+        }
+        
+        /* Custom components */
+        .file-tree {
+            font-family: monospace;
+            white-space: pre;
+        }
+        
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        
+        .status-online {
+            background-color: #28a745;
+        }
+        
+        .status-error {
+            background-color: #dc3545;
+        }
         </style>
     """, unsafe_allow_html=True)
 
+def initialize_session_state():
+    """
+    Inizializza o recupera lo stato della sessione.
+    """
+    if 'initialized' not in st.session_state:
+        st.session_state.initialized = True
+        st.session_state.start_time = datetime.now().isoformat()
+        st.session_state.error_log = []
+        st.session_state.debug_mode = os.getenv('DEBUG', 'False').lower() == 'true'
+
 def main():
-    """Funzione principale dell'applicazione."""
+    """
+    Funzione principale dell'applicazione.
+    Gestisce l'inizializzazione e il flusso principale.
+    """
     try:
-        # Carica variabili d'ambiente
-        load_dotenv()
+        # Step 1: Setup iniziale
+        setup_directory_structure()
         
-        # Controlli iniziali
-        check_environment()
-        check_directories()
+        # Step 2: Validazione ambiente
+        if not validate_environment():
+            st.stop()
         
-        # Carica configurazione
-        load_config()
+        # Step 3: Caricamento configurazione
+        config = load_config()
         
-        # Inizializza clients
-        clients = init_clients()
+        # Step 4: Inizializzazione stato
+        initialize_session_state()
         
-        # Inizializza sessione
-        clients['session'].init_session()
+        # Step 5: Inizializzazione clients
+        clients = initialize_clients()
         
-        # Carica CSS personalizzato
+        # Step 6: Caricamento CSS
         load_custom_css()
         
-        # Renderizza layout dell'applicazione
+        # Step 7: Renderizza l'interfaccia
         render_app_layout(clients)
         
+        # Step 8: Debug mode
+        if st.session_state.debug_mode:
+            with st.expander("Debug Information", expanded=False):
+                st.json({
+                    'session_state': {
+                        k: str(v) for k, v in st.session_state.items()
+                        if k not in ['client_config', 'secrets']
+                    },
+                    'start_time': st.session_state.start_time,
+                    'error_log': st.session_state.error_log
+                })
+        
     except Exception as e:
-        render_error_message(f"Si è verificato un errore: {str(e)}")
-        if os.getenv('DEBUG') == 'True':
+        logger.error(f"Application error: {e}", exc_info=True)
+        render_error_message(
+            "Si è verificato un errore nell'applicazione. "
+            "Per favore, controlla i log per maggiori dettagli."
+        )
+        
+        if st.session_state.debug_mode:
             st.exception(e)
+        
+        # Aggiungi l'errore al log
+        st.session_state.error_log.append({
+            'timestamp': datetime.now().isoformat(),
+            'error': str(e),
+            'type': type(e).__name__
+        })
 
 if __name__ == "__main__":
     main()
