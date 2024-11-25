@@ -201,11 +201,11 @@ def render_main_layout():
     
     # Sidebar con File Manager e Model Selector
     with st.sidebar:
-        st.markdown("### 📁 File Manager")
-        FileExplorer().render()
-        st.markdown("---")
         st.markdown("### 🤖 Model Settings")
         ModelSelector().render()
+        st.markdown("---")
+        st.markdown("### 📁 File Manager")
+        FileExplorer().render()
     
     # Main Content Area con Chat e Code Viewer
     col1, col2 = st.columns([2, 3])
