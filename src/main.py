@@ -173,15 +173,28 @@ def init_clients():
 
 def render_main_layout():
     """Renderizza il layout principale dell'applicazione."""
-    # CSS per gestire correttamente il layout di pagina
+    # CSS per gestire il layout di pagina e input bar fisso
     st.markdown("""
         <style>
+            /* Layout generale */
             .main .block-container {
                 max-width: 100% !important;
                 padding-top: 1rem !important;
                 padding-right: 1rem !important;
                 padding-left: 1rem !important;
                 padding-bottom: 80px !important;
+            }
+            
+            /* Chat input fisso */
+            .stChatInputContainer {
+                position: fixed !important;
+                bottom: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                padding: 1rem 2rem !important;
+                background-color: var(--background-color) !important;
+                border-top: 1px solid var(--secondary-background-color) !important;
+                z-index: 999 !important;
             }
         </style>
     """, unsafe_allow_html=True)
@@ -217,6 +230,14 @@ def render_main_layout():
     with col2:
         st.markdown("### 📝 Code Viewer")
         CodeViewer().render()
+    
+    # Chat input fisso in fondo
+    if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
+        clients['session'].add_message_to_current_chat({
+            "role": "user",
+            "content": prompt
+        })
+        ChatInterface().process_user_message(prompt)
 
 def main():
     """Funzione principale dell'applicazione."""
