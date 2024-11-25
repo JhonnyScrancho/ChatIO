@@ -266,22 +266,25 @@ class LLMManager:
     def _handle_claude_completion(self, prompt_data: Dict[str, Any]) -> Generator[str, None, None]:
         """
         Gestisce le chiamate a Claude con gestione errori robusta.
-        Usa esclusivamente un modello valido.
+        Usa esclusivamente un modello valido (claude-3.5-sonnet).
         """
-        MODEL = "claude-2"  # Assicurati che il modello sia valido
+        MODEL = "claude-3.5-sonnet"
         try:
+            # Applica il limite di richieste per evitare throttling
             self._enforce_rate_limit("claude")
             
-            # Prepara il messaggio base
+            # Prepara i messaggi
             messages = []
-            for msg in prompt_data["messages"]:
-                messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"] if isinstance(msg["content"], str) 
-                            else msg["content"][0]["text"]
-                })
+            for msg in prompt_data.get("messages", []):
+                content = msg.get("content")
+                if isinstance(content, str):
+                    messages.append({"role": msg.get("role"), "content": content})
+                elif isinstance(content, list) and "text" in content[0]:
+                    messages.append({"role": msg.get("role"), "content": content[0]["text"]})
+                else:
+                    raise ValueError(f"Formato messaggio non valido: {msg}")
 
-            # Retry logic
+            # Logica di Retry
             max_retries = 3
             retry_count = 0
             last_error = None
@@ -290,55 +293,51 @@ class LLMManager:
                 try:
                     stream = self.anthropic_client.completions.create(
                         model=MODEL,
-                        max_tokens=1000,
-                        temperature=0,
+                        max_tokens_to_sample=1000,  # Modificato secondo la documentazione
+                        temperature=0.7,  # Livello di casualità moderato
                         messages=messages,
-                        stream=True
+                        stream=True  # Abilita lo streaming
                     )
                     
-                    # Process stream
+                    # Elabora lo stream
                     for chunk in stream:
-                        if hasattr(chunk, 'completion') and chunk.completion:
+                        if chunk and hasattr(chunk, 'completion'):
                             yield chunk.completion
-                    
-                    # Se arriviamo qui, tutto ok
-                    return
+                    return  # Esce se completato correttamente
 
                 except Exception as e:
                     last_error = str(e)
                     retry_count += 1
                     
+                    # Logica specifica per errori not_found
                     if "not_found_error" in last_error:
-                        # Se il modello non è trovato, non ha senso riprovare
+                        self._log("Modello non trovato: impossibile continuare", level="ERROR")
                         break
                     
+                    # Ritenta in caso di errori transitori
                     if retry_count < max_retries:
-                        time.sleep(1 * retry_count)
+                        time.sleep(1 + retry_count)
                         self._log(f"Retry {retry_count}: {last_error}")
-                    
-            # Se arriviamo qui, tutti i tentativi sono falliti
-            st.error(f"Claude error: {last_error}")
+
+            # Se tutti i retry falliscono
+            st.error(f"Errore Claude: {last_error}")
             
-            # Converti i messaggi per O1
-            o1_messages = []
-            if prompt_data.get("system"):
-                o1_messages.append({"role": "system", "content": prompt_data["system"]})
-            for msg in prompt_data["messages"]:
-                text_content = msg["content"] if isinstance(msg["content"], str) else msg["content"][0]["text"]
-                o1_messages.append({
-                    "role": msg["role"],
-                    "content": text_content
-                })
-            
-            st.info("Switching to O1 model...")
+            # Passa al modello di fallback
+            o1_messages = [{"role": "system", "content": prompt_data.get("system", "")}]
+            o1_messages += messages
+            st.info("Passaggio al modello di fallback O1...")
             yield from self._handle_o1_completion(o1_messages, "o1-preview")
 
+        except ValueError as ve:
+            self._log(f"Errore formato dati: {ve}", level="ERROR")
+            yield f"Errore formato dati: {ve}"
         except Exception as e:
             import traceback
-            error_msg = f"Errore Claude: {traceback.format_exc()}"
+            error_msg = f"Errore generico: {traceback.format_exc()}"
             st.error(error_msg)
             self._log(error_msg, level="ERROR")
             yield error_msg
+
 
 
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
