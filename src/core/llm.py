@@ -11,12 +11,14 @@ from anthropic import Anthropic
 import time
 from datetime import datetime
 import json
+import logging
 
 class LLMManager:
     """Gestisce le interazioni con i modelli LLM."""
     
     def __init__(self):
         """Inizializza le connessioni API e le configurazioni."""
+        self.logger = logging.getLogger(__name__)
         try:
             self.openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
             self.anthropic_client = Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
@@ -116,6 +118,25 @@ class LLMManager:
         # Per task più semplici usa o1-mini
         return "o1-mini"
     
+    def _log(self, message: str, level: str = "INFO"):
+        """
+        Gestisce il logging dell'applicazione.
+        
+        Args:
+            message: Messaggio da loggare
+            level: Livello di logging (INFO, ERROR, etc.)
+        """
+        if level.upper() == "ERROR":
+            self.logger.error(message)
+            st.error(message)
+        elif level.upper() == "WARNING":
+            self.logger.warning(message)
+            st.warning(message)
+        else:
+            self.logger.info(message)
+            if st.session_state.get('debug_mode', False):
+                st.info(message)   
+   
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
                       file_content: Optional[str] = None, 
                       context: Optional[str] = None,
