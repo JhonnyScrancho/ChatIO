@@ -178,13 +178,10 @@ class LLMManager:
 
     def _handle_claude_completion(self, messages: List[Dict]) -> Generator[str, None, None]:
         """
-        Gestisce le chiamate a Claude con debug esteso.
+        Gestisce le chiamate a Claude con corretta estrazione dei delta.
         """
         try:
             self._enforce_rate_limit("claude-3-5-sonnet-20241022")
-            
-            # Debug: stampa i messaggi in arrivo
-            st.write("DEBUG - Messaggi in arrivo:", messages)
             
             # Converti i messaggi nel formato Claude
             claude_messages = []
@@ -192,66 +189,48 @@ class LLMManager:
                 if msg["role"] == "user":
                     content_msg = {
                         "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": msg["content"]
-                            }
-                        ]
+                        "content": [{"type": "text", "text": msg["content"]}]
                     }
                     claude_messages.append(content_msg)
-                    # Debug: stampa ogni messaggio convertito
-                    st.write("DEBUG - Messaggio convertito:", content_msg)
             
             try:
-                # Debug: stampa parametri chiamata API
-                api_params = {
-                    "model": "claude-3-5-sonnet-20241022",
-                    "max_tokens": 4096,
-                    "messages": claude_messages,
-                    "stream": True
-                }
-                st.write("DEBUG - Parametri API:", api_params)
+                response = self.anthropic_client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=4096,
+                    messages=claude_messages,
+                    stream=True
+                )
                 
-                # Chiamata API con gestione errori dettagliata
-                try:
-                    response = self.anthropic_client.messages.create(**api_params)
-                    st.write("DEBUG - Risposta API ricevuta")
-                    
-                    for chunk in response:
-                        st.write("DEBUG - Chunk ricevuto:", chunk)  # Stampa ogni chunk
-                        if hasattr(chunk, 'content') and chunk.content:
-                            chunk_text = chunk.content[0].text
-                            st.write("DEBUG - Testo estratto:", chunk_text)
-                            yield chunk_text
-                        else:
-                            st.write("DEBUG - Chunk senza contenuto:", vars(chunk))
+                for chunk in response:
+                    # Gestione corretta dei diversi tipi di chunk
+                    if hasattr(chunk, 'type'):
+                        if chunk.type == 'content_block_delta':
+                            if hasattr(chunk.delta, 'text'):
+                                yield chunk.delta.text
+                        elif chunk.type == 'message_start':
+                            continue  # Ignora il messaggio di inizio
+                        elif chunk.type == 'content_block_start':
+                            continue  # Ignora l'inizio del blocco
+                        elif chunk.type == 'content_block_stop':
+                            continue  # Ignora la fine del blocco
+                        elif chunk.type == 'message_stop':
+                            continue  # Ignora la fine del messaggio
                             
-                except Exception as api_error:
-                    error_msg = f"Errore API: {str(api_error)}"
-                    st.error(error_msg)
-                    st.write("DEBUG - Dettagli errore API:", vars(api_error))
-                    yield error_msg
-                    
-            except Exception as e:
-                error_details = f"Errore preparazione: {str(e)}"
-                st.error(error_details)
-                st.write("DEBUG - Errore preparazione:", vars(e))
-                yield error_details
+            except Exception as api_error:
+                error_msg = f"Errore API: {str(api_error)}"
+                st.error(error_msg)
+                yield error_msg
                 
         except Exception as e:
             error_msg = f"Errore generale: {str(e)}"
             st.error(error_msg)
-            st.write("DEBUG - Errore generale:", vars(e))
             yield error_msg
 
     def test_claude(self):
         """
-        Test di connessione base con Claude con debug esteso.
+        Test di connessione base con Claude.
         """
         try:
-            st.write("DEBUG - Inizio test Claude")
-            
             test_message = {
                 "role": "user",
                 "content": [
@@ -262,33 +241,22 @@ class LLMManager:
                 ]
             }
             
-            st.write("DEBUG - Messaggio test:", test_message)
+            response = self.anthropic_client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=100,
+                messages=[test_message],
+                stream=True
+            )
             
-            try:
-                response = self.anthropic_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=100,
-                    messages=[test_message],
-                    stream=True
-                )
-                
-                st.write("DEBUG - Risposta test ricevuta")
-                
-                result = ""
-                for event in response:
-                    st.write("DEBUG - Evento test:", event)
-                    if hasattr(event, 'content') and event.content:
-                        result += event.content[0].text
-                
-                st.write("DEBUG - Test completato con successo")
-                return True, result
-                
-            except Exception as e:
-                st.write("DEBUG - Errore nel test:", vars(e))
-                return False, str(e)
-                
+            result = ""
+            for chunk in response:
+                if hasattr(chunk, 'type') and chunk.type == 'content_block_delta':
+                    if hasattr(chunk.delta, 'text'):
+                        result += chunk.delta.text
+            
+            return True, result
+            
         except Exception as e:
-            st.write("DEBUG - Errore generale nel test:", vars(e))
             return False, str(e)
 
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
