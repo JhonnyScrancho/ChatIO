@@ -127,6 +127,7 @@ class FileExplorer:
         """, unsafe_allow_html=True)
 
         uploaded_files = st.file_uploader(
+            "Drag and drop files here",
             type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
             accept_multiple_files=True,
             key="file_uploader"
