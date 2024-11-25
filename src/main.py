@@ -225,18 +225,7 @@ def load_custom_css():
 
         [data-testid="stSidebar"] .file-tree button:hover {
             background-color: var(--surface-container-highest) !important;
-        }        
-        /* File Tree styles */
-        .file-button:hover {
-            background-color: var(--hover-color, rgba(151, 166, 195, 0.15)) !important;
-        }
-        [data-testid="stButton"] {
-            display: none;
-        }
-        .element-container:has(button[kind="secondary"]) {
-            margin: 0;
-            padding: 0;
-        }        
+        }       
         </style>
     """, unsafe_allow_html=True)
 
