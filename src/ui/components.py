@@ -7,7 +7,7 @@ from datetime import datetime
 from src.core.session import SessionManager
 from src.core.files import FileManager
 from src.core.llm import LLMManager
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 class FileExplorer:
     """Component per l'esplorazione e l'upload dei file."""
