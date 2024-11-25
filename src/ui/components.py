@@ -91,37 +91,39 @@ class FileExplorer:
         """Renderizza il componente."""
         st.markdown("""
             <style>
-                /* Stile per i bottoni file */
-                .stButton > button {
-                    width: 100%;
-                    text-align: left !important;
-                    padding: 2px 8px !important;
-                    background: none !important;
-                    border: none !important;
-                    font-family: monospace !important;
-                    font-size: 0.9em !important;
-                    white-space: pre !important;
-                    line-height: 1.5 !important;
-                    color: var(--text-color) !important;
-                }
-                .stButton > button:hover {
-                    background-color: var(--primary-color-light) !important;
-                    color: var(--primary-color) !important;
-                }
-                /* Nascondi il bordo del container dei bottoni */
-                .element-container:has(button[kind="secondary"]) {
-                    margin: 0 !important;
-                    padding: 0 !important;
-                }
-                /* Stile per i markdown delle directory */
-                [data-testid="stMarkdownContainer"] p {
-                    font-family: monospace !important;
-                    font-size: 0.9em !important;
-                    white-space: pre !important;
-                    line-height: 1.5 !important;
-                    margin: 0 !important;
-                }
-            </style>
+                /* File Explorer specifico */
+            [data-testid="stSidebar"] .stButton > button {
+                width: 100%;
+                text-align: left !important;
+                padding: 2px 8px !important;
+                background: none !important;
+                border: none !important;
+                font-family: monospace !important;
+                font-size: 0.9em !important;
+                white-space: pre !important;
+                line-height: 1.5 !important;
+                color: var(--text-color) !important;
+            }
+            
+            [data-testid="stSidebar"] .stButton > button:hover {
+                background-color: var(--primary-color-light) !important;
+                color: var(--primary-color) !important;
+            }
+            
+            [data-testid="stSidebar"] .element-container:has(button[kind="secondary"]) {
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            
+            /* Solo per i markdown delle directory nel file explorer */
+            [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+                font-family: monospace !important;
+                font-size: 0.9em !important;
+                white-space: pre !important;
+                line-height: 1.5 !important;
+                margin: 0 !important;
+            }
+        </style>
         """, unsafe_allow_html=True)
 
         uploaded_files = st.file_uploader(
