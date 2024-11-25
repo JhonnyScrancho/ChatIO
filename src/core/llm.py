@@ -382,71 +382,61 @@ class LLMManager:
             yield error_msg
     
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
-                        file_content: Optional[str] = None) -> Generator[str, None, None]:
-            """
-            Processa una richiesta in modo sincrono.
-            """
-            # Get current model
-            current_model = SessionManager.get_current_model()
-            
-            # Prepare messages based on model
-            messages = self._prepare_messages(prompt, current_model)
-            
-            # Count input tokens
-            input_tokens = sum(TokenCounter.count_tokens(msg["content"]) for msg in messages)
-            
-            try:
-                if current_model.startswith('o1'):
-                    self._enforce_rate_limit(current_model)
+                   file_content: Optional[str] = None) -> Generator[str, None, None]:
+        """
+        Processa una richiesta in modo sincrono con aggiornamento metriche per chunk.
+        """
+        current_model = SessionManager.get_current_model()
+        messages = self._prepare_messages(prompt, current_model)
+        input_tokens = sum(TokenCounter.count_tokens(msg["content"]) for msg in messages)
+        
+        try:
+            if current_model.startswith('o1'):
+                self._enforce_rate_limit(current_model)
+                response = self.openai_client.chat.completions.create(
+                    model=current_model,
+                    messages=messages,
+                    stream=True
+                )
+                
+                accumulated_response = ""
+                for chunk in response:
+                    if chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        accumulated_response += content
+                        # Update metrics per chunk
+                        chunk_tokens = TokenCounter.count_tokens(content)
+                        self._update_metrics(0, chunk_tokens, current_model)
+                        yield content
+                
+            else:  # Claude model
+                self._enforce_rate_limit(current_model)
+                response = self.anthropic_client.messages.create(
+                    model=current_model,
+                    max_tokens=4096,
+                    messages=messages,
+                    stream=True
+                )
+                
+                accumulated_response = ""
+                for chunk in response:
+                    content = None
+                    if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'text'):
+                        content = chunk.delta.text
+                    elif hasattr(chunk, 'content') and chunk.content:
+                        content = chunk.content[0].text
                     
-                    response = self.openai_client.chat.completions.create(
-                        model=current_model,
-                        messages=messages,
-                        stream=True
-                    )
-                    
-                    # Process and count tokens for streamed response
-                    accumulated_response = ""
-                    for chunk in response:
-                        if chunk.choices[0].delta.content:
-                            content = chunk.choices[0].delta.content
-                            accumulated_response += content
-                            yield content
-                    
-                    # Count output tokens and update metrics
-                    output_tokens = TokenCounter.count_tokens(accumulated_response)
-                    self._update_metrics(input_tokens, output_tokens, current_model)
-                            
-                else:  # Claude model
-                    self._enforce_rate_limit(current_model)
-                    
-                    response = self.anthropic_client.messages.create(
-                        model=current_model,
-                        max_tokens=4096,
-                        messages=messages,
-                        stream=True
-                    )
-                    
-                    # Process and count tokens for streamed response
-                    accumulated_response = ""
-                    for chunk in response:
-                        if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'text'):
-                            content = chunk.delta.text
-                            accumulated_response += content
-                            yield content
-                        elif hasattr(chunk, 'content') and chunk.content:
-                            content = chunk.content[0].text
-                            accumulated_response += content
-                            yield content
-                    
-                    # Count output tokens and update metrics
-                    output_tokens = TokenCounter.count_tokens(accumulated_response)
-                    self._update_metrics(input_tokens, output_tokens, current_model)
+                    if content:
+                        accumulated_response += content
+                        # Update metrics per chunk
+                        chunk_tokens = TokenCounter.count_tokens(content)
+                        self._update_metrics(0, chunk_tokens, current_model)
+                        yield content
                         
-            except Exception as e:
-                error_msg = f"Error processing request: {str(e)}"
-                self.logger.error(f"{error_msg}\n{traceback.format_exc()}")
-                yield error_msg
+        except Exception as e:
+            error_msg = f"Error processing request: {str(e)}"
+            self.logger.error(f"{error_msg}\n{traceback.format_exc()}")
+            yield error_msg
 
 
     def _process_successful_response(self, response: str, initial_tokens: int,
@@ -491,14 +481,20 @@ class LLMManager:
         total_tokens = input_tokens + output_tokens
         cost = self.calculate_cost(model, input_tokens, output_tokens)
         
-        # Update session metrics
-        st.session_state['token_count'] = st.session_state.get('token_count', 0) + total_tokens
-        st.session_state['cost'] = st.session_state.get('cost', 0.0) + cost
+        # Update session metrics in a way that triggers Streamlit's reactivity
+        if 'token_count' not in st.session_state:
+            st.session_state.token_count = 0
+        if 'cost' not in st.session_state:
+            st.session_state.cost = 0.0
+        
+        # Force session state update to trigger rerender
+        st.session_state.token_count += total_tokens
+        st.session_state.cost += cost
         
         # Update internal metrics
         self._metrics['total_tokens'] += total_tokens
         self._metrics['total_cost'] += cost
-        self._metrics['successful_requests'] += 1      
+        self._metrics['successful_requests'] += 1     
 
     def _handle_request_error(self, error: Exception, current_model: str,
                             analysis_type: str, initial_tokens: int,

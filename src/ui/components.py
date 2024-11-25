@@ -208,6 +208,7 @@ class ChatInterface:
                 }
             }
             st.session_state.current_chat = 'Chat principale'
+        self.update_metrics = StatsDisplay.render_metrics()    
 
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
@@ -262,6 +263,8 @@ class ChatInterface:
                     with response_container:
                         with st.chat_message("assistant"):
                             st.markdown(response)
+                    # Aggiorna le metriche dopo ogni chunk
+                    self.update_metrics()
 
         # Se abbiamo una risposta valida, la aggiungiamo alla chat
         if response.strip():
@@ -269,27 +272,13 @@ class ChatInterface:
                 "role": "assistant",
                 "content": response
             })
+            # Aggiornamento finale delle metriche
+            self.update_metrics()
+
 
 
     def render(self):
-        """
-        Renderizza l'interfaccia chat con il corretto stile dei messaggi.
-        """
-        # Mostra le metriche dei token in modo più visibile
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric(
-                "Tokens Used", 
-                f"{st.session_state.get('token_count', 0):,}",
-                help="Numero totale di token utilizzati"
-            )
-        with col2:
-            st.metric(
-                "Cost ($)", 
-                f"${st.session_state.get('cost', 0):.3f}",
-                help="Costo totale stimato"
-            )
-
+        """Renderizza l'interfaccia chat."""
         self.render_chat_controls()
         
         # Container per i messaggi
@@ -395,27 +384,29 @@ class ModelSelector:
             self.session.set_current_model(selected)
 
 class StatsDisplay:
-    def render(self):
-        """Renderizza il componente con statistiche token migliorate."""
-        stats = self.session.get_token_stats()
+    """Componente per visualizzazione statistiche in tempo reale."""
+    
+    @staticmethod
+    def render_metrics():
+        """Renderizza metriche con aggiornamento in tempo reale."""
+        placeholder = st.empty()
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric(
-                "Tokens Used",
-                f"{stats['total_tokens']:,}",
-                delta=None
-            )
+        def update_display():
+            with placeholder.container():
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric(
+                        "Tokens Used", 
+                        f"{st.session_state.get('token_count', 0):,}",
+                        help="Numero totale di token utilizzati"
+                    )
+                with col2:
+                    st.metric(
+                        "Cost ($)", 
+                        f"${st.session_state.get('cost', 0):.4f}",
+                        help="Costo totale stimato"
+                    )
         
-        with col2:
-            st.metric(
-                "Cost ($)",
-                f"${stats['estimated_cost']:.3f}",
-                delta=None
-            )
-        
-        if st.session_state.get('debug_mode', False) and 'distribution' in stats:
-            st.markdown("### Token Distribution")
-            dist = stats['distribution']
-            for key, value in dist.items():
-                st.text(f"{key}: {value:,}")
+        # Initial display
+        update_display()
+        return update_display
