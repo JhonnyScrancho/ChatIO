@@ -17,6 +17,37 @@ def render_info_message(message: str):
     """Renderizza un messaggio informativo."""
     st.info(f"ℹ️ {message}")
 
+def handle_chat_input(clients: dict, prompt: str):
+    """
+    Gestisce l'elaborazione dell'input della chat.
+    
+    Args:
+        clients: Dictionary contenente i client necessari
+        prompt: Input dell'utente
+    """
+    current_chat = st.session_state.chats[st.session_state.current_chat]
+    
+    # Aggiungi il contesto dei file al prompt se ci sono file caricati
+    context = ""
+    if st.session_state.get('uploaded_files'):
+        current_file = st.session_state.get('current_file')
+        if current_file and current_file in st.session_state.uploaded_files:
+            file_info = st.session_state.uploaded_files[current_file]
+            context = f"\nFile corrente: {current_file}\n```{file_info['language']}\n{file_info['content']}\n```"
+    
+    # Processa la richiesta
+    with st.spinner("Elaborazione in corso..."):
+        response = "".join(list(clients['llm'].process_request(
+            prompt=prompt,
+            context=context
+        )))
+        
+        # Aggiungi i messaggi alla chat
+        current_chat['messages'].extend([
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": response}
+        ])
+
 def render_app_layout(clients: dict):
     """
     Renderizza il layout principale dell'applicazione.
@@ -52,22 +83,11 @@ def render_app_layout(clients: dict):
         st.markdown("### 📝 Code Viewer")
         CodeViewer().render()
     
-    # Chat input al fondo della pagina
-    chat_input_container = st.empty()
-    
-    # Inserisci l'input nel container vuoto
-    with chat_input_container:
-        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
-            current_chat = st.session_state.chats[st.session_state.current_chat]
-            current_chat['messages'].append({"role": "user", "content": prompt})
-            
-            with st.spinner("Elaborazione in corso..."):
-                response = clients['llm'].process_request(prompt)
-                current_chat['messages'].append({
-                    "role": "assistant", 
-                    "content": "".join(response)
-                })
-            st.rerun()
+    # Chat input
+    prompt = st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input")
+    if prompt:
+        handle_chat_input(clients, prompt)
+        st.rerun()
 
 # Esporta le funzioni necessarie
 __all__ = [

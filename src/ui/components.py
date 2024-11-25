@@ -156,13 +156,17 @@ class ChatInterface:
     
     def __init__(self):
         self.session = SessionManager()
-        self.llm = LLMManager()
-        if 'messages' not in st.session_state:
-            st.session_state.messages = []
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
-            })
+        if 'chats' not in st.session_state:
+            st.session_state.chats = {
+                'Chat principale': {
+                    'messages': [{
+                        "role": "assistant",
+                        "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
+                    }],
+                    'created_at': datetime.now().isoformat()
+                }
+            }
+            st.session_state.current_chat = 'Chat principale'
 
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
@@ -187,14 +191,20 @@ class ChatInterface:
 
     def render(self):
         """Renderizza l'interfaccia chat."""
+        # Recupera la chat corrente
+        current_chat = st.session_state.chats[st.session_state.current_chat]
+        
         # Container per i messaggi
         messages_container = st.container()
         
         # Renderizza i messaggi
         with messages_container:
-            for message in st.session_state.messages:
+            for message in current_chat['messages']:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
+        
+        # Aggiungi spazio per l'input
+        st.markdown("<div style='height: 100px;'></div>", unsafe_allow_html=True)
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
