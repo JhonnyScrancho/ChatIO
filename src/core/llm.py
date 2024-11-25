@@ -270,12 +270,12 @@ class LLMManager:
         except Exception as e:
             error_msg = f"Errore con {model}: {str(e)}"
             st.error(error_msg)
-            # Fallback a Claude solo se non siamo già in fallback
             if not is_fallback:
                 yield "Mi scuso per l'errore. Proverò con un modello alternativo.\n\n"
-                yield from self._handle_claude_completion({"messages": messages}, is_fallback=True)
+                for chunk in self._handle_claude_completion({"messages": messages}, is_fallback=True):
+                    yield chunk
             else:
-                yield "Mi dispiace, si è verificato un errore con entrambi i modelli. Per favore, riprova tra qualche momento."
+                yield "Mi dispiace, si è verificato un errore con entrambi i modelli."
 
     def _handle_claude_completion(self, prompt_data: Dict[str, Any], is_fallback: bool = False) -> Generator[str, None, None]:
         """
@@ -293,47 +293,41 @@ class LLMManager:
         try:
             self._enforce_rate_limit("claude")
             
-            # Costruisce il messaggio nel formato corretto per Claude 3
             messages = []
-            
-            # Aggiunge il system message se presente
             if system := prompt_data.get("system"):
                 messages.append({
                     "role": "system",
                     "content": system
                 })
             
-            # Aggiunge i messaggi dell'utente nel formato corretto
             for msg in prompt_data.get("messages", []):
                 messages.append({
                     "role": msg["role"],
                     "content": msg["content"]
                 })
 
-            # Crea la completion con il client Claude 3
             stream = self.anthropic_client.messages.create(
                 model=MODEL,
                 messages=messages,
                 stream=True,
-                max_tokens=4096  # Impostiamo un limite ragionevole
+                max_tokens=4096
             )
             
-            # Processa lo stream nel nuovo formato
-            async for message in stream:
-                if hasattr(message, 'content'):
-                    yield message.content[0].text
+            for chunk in stream:
+                if chunk.type == "content_block_delta" and chunk.delta.text:
+                    yield chunk.delta.text
                     
         except Exception as e:
             error_msg = f"Errore Claude: {str(e)}"
             st.error(error_msg)
-            # Fallback a O1 solo se non siamo già in fallback
             if not is_fallback:
                 yield "Mi scuso per l'errore. Proverò con un modello alternativo.\n\n"
                 fallback_messages = [{"role": "user", "content": msg["content"]} 
                                 for msg in prompt_data.get("messages", [])]
-                yield from self._handle_o1_completion(fallback_messages, "o1-preview", is_fallback=True)
+                for chunk in self._handle_o1_completion(fallback_messages, "o1-preview", is_fallback=True):
+                    yield chunk
             else:
-                yield "Mi dispiace, si è verificato un errore con entrambi i modelli. Per favore, riprova tra qualche momento."
+                yield "Mi dispiace, si è verificato un errore con entrambi i modelli."
 
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
                     file_content: Optional[str] = None, 
@@ -350,11 +344,9 @@ class LLMManager:
         Yields:
             str: Chunks della risposta
         """
-        # Determina se il task richiede gestione file
-        requires_file_handling = bool(file_content)
-        
         try:
-            # Seleziona il modello appropriato
+            requires_file_handling = bool(file_content)
+            
             if analysis_type and file_content:
                 model = self.select_model(
                     analysis_type, 
@@ -364,7 +356,6 @@ class LLMManager:
             else:
                 model = st.session_state.current_model
             
-            # Prepara i messaggi
             prompt_data = self.prepare_prompt(
                 prompt=prompt,
                 analysis_type=analysis_type,
@@ -373,12 +364,11 @@ class LLMManager:
                 model=model
             )
             
-            # Processa la richiesta con il modello appropriato
             if model.startswith('o1'):
-                async for chunk in self._handle_o1_completion(prompt_data["messages"], model):
+                for chunk in self._handle_o1_completion(prompt_data["messages"], model):
                     yield chunk
             else:
-                async for chunk in self._handle_claude_completion(prompt_data):
+                for chunk in self._handle_claude_completion(prompt_data):
                     yield chunk
                     
         except Exception as e:
