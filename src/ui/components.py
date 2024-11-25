@@ -211,12 +211,16 @@ class ChatInterface:
                 context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
 
             response = ""
+            placeholder = st.empty()
             with st.spinner("Analyzing code..."):
                 for chunk in self.llm.process_request(
                     prompt=prompt,
                     context=context
                 ):
                     response += chunk
+                    # Aggiorna il placeholder con la risposta parziale
+                    with placeholder:
+                        st.markdown(response)
             return response
         except Exception as e:
             error_msg = f"Mi dispiace, si è verificato un errore: {str(e)}"
@@ -293,29 +297,37 @@ class ChatInterface:
         if not prompt.strip():
             return
             
-        # Aggiungi il messaggio utente
-        if st.session_state.uploaded_files:
-            files_context = "\n🔍 Files in analisi:\n"
-            for filename, file_info in st.session_state.uploaded_files.items():
-                files_context += f"- {filename} ({file_info['language']})\n"
+        # Crea un container per i messaggi
+        chat_container = st.container()
+        
+        with chat_container:
+            # Aggiungi il messaggio utente
+            if st.session_state.uploaded_files:
+                files_context = "\n🔍 Files in analisi:\n"
+                for filename, file_info in st.session_state.uploaded_files.items():
+                    files_context += f"- {filename} ({file_info['language']})\n"
+                st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                    "role": "system",
+                    "content": files_context
+                })
+                
             st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                "role": "system",
-                "content": files_context
+                "role": "user",
+                "content": prompt
+            })
+
+            # Processa la risposta
+            response = self._process_response(prompt)
+            
+            # Aggiungi la risposta dell'assistente
+            st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                "role": "assistant",
+                "content": response
             })
             
-        st.session_state.chats[st.session_state.current_chat]['messages'].append({
-            "role": "user",
-            "content": prompt
-        })
+            # Forza il refresh della chat
+            st.rerun()
 
-        # Processa la risposta
-        response = self._process_response(prompt)
-        
-        # Aggiungi la risposta dell'assistente
-        st.session_state.chats[st.session_state.current_chat]['messages'].append({
-            "role": "assistant",
-            "content": response
-        })
 
     def render(self):
         """Renderizza l'interfaccia chat."""
