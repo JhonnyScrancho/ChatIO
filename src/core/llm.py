@@ -37,15 +37,15 @@ class LLMManager:
         # Limiti dei modelli
         self.model_limits = {
             'o1-preview': {
-                'max_tokens': 32768,
-                'context_window': 128000,
+                'max_tokens': 8192,
+                'context_window': 8192,
                 'supports_files': False,
                 'supports_system_message': False,
                 'supports_functions': False
             },
             'o1-mini': {
-                'max_tokens': 65536,
-                'context_window': 128000,
+                'max_tokens': 4096,
+                'context_window': 4096,
                 'supports_files': False,
                 'supports_system_message': False,
                 'supports_functions': False
@@ -106,21 +106,13 @@ class LLMManager:
                 requires_file_handling: bool = False) -> str:
         """
         Seleziona automaticamente il modello più appropriato.
-        
-        Args:
-            task_type: Tipo di task (es. 'architecture', 'review', 'debug', 'analysis')
-            content_length: Lunghezza del contenuto in caratteri
-            requires_file_handling: Se il task richiede manipolazione di file
-            
-        Returns:
-            str: Nome del modello selezionato
         """
         # Stima tokens (1 token ~ 4 caratteri)
         estimated_tokens = content_length // 4
         
-        # Gestione file di grandi dimensioni
-        if estimated_tokens > 128000:
-            return "claude-3-5-sonnet-20241022"  # Massima capacità di contesto
+        # Per contenuti molto grandi, usa sempre Claude
+        if estimated_tokens > 8000:  # Ridotto per rispettare i limiti di GPT-4
+            return "claude-3-5-sonnet-20241022"
         
         # Mapping task -> modello preferito
         task_model_mapping = {
@@ -147,33 +139,19 @@ class LLMManager:
             'codebase_review': 'claude-3-5-sonnet-20241022'
         }
         
-        # Se il task richiede gestione file specifica
-        if requires_file_handling:
-            if task_type in ['analysis', 'quick_fix', 'debug']:
-                return 'gpt-4-mini'  # Buon compromesso per task comuni
-            return 'claude-3-5-sonnet-20241022'  # Migliore per file handling complesso
-        
-        # Selezione basata sulla dimensione del contenuto
-        if estimated_tokens > 64000:
-            if task_type in task_model_mapping:
-                # Per task noti usiamo il modello preferito se gestibile
-                preferred_model = task_model_mapping[task_type]
-                if self.model_limits[preferred_model]['max_tokens'] >= estimated_tokens:
-                    return preferred_model
+        # Se richiede gestione file di grandi dimensioni
+        if requires_file_handling and estimated_tokens > 4000:
             return 'claude-3-5-sonnet-20241022'
         
-        # Per contenuti di dimensioni medie
-        if estimated_tokens > 32000:
-            if task_type in task_model_mapping:
-                return task_model_mapping[task_type]
-            return 'gpt-4-mini'
-        
-        # Per contenuti piccoli, usa il mapping task -> modello
+        # Per task specifici, usa il mapping se il contenuto è nei limiti
         if task_type in task_model_mapping:
-            return task_model_mapping[task_type]
+            preferred_model = task_model_mapping[task_type]
+            if estimated_tokens <= self.model_limits[preferred_model]['max_tokens']:
+                return preferred_model
         
-        # Default per task sconosciuti o non specificati
-        # Sceglie o1-mini per la velocità e il costo ridotto
+        # Default per task sconosciuti o contenuti che superano i limiti
+        if estimated_tokens > 4000:
+            return 'claude-3-5-sonnet-20241022'
         return 'o1-mini'
 
     def _enforce_rate_limit(self, model: str):
@@ -253,25 +231,25 @@ class LLMManager:
             yield error_msg
 
     def _handle_gpt4_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
-        """
-        Gestisce le chiamate ai modelli GPT-4.
-        
-        Args:
-            messages: Lista di messaggi
-            model: Nome del modello GPT-4
-            
-        Yields:
-            str: Chunks della risposta
-        """
+        """Gestisce le chiamate ai modelli GPT-4."""
         try:
             self._enforce_rate_limit(model)
+            
+            # Calcola lunghezza stimata del contesto
+            total_length = sum(len(msg.get('content', '')) for msg in messages)
+            estimated_tokens = total_length // 4
+            
+            # Se supera i limiti, passa a Claude
+            if estimated_tokens > self.model_limits[model]['max_tokens']:
+                st.warning(f"Contenuto troppo lungo per {model}, passaggio a Claude...")
+                return self._handle_claude_completion_with_user_control(messages, st.empty())
             
             completion = self.openai_client.chat.completions.create(
                 model=model,
                 messages=messages,
                 stream=True,
+                max_tokens=min(4096, self.model_limits[model]['max_tokens'] - estimated_tokens),
                 temperature=0.7,
-                max_tokens=self.model_limits[model]['max_tokens'],
                 top_p=1,
                 frequency_penalty=0,
                 presence_penalty=0
@@ -285,13 +263,10 @@ class LLMManager:
             error_msg = f"Errore con {model}: {str(e)}"
             st.error(error_msg)
             
-            # Gestione fallback
-            if "rate_limit" in str(e).lower():
-                st.warning("Rate limit raggiunto, tentativo di fallback su modello alternativo...")
-                if model == 'gpt-4':
-                    yield from self._handle_gpt4_completion(messages, 'gpt-4-mini')
-                else:
-                    yield from self._handle_o1_completion(messages, 'o1-mini')
+            # Fallback automatico a Claude per contenuti troppo lunghi
+            if "context_length_exceeded" in str(e):
+                st.warning("Contenuto troppo lungo, passaggio a Claude...")
+                yield from self._handle_claude_completion_with_user_control(messages, st.empty())
             else:
                 yield error_msg
     
