@@ -162,9 +162,43 @@ class SessionManager:
         return st.session_state.current_file
     
     @staticmethod
-    def update_token_count(tokens: int):
-        """Aggiorna il conteggio dei token utilizzati."""
-        st.session_state.token_count += tokens
+    def update_token_count(text: Union[str, Dict, List]):
+        """
+        Aggiorna il conteggio dei token utilizzati.
+        
+        Args:
+            text: Testo o struttura dati da analizzare
+        """
+        tokens = TokenCounter.count_tokens(text)
+        st.session_state.token_count = st.session_state.get('token_count', 0) + tokens
+        
+        # Aggiorna anche le statistiche di distribuzione se in debug mode
+        if st.session_state.get('debug_mode', False) and isinstance(text, str):
+            distribution = TokenCounter.get_token_distribution(text)
+            if 'token_distribution' not in st.session_state:
+                st.session_state.token_distribution = distribution
+            else:
+                for key, value in distribution.items():
+                    st.session_state.token_distribution[key] = \
+                        st.session_state.token_distribution.get(key, 0) + value
+                    
+    @staticmethod
+    def get_token_stats() -> Dict[str, Any]:
+        """
+        Restituisce statistiche dettagliate sull'uso dei token.
+        
+        Returns:
+            Dict[str, Any]: Statistiche sui token
+        """
+        stats = {
+            'total_tokens': st.session_state.get('token_count', 0),
+            'estimated_cost': st.session_state.get('cost', 0.0),
+        }
+        
+        if st.session_state.get('debug_mode', False):
+            stats['distribution'] = st.session_state.get('token_distribution', {})
+            
+        return stats                
     
     @staticmethod
     def update_cost(amount: float):

@@ -383,26 +383,27 @@ class ModelSelector:
             self.session.set_current_model(selected)
 
 class StatsDisplay:
-    """Componente per la visualizzazione delle statistiche."""
-    
-    def __init__(self):
-        self.session = SessionManager()
-    
     def render(self):
-        """Renderizza il componente."""
-        stats = self.session.get_stats()
-        col1, col2 = st.columns(2)
+        """Renderizza il componente con statistiche token migliorate."""
+        stats = self.session.get_token_stats()
         
+        col1, col2 = st.columns(2)
         with col1:
             st.metric(
                 "Tokens Used",
-                f"{stats['token_count']:,}",
+                f"{stats['total_tokens']:,}",
                 delta=None
             )
         
         with col2:
             st.metric(
                 "Cost ($)",
-                f"${stats['cost']:.3f}",
+                f"${stats['estimated_cost']:.3f}",
                 delta=None
             )
+        
+        if st.session_state.get('debug_mode', False) and 'distribution' in stats:
+            st.markdown("### Token Distribution")
+            dist = stats['distribution']
+            for key, value in dist.items():
+                st.text(f"{key}: {value:,}")
