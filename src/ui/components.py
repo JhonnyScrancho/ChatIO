@@ -331,17 +331,9 @@ class ChatInterface:
                     'created_at': datetime.now().isoformat()
                 }
                 st.session_state.current_chat = new_chat_name
+            
             if st.button("✏️", help="Rinomina chat"):
                 st.session_state.renaming = True    
-        
-        with col3:
-            if st.button("✏️", help="Rinomina chat"):
-                st.session_state.renaming = True
-        
-        with col4:
-            if len(st.session_state.chats) > 1 and st.button("🗑️", help="Elimina chat"):
-                del st.session_state.chats[st.session_state.current_chat]
-                st.session_state.current_chat = list(st.session_state.chats.keys())[0]
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
