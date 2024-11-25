@@ -3,22 +3,33 @@ UI components for Allegro IO Code Assistant.
 """
 
 import streamlit as st
+from datetime import datetime
+from typing import Dict, Any, List, Optional
+import os
 from src.core.session import SessionManager
 from src.core.files import FileManager
 from src.core.llm import LLMManager
-from typing import Dict, Any
 
 class FileExplorer:
     """Component per l'esplorazione e l'upload dei file."""
     
     def __init__(self):
+        """Inizializza il FileExplorer."""
         self.session = SessionManager()
         self.file_manager = FileManager()
         if 'uploaded_files' not in st.session_state:
             st.session_state.uploaded_files = {}
 
     def _get_file_icon(self, filename: str) -> str:
-        """Restituisce l'icona appropriata per il tipo di file."""
+        """
+        Restituisce l'icona appropriata per il tipo di file.
+        
+        Args:
+            filename: Nome del file
+            
+        Returns:
+            str: Emoji rappresentativa del tipo di file
+        """
         ext = filename.split('.')[-1].lower() if '.' in filename else ''
         icons = {
             'py': '🐍',
@@ -38,7 +49,15 @@ class FileExplorer:
         return icons.get(ext, '📄')
 
     def _create_file_tree(self, files: Dict[str, Any]) -> Dict[str, Any]:
-        """Crea una struttura ad albero dai file."""
+        """
+        Crea una struttura ad albero dai file.
+        
+        Args:
+            files: Dizionario dei file
+            
+        Returns:
+            Dict[str, Any]: Struttura ad albero dei file
+        """
         tree = {}
         for path, content in files.items():
             current = tree
@@ -51,19 +70,27 @@ class FileExplorer:
         return tree
 
     def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", is_last: bool = True):
-        """Renderizza un nodo dell'albero dei file in stile minimale."""
-        # Definisci i caratteri per l'albero
+        """
+        Renderizza un nodo dell'albero dei file in stile minimale.
+        
+        Args:
+            path: Percorso del nodo
+            node: Contenuto del nodo
+            prefix: Prefisso per l'indentazione
+            is_last: Se è l'ultimo nodo del livello
+        """
         PIPE = "│   "
         ELBOW = "└── "
         TEE = "├── "
         
-        # Scegli il connettore appropriato
         connector = ELBOW if is_last else TEE
         
         if isinstance(node, dict) and 'content' not in node:
             # È una directory
-            st.markdown(f"<div style='font-family: monospace; white-space: pre;'>{prefix}{connector}{path.split('/')[-1]}/</div>", 
-                      unsafe_allow_html=True)
+            st.markdown(
+                f"<div style='font-family: monospace; white-space: pre;'>{prefix}{connector}{path.split('/')[-1]}/</div>",
+                unsafe_allow_html=True
+            )
             
             items = sorted(node.items())
             for i, (name, child) in enumerate(items):
@@ -72,17 +99,20 @@ class FileExplorer:
                 self._render_tree_node(name, child, new_prefix, is_last_item)
         else:
             # È un file
-            if st.button(f"{prefix}{connector}{path.split('/')[-1]}", 
-                        key=f"file_{path}",
-                        use_container_width=True,
-                        type="secondary"):
+            file_icon = self._get_file_icon(path)
+            if st.button(
+                f"{prefix}{connector}{file_icon} {path.split('/')[-1]}",
+                key=f"file_{path}",
+                use_container_width=True,
+                type="secondary"
+            ):
                 st.session_state.selected_file = path
                 st.session_state.current_file = path
 
     def render(self):
-        """Renderizza il componente."""
+        """Renderizza il componente FileExplorer."""
         uploaded_files = st.file_uploader(
-            "Drag and drop files here",
+            "Carica i tuoi file",
             type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
             accept_multiple_files=True
         )
@@ -91,61 +121,47 @@ class FileExplorer:
             for file in uploaded_files:
                 try:
                     if file.name.endswith('.zip'):
-                        import zipfile
-                        import io
-                        
-                        zip_content = zipfile.ZipFile(io.BytesIO(file.read()))
-                        for zip_file in zip_content.namelist():
-                            if not zip_file.startswith('__') and not zip_file.startswith('.'):
-                                try:
-                                    content = zip_content.read(zip_file).decode('utf-8', errors='ignore')
-                                    st.session_state.uploaded_files[zip_file] = {
-                                        'content': content,
-                                        'language': zip_file.split('.')[-1],
-                                        'name': zip_file
-                                    }
-                                except Exception as e:
-                                    continue
+                        # Processa file ZIP
+                        processed_files = self.file_manager.process_zip(file)
+                        st.session_state.uploaded_files.update(processed_files)
                     else:
-                        content = file.read().decode('utf-8')
-                        st.session_state.uploaded_files[file.name] = {
-                            'content': content,
-                            'language': file.name.split('.')[-1],
-                            'name': file.name
-                        }
+                        # Processa file singolo
+                        processed = self.file_manager.process_file(file)
+                        if processed:
+                            st.session_state.uploaded_files[file.name] = processed
+
                 except Exception as e:
                     st.error(f"Errore nel processare {file.name}: {str(e)}")
 
+        # Aggiungi stili CSS per l'albero dei file
+        st.markdown("""
+            <style>
+                .file-tree-button {
+                    background: none !important;
+                    border: none !important;
+                    padding: 0 !important;
+                    font-family: monospace !important;
+                    color: inherit !important;
+                    text-align: left !important;
+                    width: 100% !important;
+                    margin: 0 !important;
+                    height: auto !important;
+                    line-height: 1.5 !important;
+                }
+                .file-tree-button:hover {
+                    color: #ff4b4b !important;
+                }
+                .directory-label {
+                    color: #666;
+                    font-family: monospace;
+                }
+            </style>
+        """, unsafe_allow_html=True)
+
         # Visualizza struttura ad albero
         if st.session_state.uploaded_files:
-            st.markdown("""
-                <style>
-                    /* Stile per i bottoni dell'albero */
-                    .stButton button {
-                        background: none !important;
-                        border: none !important;
-                        padding: 0 !important;
-                        font-family: monospace !important;
-                        color: inherit !important;
-                        text-align: left !important;
-                        width: 100% !important;
-                        margin: 0 !important;
-                        height: auto !important;
-                        line-height: 1.5 !important;
-                    }
-                    .stButton button:hover {
-                        color: #ff4b4b !important;
-                    }
-                    /* Stile per il testo delle directory */
-                    .directory {
-                        color: #666;
-                        font-family: monospace;
-                    }
-                </style>
-            """, unsafe_allow_html=True)
-            
             tree = self._create_file_tree(st.session_state.uploaded_files)
-            st.markdown("<div style='font-family: monospace;'>allegro-io/</div>", unsafe_allow_html=True)
+            st.markdown("<div class='directory-label'>📁 Project Files</div>", unsafe_allow_html=True)
             items = sorted(tree.items())
             for i, (name, node) in enumerate(items):
                 is_last = i == len(items) - 1
@@ -154,7 +170,7 @@ class FileExplorer:
 class ChatInterface:
     """Componente per l'interfaccia chat."""
     
-    def __init__(self, llm_manager=None):
+    def __init__(self, llm_manager: Optional[LLMManager] = None):
         """
         Inizializza l'interfaccia chat.
         
@@ -176,7 +192,12 @@ class ChatInterface:
             st.session_state.current_chat = 'Chat principale'
 
     def _get_context(self) -> str:
-        """Recupera il contesto dai file caricati."""
+        """
+        Recupera il contesto dai file caricati.
+        
+        Returns:
+            str: Contesto formattato
+        """
         context = ""
         if uploaded_files := st.session_state.get('uploaded_files', {}):
             current_file = st.session_state.get('current_file')
@@ -242,6 +263,7 @@ class CodeViewer:
     """Componente per la visualizzazione del codice."""
     
     def __init__(self):
+        """Inizializza il CodeViewer."""
         self.session = SessionManager()
 
     def render(self):
@@ -250,13 +272,23 @@ class CodeViewer:
         if selected_file and (file_info := st.session_state.uploaded_files.get(selected_file)):
             st.markdown(f"**{file_info['name']}** ({file_info['language']})")
             st.code(file_info['content'], language=file_info['language'])
+            
+            # Aggiungi statistiche del file
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Lines", len(file_info['content'].splitlines()))
+            with col2:
+                st.metric("Size", f"{len(file_info['content'])} chars")
+            with col3:
+                st.metric("Language", file_info['language'].upper())
         else:
-            st.info("Select a file from the sidebar to view its content")
+            st.info("Seleziona un file dalla sidebar per visualizzarne il contenuto")
 
 class ModelSelector:
     """Componente per la selezione del modello LLM."""
     
     def __init__(self):
+        """Inizializza il ModelSelector."""
         self.session = SessionManager()
     
     def render(self):
@@ -269,7 +301,7 @@ class ModelSelector:
         
         current_model = self.session.get_current_model()
         selected = st.selectbox(
-            "Select Model",
+            "Seleziona Modello",
             list(models.keys()),
             format_func=lambda x: models[x],
             index=list(models.keys()).index(current_model)
@@ -277,28 +309,65 @@ class ModelSelector:
         
         if selected != current_model:
             self.session.set_current_model(selected)
+            
+        # Mostra info sul modello
+        with st.expander("Informazioni sul modello"):
+            model_info = {
+                'o1-mini': {
+                    'description': 'Ottimizzato per risposte veloci e debugging semplice',
+                    'best_for': ['Quick fixes', 'Simple debugging', 'Small files'],
+                    'response_time': 'Fast (0.5-1s)'
+                },
+                'o1-preview': {
+                    'description': 'Bilanciato per analisi approfondita e suggerimenti avanzati',
+                    'best_for': ['Code review', 'Architecture analysis', 'Performance optimization'],
+                    'response_time': 'Medium (1-2s)'
+                },
+                'claude-3-5-sonnet': {
+                    'description': 'Massima capacità di analisi e contestualizzazione',
+                    'best_for': ['Complex analysis', 'Large codebases', 'Detailed explanations'],
+                    'response_time': 'Slow (2-4s)'
+                }
+            }
+            
+            info = model_info[selected]
+            st.markdown(f"**{info['description']}**")
+            st.markdown("**Best for:**")
+            for use_case in info['best_for']:
+                st.markdown(f"- {use_case}")
+            st.info(f"Response time: {info['response_time']}")
 
 class StatsDisplay:
     """Componente per la visualizzazione delle statistiche."""
     
     def __init__(self):
+        """Inizializza il StatsDisplay."""
         self.session = SessionManager()
     
     def render(self):
         """Renderizza il componente."""
         stats = self.session.get_stats()
-        col1, col2 = st.columns(2)
         
+        # Metriche principali
+        col1, col2 = st.columns(2)
         with col1:
             st.metric(
-                "Tokens Used",
+                "Token Usati",
                 f"{stats['token_count']:,}",
                 delta=None
             )
-        
         with col2:
             st.metric(
-                "Cost ($)",
+                "Costo ($)",
                 f"${stats['cost']:.3f}",
                 delta=None
             )
+        
+        # Statistiche aggiuntive
+        with st.expander("Statistiche dettagliate"):
+            st.markdown(f"""
+            - **File caricati:** {stats['files_count']}
+            - **Chat attive:** {stats['chats_count']}
+            - **Costo medio per richiesta:** ${stats['cost'] / max(stats['token_count'] / 1000, 1):.4f}/1K tokens
+            - **Sessione iniziata:** {datetime.fromisoformat(st.session_state.get('start_time', datetime.now().isoformat())).strftime('%Y-%m-%d %H:%M:%S')}
+            """)
