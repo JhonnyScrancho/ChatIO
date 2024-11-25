@@ -258,7 +258,7 @@ class ChatInterface:
             for chunk in self.llm.process_request(prompt=prompt):
                 if chunk:
                     response += chunk
-                    # Aggiorna la risposta in tempo reale nel container appropriato
+                    # Aggiorna la risposta in tempo reale
                     with response_container:
                         with st.chat_message("assistant"):
                             st.markdown(response)
@@ -275,6 +275,21 @@ class ChatInterface:
         """
         Renderizza l'interfaccia chat con il corretto stile dei messaggi.
         """
+        # Mostra le metriche dei token in modo più visibile
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric(
+                "Tokens Used", 
+                f"{st.session_state.get('token_count', 0):,}",
+                help="Numero totale di token utilizzati"
+            )
+        with col2:
+            st.metric(
+                "Cost ($)", 
+                f"${st.session_state.get('cost', 0):.3f}",
+                help="Costo totale stimato"
+            )
+
         self.render_chat_controls()
         
         # Container per i messaggi
@@ -284,12 +299,9 @@ class ChatInterface:
         rendered_messages = set()
         
         with messages_container:
-            # Renderizza tutti i messaggi nella chat corrente
             for message in st.session_state.chats[st.session_state.current_chat]['messages']:
-                # Crea un hash univoco per il messaggio
                 message_hash = hash(f"{message['role']}:{message['content']}")
                 
-                # Renderizza solo se non è già stato mostrato
                 if message_hash not in rendered_messages:
                     with st.chat_message(message["role"]):
                         st.markdown(message["content"])

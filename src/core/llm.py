@@ -124,6 +124,18 @@ class LLMManager:
             'errors': []
         }
     
+    def _prepare_file_context(self) -> str:
+        """
+        Prepara il contesto dai file caricati.
+        """
+        if not st.session_state.get('uploaded_files'):
+            return ""
+            
+        context = "I file caricati sono:\n\n"
+        for filename, file_info in st.session_state.uploaded_files.items():
+            context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
+        return context
+
     def select_model(self, task_type: str, content_length: int, 
                     requires_file_handling: bool = False) -> str:
         """
@@ -156,24 +168,19 @@ class LLMManager:
         return "o1-mini"
 
     def _enforce_rate_limit(self, model: str):
-        """
-        Implementa rate limiting per le chiamate API.
-        """
+        """Implementa rate limiting per le chiamate API."""
         current_time = time.time()
         
-        # Initialize counters if needed
         if model not in self._last_call_time:
             self._last_call_time[model] = current_time
             self._call_count[model] = 0
             self._reset_time[model] = current_time + 60
         
-        # Reset counters if needed
         if current_time > self._reset_time[model]:
             self._call_count[model] = 0
             self._reset_time[model] = current_time + 60
         
-        # Apply rate limiting
-        if self._call_count[model] >= 50:  # 50 requests per minute
+        if self._call_count[model] >= 50:
             sleep_time = self._reset_time[model] - current_time
             if sleep_time > 0:
                 time.sleep(sleep_time)
@@ -340,23 +347,33 @@ class LLMManager:
             yield error_msg
 
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
-                       file_content: Optional[str] = None, 
-                       context: Optional[str] = None) -> Generator[str, None, None]:
+                       file_content: Optional[str] = None) -> Generator[str, None, None]:
         """
         Processa una richiesta in modo sincrono.
         """
-        # Prepare messages
+        # Prepare context from files
+        file_context = self._prepare_file_context()
+        
+        # Prepare messages with file context
         messages = []
-        if context:
-            messages.append({"role": "system", "content": context})
+        if file_context:
+            system_message = (
+                "Sei un assistente esperto in programmazione. "
+                "Analizza il codice fornito e rispondi alle domande dell'utente. "
+                "Ecco il codice da analizzare:\n\n" + file_context
+            )
+            messages.append({"role": "system", "content": system_message})
+            
         messages.append({"role": "user", "content": prompt})
+        
+        # Count input tokens
+        input_tokens = sum(TokenCounter.count_tokens(msg["content"]) for msg in messages)
         
         # Get current model
         current_model = SessionManager.get_current_model()
         
         try:
             if current_model.startswith('o1'):
-                # Handle OpenAI models
                 self._enforce_rate_limit(current_model)
                 
                 response = self.openai_client.chat.completions.create(
@@ -365,44 +382,57 @@ class LLMManager:
                     stream=True
                 )
                 
+                # Process and count tokens for streamed response
+                accumulated_response = ""
                 for chunk in response:
                     if chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
+                        content = chunk.choices[0].delta.content
+                        accumulated_response += content
+                        yield content
+                
+                # Count output tokens and update metrics
+                output_tokens = TokenCounter.count_tokens(accumulated_response)
+                self._update_metrics(input_tokens, output_tokens, current_model)
                         
             else:  # Claude model
-                # Create event loop
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                self._enforce_rate_limit(current_model)
                 
-                try:
-                    # Handle Claude responses in chunks
-                    self._enforce_rate_limit(current_model)
-                    
-                    # Convert messages to Claude format
-                    claude_messages = []
-                    for msg in messages:
-                        if msg["role"] == "user":
-                            claude_messages.append({
-                                "role": "user",
-                                "content": msg["content"]
-                            })
-                    
-                    response = self.anthropic_client.messages.create(
-                        model=current_model,
-                        max_tokens=4096,
-                        messages=claude_messages,
-                        stream=True
-                    )
-                    
-                    # Process streaming response
-                    for chunk in response:
-                        if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'text'):
-                            yield chunk.delta.text
-                        elif hasattr(chunk, 'content') and chunk.content:
-                            yield chunk.content[0].text
-                            
-                finally:
-                    loop.close()
+                # Convert messages to Claude format
+                claude_messages = []
+                for msg in messages:
+                    if msg["role"] == "system":
+                        claude_messages.append({
+                            "role": "assistant",
+                            "content": msg["content"]
+                        })
+                    else:
+                        claude_messages.append({
+                            "role": msg["role"],
+                            "content": msg["content"]
+                        })
+                
+                response = self.anthropic_client.messages.create(
+                    model=current_model,
+                    max_tokens=4096,
+                    messages=claude_messages,
+                    stream=True
+                )
+                
+                # Process and count tokens for streamed response
+                accumulated_response = ""
+                for chunk in response:
+                    if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'text'):
+                        content = chunk.delta.text
+                        accumulated_response += content
+                        yield content
+                    elif hasattr(chunk, 'content') and chunk.content:
+                        content = chunk.content[0].text
+                        accumulated_response += content
+                        yield content
+                
+                # Count output tokens and update metrics
+                output_tokens = TokenCounter.count_tokens(accumulated_response)
+                self._update_metrics(input_tokens, output_tokens, current_model)
                     
         except Exception as e:
             error_msg = f"Error processing request: {str(e)}"
@@ -444,6 +474,22 @@ class LLMManager:
                 response=response
             )
 
+    def _update_metrics(self, input_tokens: int, output_tokens: int, model: str):
+        """
+        Aggiorna le metriche dopo una richiesta completata.
+        """
+        total_tokens = input_tokens + output_tokens
+        cost = self.calculate_cost(model, input_tokens, output_tokens)
+        
+        # Update session metrics
+        st.session_state['token_count'] = st.session_state.get('token_count', 0) + total_tokens
+        st.session_state['cost'] = st.session_state.get('cost', 0.0) + cost
+        
+        # Update internal metrics
+        self._metrics['total_tokens'] += total_tokens
+        self._metrics['total_cost'] += cost
+        self._metrics['successful_requests'] += 1       
+
     def _handle_request_error(self, error: Exception, current_model: str,
                             analysis_type: str, initial_tokens: int,
                             prompt: str, file_content: Optional[str],
@@ -479,9 +525,7 @@ class LLMManager:
         return error_msg
 
     def calculate_cost(self, model: str, input_tokens: int, output_tokens: int) -> float:
-        """
-        Calcola il costo di una richiesta.
-        """
+        """Calcola il costo di una richiesta."""
         if model not in self.cost_map:
             return 0.0
             
