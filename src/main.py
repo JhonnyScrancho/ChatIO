@@ -133,6 +133,46 @@ def load_custom_css():
         ::-webkit-scrollbar-thumb:hover {
             background: var(--primary-color-dark);
         }
+                /* File Explorer specifico */
+            [data-testid="stSidebar"] .stButton > button {
+                width: 100%;
+                text-align: left !important;
+                background: none !important;
+                border: none !important;
+                font-family: var(--font) !important;
+                font-size: 14px !important;
+                white-space: pre !important;
+                line-height: 1.6 !important;
+                color: var(--text-color) !important;
+                padding: 0.25rem 1rem !important;
+                margin: 0 !important;
+            }
+            
+            [data-testid="stSidebar"] .stButton > button:hover {
+                background-color: rgba(151, 166, 195, 0.15) !important;
+            }
+            
+            /* Rimuovi padding e margini dal container dei bottoni */
+            [data-testid="stSidebar"] .element-container:has(button[kind="secondary"]) {
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            
+            /* Directory markdown styling */
+            [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+                font-family: var(--font) !important;
+                font-size: 14px !important;
+                white-space: pre !important;
+                line-height: 1.6 !important;
+                margin: 0 !important;
+                padding: 0.25rem 1rem !important;
+                color: var(--text-color) !important;
+            }
+
+            /* Allinea uploader files */
+            [data-testid="stSidebar"] [data-testid="stFileUploader"] {
+                padding: 0 1rem;
+            }
         </style>
     """, unsafe_allow_html=True)
 
