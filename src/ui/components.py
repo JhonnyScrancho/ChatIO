@@ -197,6 +197,15 @@ class ChatInterface:
     def __init__(self):
         self.session = SessionManager()
         self.llm = LLMManager()
+        # Inizializza i container persistenti
+        if 'chat_controls_container' not in st.session_state:
+            st.session_state.chat_controls_container = st.container()
+        if 'messages_container' not in st.session_state:
+            st.session_state.messages_container = st.container()
+        if 'response_container' not in st.session_state:
+            st.session_state.response_container = st.empty()
+        
+        # Inizializza la chat se necessario
         if 'chats' not in st.session_state:
             st.session_state.chats = {
                 'Chat principale': {
@@ -237,9 +246,7 @@ class ChatInterface:
     
 
     def process_user_message(self, prompt: str):
-        """
-        Processa un nuovo messaggio utente e renderizza correttamente le risposte.
-        """
+        """Processa un messaggio utente mantenendo l'interfaccia stabile."""
         if not prompt.strip():
             return
 
@@ -249,51 +256,42 @@ class ChatInterface:
             "content": prompt
         })
 
-        # Container per la risposta in tempo reale
-        response_container = st.empty()
-        
-        # Processa la risposta
-        response = ""
-        with st.spinner("Elaborazione in corso..."):
-            for chunk in self.llm.process_request(prompt=prompt):
-                if chunk:
-                    response += chunk
-                    # Aggiorna la risposta in tempo reale
-                    with response_container:
-                        with st.chat_message("assistant"):
-                            st.markdown(response)
-                    # Aggiorna le metriche dopo ogni chunk
-                    StatsDisplay.update_metrics()
+        # Aggiorna i messaggi nel container persistente
+        self.render_messages()
 
-        # Se abbiamo una risposta valida, la aggiungiamo alla chat
+        # Processa la risposta nel container dedicato
+        response = ""
+        with st.session_state.response_container:
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                for chunk in self.llm.process_request(prompt=prompt):
+                    if chunk:
+                        response += chunk
+                        message_placeholder.markdown(response)
+                        # Aggiorna le metriche senza ricostruire l'interfaccia
+                        StatsDisplay.update_metrics()
+
+        # Aggiungi la risposta completa alla chat
         if response.strip():
             st.session_state.chats[st.session_state.current_chat]['messages'].append({
                 "role": "assistant",
                 "content": response
             })
-            # Aggiornamento finale delle metriche
-            StatsDisplay.update_metrics()
 
-
+    def render_messages(self):
+        """Renderizza i messaggi nel container persistente."""
+        with st.session_state.messages_container:
+            for message in st.session_state.chats[st.session_state.current_chat]['messages']:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
 
     def render(self):
-        """Renderizza l'interfaccia chat."""
+        """Renderizza l'interfaccia chat completa."""
+        # Renderizza i controlli della chat
         self.render_chat_controls()
         
-        # Container per i messaggi
-        messages_container = st.container()
-        
-        # Set per tenere traccia dei messaggi già renderizzati
-        rendered_messages = set()
-        
-        with messages_container:
-            for message in st.session_state.chats[st.session_state.current_chat]['messages']:
-                message_hash = hash(f"{message['role']}:{message['content']}")
-                
-                if message_hash not in rendered_messages:
-                    with st.chat_message(message["role"]):
-                        st.markdown(message["content"])
-                    rendered_messages.add(message_hash)
+        # Renderizza i messaggi
+        self.render_messages()
 
     def handle_user_input(self, prompt: str):
         """
@@ -308,38 +306,38 @@ class ChatInterface:
             st.session_state.processing = False
 
     def render_chat_controls(self):
-        """
-        Renderizza i controlli della chat.
-        """
-        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
-        
-        with col1:
-            current_chat = st.selectbox(
-                " ",
-                options=list(st.session_state.chats.keys()),
-                index=list(st.session_state.chats.keys()).index(st.session_state.current_chat),
-                label_visibility="collapsed"
-            )
-            if current_chat != st.session_state.current_chat:
-                st.session_state.current_chat = current_chat
-        
-        with col2:
-            if st.button("🆕", help="Nuova chat"):
-                new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
-                st.session_state.chats[new_chat_name] = {
-                    'messages': [],
-                    'created_at': datetime.now().isoformat()
-                }
-                st.session_state.current_chat = new_chat_name
-        
-        with col3:
-            if st.button("✏️", help="Rinomina chat"):
-                st.session_state.renaming = True
-        
-        with col4:
-            if len(st.session_state.chats) > 1 and st.button("🗑️", help="Elimina chat"):
-                del st.session_state.chats[st.session_state.current_chat]
-                st.session_state.current_chat = list(st.session_state.chats.keys())[0]
+        """Renderizza i controlli della chat in un container persistente."""
+        with st.session_state.chat_controls_container:
+            col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+            
+            with col1:
+                current_chat = st.selectbox(
+                    " ",
+                    options=list(st.session_state.chats.keys()),
+                    index=list(st.session_state.chats.keys()).index(st.session_state.current_chat),
+                    label_visibility="collapsed",
+                    key="chat_selector"
+                )
+                if current_chat != st.session_state.current_chat:
+                    st.session_state.current_chat = current_chat
+            
+            with col2:
+                if st.button("🆕", help="Nuova chat", key="new_chat_button"):
+                    new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
+                    st.session_state.chats[new_chat_name] = {
+                        'messages': [],
+                        'created_at': datetime.now().isoformat()
+                    }
+                    st.session_state.current_chat = new_chat_name
+            
+            with col3:
+                if st.button("✏️", help="Rinomina chat", key="rename_chat_button"):
+                    st.session_state.renaming = True
+            
+            with col4:
+                if len(st.session_state.chats) > 1 and st.button("🗑️", help="Elimina chat", key="delete_chat_button"):
+                    del st.session_state.chats[st.session_state.current_chat]
+                    st.session_state.current_chat = list(st.session_state.chats.keys())[0]
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
@@ -391,27 +389,26 @@ class StatsDisplay:
         Crea un container singleton per le metriche.
         """
         if 'metrics_container' not in st.session_state:
-            st.session_state.metrics_container = st.empty()
+            st.session_state.metrics_container = st.container()
         return st.session_state.metrics_container
 
     @staticmethod
     def update_metrics():
         """
-        Aggiorna tutte le visualizzazioni delle metriche simultaneamente.
+        Aggiorna le metriche in modo non distruttivo.
         """
-        metrics_container = StatsDisplay.get_metrics_container()
-        
-        with metrics_container.container():
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric(
-                    "Tokens Used", 
-                    f"{st.session_state.get('token_count', 0):,}",
-                    help="Numero totale di token utilizzati"
-                )
-            with col2:
-                st.metric(
-                    "Cost ($)", 
-                    f"${st.session_state.get('cost', 0):.4f}",
-                    help="Costo totale stimato"
-                )
+        if 'metrics_container' in st.session_state:
+            with st.session_state.metrics_container:
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric(
+                        "Tokens Used", 
+                        f"{st.session_state.get('token_count', 0):,}",
+                        help="Numero totale di token utilizzati"
+                    )
+                with col2:
+                    st.metric(
+                        "Cost ($)", 
+                        f"${st.session_state.get('cost', 0):.4f}",
+                        help="Costo totale stimato"
+                    )
