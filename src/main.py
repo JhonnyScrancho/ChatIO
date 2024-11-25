@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from pathlib import Path
 import os
 import sys
-from datetime import datetime
 
 # Deve essere la prima chiamata Streamlit
 st.set_page_config(
@@ -45,44 +44,38 @@ def load_custom_css():
         
         /* Sidebar migliorata */
         [data-testid="stSidebar"] {
-            background-color: var(--surface-container);
+            background-color: #f8f9fa;
             padding: 1rem;
         }
         
         [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
             font-size: 0.9rem;
             margin-bottom: 0.5rem;
-            color: var(--text-color);
         }
         
-        /* Chat container con spazio per input fisso */
-        .chat-container {
-            height: calc(100vh - 200px);
-            overflow-y: auto;
-            margin-bottom: 80px;
-        }
-        
-        /* Input chat fisso */
-        .stChatInputContainer, .stStreamlitMessageInputContainer {
+        /* Chat UI */
+        .stChatFloatingInputContainer {
             position: fixed !important;
             bottom: 0 !important;
             left: 18rem !important;
             right: 0 !important;
+            padding: 1rem 2rem !important;
             background: white !important;
-            padding: 1rem !important;
             border-top: 1px solid #eee !important;
             z-index: 1000 !important;
-        }
-        
-        /* Chat message container */
-        [data-testid="stChatMessageContainer"] {
-            padding-bottom: 100px !important;
         }
         
         .stChatMessage {
             max-width: none !important;
             width: 100% !important;
             margin: 0.5rem 0 !important;
+        }
+        
+        /* Spazio per l'input fisso */
+        [data-testid="stChatMessageContainer"] {
+            padding-bottom: 80px !important;
+            position: fixed !important;
+            bottom: 0 !important;
         }
         
         /* Code viewer */
@@ -112,13 +105,13 @@ def load_custom_css():
             padding: 0.2rem 0.5rem !important;
             text-align: left !important;
             font-size: 0.9rem !important;
-            color: var(--text-color) !important;
+            color: #0e1117 !important;
             width: 100% !important;
             margin: 0 !important;
         }
         
         .file-tree button:hover {
-            background-color: var(--surface-container-highest) !important;
+            background-color: #eef2f5 !important;
         }
         
         /* Loader animation */
@@ -130,6 +123,38 @@ def load_custom_css():
             background: #f8f9fa;
             border-radius: 0.5rem;
             margin: 1rem 0;
+        }
+        
+        .loader-dots {
+            display: inline-flex;
+            gap: 0.3rem;
+        }
+        
+        .loader-dots span {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #666;
+            animation: loader 1.4s infinite;
+        }
+        
+        .loader-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .loader-dots span:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes loader {
+            0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1); }
+        }
+        
+        /* Stats display */
+        .stats-container {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            padding: 0.5rem;
+            background: #f8f9fa;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
         }
         
         /* Scrollbars */
@@ -178,8 +203,17 @@ def load_custom_css():
             visibility: visible;
             opacity: 1;
         }
-        
-        /* Sidebar buttons and inputs */
+                
+        [data-testid="stSidebar"] {
+        background-color: var(--surface-container);  /* Usa la variabile del tema corrente */
+        }
+
+        /* Adatta il colore del testo nella sidebar al tema */
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+            color: var(--text-color);
+        }
+
+        /* Bottoni e input nella sidebar */
         [data-testid="stSidebar"] button {
             background-color: var(--surface-container-highest) !important;
             color: var(--text-color) !important;
@@ -189,6 +223,15 @@ def load_custom_css():
             background-color: var(--surface-container-highest) !important;
             color: var(--text-color) !important;
         }
+
+        /* File explorer nella sidebar */
+        [data-testid="stSidebar"] .file-tree button {
+            color: var(--text-color) !important;
+        }
+
+        [data-testid="stSidebar"] .file-tree button:hover {
+            background-color: var(--surface-container-highest) !important;
+        }        
         </style>
     """, unsafe_allow_html=True)
 
@@ -222,31 +265,79 @@ def init_clients():
         'file_manager': FileManager()
     }
 
-def init_session_state():
-    """Inizializza lo stato della sessione se non esiste."""
-    if 'initialized' not in st.session_state:
-        st.session_state.initialized = True
-        st.session_state.files = {}
-        st.session_state.chats = {
-            'Chat principale': {
-                'messages': [{
-                    "role": "assistant",
-                    "content": "Ciao! Carica dei file e fammi delle domande su di essi."
-                }],
-                'created_at': datetime.now().isoformat()
+def render_main_layout():
+    """Renderizza il layout principale dell'applicazione."""
+    # CSS per gestire correttamente il layout di pagina
+    st.markdown("""
+        <style>
+            /* Layout principale */
+            .main .block-container {
+                max-width: 100% !important;
+                padding-top: 1rem !important;
+                padding-right: 1rem !important;
+                padding-left: 1rem !important;
+                padding-bottom: 80px !important;   /* Spazio per il footer */
             }
-        }
-        st.session_state.current_chat = 'Chat principale'
-        st.session_state.selected_file = None
-        st.session_state.token_count = 0
-        st.session_state.cost = 0.0
-        st.session_state.current_model = 'o1-mini'
-        st.session_state.debug_mode = False
-        st.session_state.model_usage = {
-            'o1-mini': 0,
-            'o1-preview': 0,
-            'claude-3-5-sonnet-20241022': 0
-        }
+
+            /* Stile input chat */
+            .stChatFloatingInputContainer {
+                bottom: 0;
+                background: white;
+                padding: 1rem;
+                z-index: 999999;
+                width: 100%;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    # Setup iniziale della sessione
+    clients = init_clients()
+    clients['session'].init_session()
+    
+    # Title Area con Stats
+    col1, col2, col3 = st.columns([4, 1, 1])
+    with col1:
+        st.title("👲🏿 Allegro IO")
+    with col2:
+        st.metric("Tokens Used", f"{st.session_state.get('token_count', 0):,}")
+    with col3:
+        st.metric("Cost ($)", f"${st.session_state.get('cost', 0):.3f}")
+    
+    # Sidebar con File Manager e Model Selector
+    with st.sidebar:
+        st.markdown("### 📁 File Manager")
+        FileExplorer().render()
+        st.markdown("---")
+        st.markdown("### 🤖 Model Settings")
+        ModelSelector().render()
+    
+    # Main Content Area con Chat e Code Viewer
+    col1, col2 = st.columns([3, 2])
+    
+    with col1:
+        st.markdown("### 💬 Chat")
+        ChatInterface().render()
+    
+    with col2:
+        st.markdown("### 📝 Code Viewer")
+        CodeViewer().render()
+    
+    # Chat input al fondo della pagina
+    chat_input_container = st.empty()
+    
+    # Inserisci l'input nel container vuoto
+    with chat_input_container:
+        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
+            current_chat = st.session_state.chats[st.session_state.current_chat]
+            current_chat['messages'].append({"role": "user", "content": prompt})
+            
+            with st.spinner("Elaborazione in corso..."):
+                response = clients['llm'].process_request(prompt)
+                current_chat['messages'].append({
+                    "role": "assistant", 
+                    "content": "".join(response)
+                })
+            st.rerun()
 
 def main():
     """Funzione principale dell'applicazione."""
@@ -256,121 +347,13 @@ def main():
         check_directories()
         load_custom_css()
         
-        # Setup iniziale della sessione e clients
-        init_session_state()
-        clients = init_clients()
-        
-        # Title Area con Stats
-        col1, col2, col3 = st.columns([4, 1, 1])
-        with col1:
-            st.title("🎯 Allegro IO")
-        with col2:
-            st.metric("Tokens Used", f"{st.session_state.token_count:,}")
-        with col3:
-            st.metric("Cost ($)", f"${st.session_state.cost:.3f}")
-        
-        # Sidebar con File Manager e Model Selector
-        with st.sidebar:
-            st.markdown("### 📁 File Manager")
-            FileExplorer().render()
-            st.markdown("---")
-            st.markdown("### 🤖 Model Settings")
-            ModelSelector().render()
-            
-            if st.checkbox("Debug Mode", value=st.session_state.debug_mode):
-                st.session_state.debug_mode = True
-                st.markdown("### 🔧 Debug Info")
-                st.json({
-                    "session_state": {k: str(v) for k, v in st.session_state.items()},
-                    "current_model": st.session_state.current_model,
-                    "files_loaded": len(st.session_state.files)
-                })
-        
-        # Main Content Area con Chat e Code Viewer
-        col1, col2 = st.columns([3, 2])
-        
-        with col1:
-            st.markdown("### 💬 Chat")
-            
-            # Container per la chat con scrolling
-            chat_container = st.container()
-            with chat_container:
-                st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-                ChatInterface().render()
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Chat input fisso nel footer
-            st.markdown('<div class="chat-input-container">', unsafe_allow_html=True)
-            if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
-                current_chat = st.session_state.chats[st.session_state.current_chat]
-                current_chat['messages'].append({"role": "user", "content": prompt})
-                
-                # Preparazione del contesto usando LLMManager
-                context = clients['llm'].get_context_from_files(
-                st.session_state.files,
-                st.session_state.selected_file
-            )
-                
-                with st.spinner("Elaborazione in corso..."):
-                    try:
-                        response = "".join(list(clients['llm'].process_request(
-                            prompt=prompt,
-                            context=context,
-                            model=st.session_state.current_model
-                        )))
-                        
-                        # Aggiorna le statistiche di utilizzo del modello
-                        if st.session_state.current_model in st.session_state.model_usage:
-                            st.session_state.model_usage[st.session_state.current_model] += 1
-                        
-                        current_chat['messages'].append({
-                            "role": "assistant", 
-                            "content": response
-                        })
-                    except Exception as e:
-                        st.error(f"Errore: {str(e)}")
-                        if st.session_state.current_model != 'claude-3-5-sonnet-20241022':
-                            st.info("Tentativo con Claude come fallback...")
-                            prev_model = st.session_state.current_model
-                            st.session_state.current_model = 'claude-3-5-sonnet-20241022'
-                            try:
-                                response = "".join(list(clients['llm'].process_request(
-                                    prompt=prompt,
-                                    context=context,
-                                    model='claude-3-5-sonnet-20241022'
-                                )))
-                                
-                                # Aggiorna statistiche anche per il fallback
-                                st.session_state.model_usage['claude-3-5-sonnet-20241022'] += 1
-                                
-                                current_chat['messages'].append({
-                                    "role": "assistant", 
-                                    "content": response
-                                })
-                                # Ripristina il modello precedente
-                                st.session_state.current_model = prev_model
-                            except Exception as e:
-                                st.error(f"Errore anche con Claude: {str(e)}")
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown("### 📝 Code Viewer")
-            CodeViewer().render()
-            
-            if st.session_state.files:
-                st.markdown("### 📊 Statistics")
-                StatsDisplay().render()
+        # Renderizza il layout principale
+        render_main_layout()
         
     except Exception as e:
         st.error(f"❌ Si è verificato un errore: {str(e)}")
-        if st.session_state.get('debug_mode', False):
+        if os.getenv('DEBUG') == 'True':
             st.exception(e)
-            st.json({
-                "error_type": type(e).__name__,
-                "error_details": str(e),
-                "session_state": {k: str(v) for k, v in st.session_state.items()}
-            })
 
 if __name__ == "__main__":
     main()

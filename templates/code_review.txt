@@ -1,0 +1,37 @@
+Analizza il seguente codice per una code review professionale.
+
+CONTESTO:
+{context}
+
+CODICE:
+{code}
+
+Per favore fornisci:
+
+1. OVERVIEW GENERALE
+- Qualità complessiva del codice
+- Pattern di design utilizzati
+- Conformità alle best practices
+
+2. PUNTI DI FORZA
+- Aspetti positivi del codice
+- Soluzioni eleganti
+- Ottimizzazioni efficaci
+
+3. AREE DI MIGLIORAMENTO
+- Potenziali problemi
+- Bug o vulnerabilità
+- Suggerimenti di refactoring
+
+4. SPECIFICHE TECNICHE
+- Complessità temporale/spaziale
+- Performance
+- Sicurezza
+- Manutenibilità
+
+5. RACCOMANDAZIONI CONCRETE
+- Esempi di codice migliorato
+- Suggerimenti specifici
+- Priorità degli interventi
+
+Analizza ogni aspetto in modo dettagliato ma conciso, fornendo esempi concreti dove necessario.
