@@ -154,8 +154,15 @@ class FileExplorer:
 class ChatInterface:
     """Componente per l'interfaccia chat."""
     
-    def __init__(self):
+    def __init__(self, llm_manager=None):
+        """
+        Inizializza l'interfaccia chat.
+        
+        Args:
+            llm_manager: Manager per le interazioni LLM
+        """
         self.session = SessionManager()
+        self.llm = llm_manager
         if 'chats' not in st.session_state:
             st.session_state.chats = {
                 'Chat principale': {
@@ -189,6 +196,9 @@ class ChatInterface:
             str: Risposta generata
         """
         try:
+            if not self.llm:
+                return "Error: LLM manager not initialized"
+                
             context = self._get_context()
             response = "".join(list(self.llm.process_request(
                 prompt=prompt,
