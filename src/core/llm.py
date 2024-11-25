@@ -11,9 +11,14 @@ from anthropic import Anthropic
 import time
 from datetime import datetime
 import json
+import random
 
 class LLMManager:
     """Gestisce le interazioni con i modelli LLM."""
+    
+    MAX_RETRIES = 3
+    INITIAL_RETRY_DELAY = 1  # secondi
+    MAX_RETRY_DELAY = 16    # secondi
     
     def __init__(self):
         """Inizializza le connessioni API e le configurazioni."""
@@ -80,7 +85,7 @@ class LLMManager:
         self._last_call_time = {}
         self._call_count = {}
         self._reset_time = {}
-    
+
     def select_model(self, task_type: str, content_length: int, 
                     requires_file_handling: bool = False) -> str:
         """
@@ -111,9 +116,7 @@ class LLMManager:
         
         # Per task più semplici usa o1-mini
         return "o1-mini"
-    
-    
-    
+
     def _enforce_rate_limit(self, model: str):
         """
         Implementa rate limiting per le chiamate API.
@@ -144,7 +147,22 @@ class LLMManager:
         
         self._call_count[model] += 1
         self._last_call_time[model] = current_time
-    
+
+    def _exponential_backoff(self, attempt: int) -> float:
+        """
+        Calcola il tempo di attesa per il retry con jitter.
+        
+        Args:
+            attempt: Numero del tentativo
+            
+        Returns:
+            float: Tempo di attesa in secondi
+        """
+        delay = min(self.MAX_RETRY_DELAY, 
+                   self.INITIAL_RETRY_DELAY * (2 ** attempt))
+        jitter = random.uniform(-0.25, 0.25) * delay
+        return delay + jitter
+
     def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
         """
         Gestisce le chiamate ai modelli o1.
@@ -173,27 +191,33 @@ class LLMManager:
         except Exception as e:
             error_msg = f"Errore con {model}: {str(e)}"
             st.error(error_msg)
-            # Fallback a Claude in caso di errore
-            yield from self._handle_claude_completion(messages)
+            yield error_msg
 
-    def _handle_claude_completion(self, messages: List[Dict]) -> Generator[str, None, None]:
+    def _handle_claude_completion_with_user_control(self, messages: List[Dict], 
+                                                  placeholder: st.empty) -> Generator[str, None, None]:
         """
-        Gestisce le chiamate a Claude con corretta estrazione dei delta.
+        Gestisce le chiamate a Claude con retry controllato dall'utente.
+        
+        Args:
+            messages: Lista di messaggi
+            placeholder: Streamlit placeholder per l'UI
+            
+        Yields:
+            str: Chunks della risposta
         """
-        try:
-            self._enforce_rate_limit("claude-3-5-sonnet-20241022")
-            
-            # Converti i messaggi nel formato Claude
-            claude_messages = []
-            for msg in messages:
-                if msg["role"] == "user":
-                    content_msg = {
-                        "role": "user",
-                        "content": [{"type": "text", "text": msg["content"]}]
-                    }
-                    claude_messages.append(content_msg)
-            
+        for attempt in range(self.MAX_RETRIES):
             try:
+                self._enforce_rate_limit("claude-3-5-sonnet-20241022")
+                
+                claude_messages = []
+                for msg in messages:
+                    if msg["role"] == "user":
+                        content_msg = {
+                            "role": "user",
+                            "content": [{"type": "text", "text": msg["content"]}]
+                        }
+                        claude_messages.append(content_msg)
+                
                 response = self.anthropic_client.messages.create(
                     model="claude-3-5-sonnet-20241022",
                     max_tokens=4096,
@@ -202,29 +226,55 @@ class LLMManager:
                 )
                 
                 for chunk in response:
-                    # Gestione corretta dei diversi tipi di chunk
                     if hasattr(chunk, 'type'):
                         if chunk.type == 'content_block_delta':
                             if hasattr(chunk.delta, 'text'):
                                 yield chunk.delta.text
                         elif chunk.type == 'message_start':
-                            continue  # Ignora il messaggio di inizio
+                            continue
                         elif chunk.type == 'content_block_start':
-                            continue  # Ignora l'inizio del blocco
+                            continue
                         elif chunk.type == 'content_block_stop':
-                            continue  # Ignora la fine del blocco
+                            continue
                         elif chunk.type == 'message_stop':
-                            continue  # Ignora la fine del messaggio
-                            
-            except Exception as api_error:
-                error_msg = f"Errore API: {str(api_error)}"
-                st.error(error_msg)
-                yield error_msg
+                            continue
+                return
                 
-        except Exception as e:
-            error_msg = f"Errore generale: {str(e)}"
-            st.error(error_msg)
-            yield error_msg
+            except Exception as e:
+                error_msg = str(e)
+                
+                if "overloaded_error" in error_msg:
+                    with placeholder.container():
+                        st.error("⚠️ Server Claude sovraccarico")
+                        col1, col2, col3 = st.columns(3)
+                        
+                        retry = col1.button("🔄 Riprova", key=f"retry_{attempt}")
+                        switch_o1 = col2.button("🔀 Passa a O1", key=f"switch_o1_{attempt}")
+                        switch_mini = col3.button("🔄 Passa a O1-mini", key=f"switch_mini_{attempt}")
+                        
+                        if retry:
+                            retry_delay = self._exponential_backoff(attempt)
+                            st.info(f"Nuovo tentativo tra {retry_delay:.1f} secondi...")
+                            time.sleep(retry_delay)
+                            continue
+                        elif switch_o1:
+                            st.info("Passaggio a O1-preview...")
+                            yield from self._handle_o1_completion(messages, "o1-preview")
+                            return
+                        elif switch_mini:
+                            st.info("Passaggio a O1-mini...")
+                            yield from self._handle_o1_completion(messages, "o1-mini")
+                            return
+                        else:
+                            st.stop()
+                else:
+                    st.error(f"Errore API: {error_msg}")
+                    if attempt < self.MAX_RETRIES - 1:
+                        retry_delay = self._exponential_backoff(attempt)
+                        st.warning(f"Nuovo tentativo tra {retry_delay:.1f} secondi...")
+                        time.sleep(retry_delay)
+                    else:
+                        yield f"Mi dispiace, si è verificato un errore persistente: {error_msg}"
 
     def test_claude(self):
         """
@@ -277,7 +327,7 @@ class LLMManager:
             context += f"\nFile: {filename} (language: {file_info['language']})\n"
             context += f"```{file_info['language']}\n{file_info['content']}\n```\n"
         return context
-    
+
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
                     file_content: Optional[str] = None, 
                     context: Optional[str] = None,
@@ -310,12 +360,12 @@ class LLMManager:
             "role": "user",
             "content": main_content
         }]
-    
+
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
                        file_content: Optional[str] = None, 
                        context: Optional[str] = None) -> Generator[str, None, None]:
         """
-        Processa una richiesta completa.
+        Processa una richiesta completa con controllo utente sul retry e fallback.
         
         Args:
             prompt: Prompt dell'utente
@@ -326,20 +376,13 @@ class LLMManager:
         Yields:
             str: Chunks della risposta
         """
-        # Determina se il task richiede gestione file
         requires_file_handling = bool(file_content)
         
-        # Seleziona il modello appropriato
         if analysis_type and file_content:
-            model = self.select_model(
-                analysis_type, 
-                len(file_content), 
-                requires_file_handling
-            )
+            model = self.select_model(analysis_type, len(file_content), requires_file_handling)
         else:
             model = st.session_state.current_model
         
-        # Prepara i messaggi
         messages = self.prepare_prompt(
             prompt=prompt,
             analysis_type=analysis_type,
@@ -348,12 +391,22 @@ class LLMManager:
             model=model
         )
         
-        # Processa la richiesta con il modello appropriato
-        if model.startswith('o1'):
-            yield from self._handle_o1_completion(messages, model)
-        else:
-            yield from self._handle_claude_completion(messages)
-    
+        # Placeholder per i controlli utente
+        placeholder = st.empty()
+        
+        try:
+            if model.startswith('o1'):
+                yield from self._handle_o1_completion(messages, model)
+            else:
+                yield from self._handle_claude_completion_with_user_control(messages, placeholder)
+                
+        except Exception as e:
+            error_msg = f"Errore generale: {str(e)}"
+            st.error(error_msg)
+            with placeholder.container():
+                if st.button("🔄 Riprova con O1-mini"):
+                    yield from self._handle_o1_completion(messages, "o1-mini")
+
     def calculate_cost(self, model: str, input_tokens: int, 
                       output_tokens: int) -> float:
         """
