@@ -386,6 +386,7 @@ class ModelSelector:
             list(models.keys()),
             format_func=lambda x: models[x],
             index=list(models.keys()).index(current_model)
+            label_visibility="collapsed"
         )
         
         if selected != current_model:
