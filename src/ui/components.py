@@ -382,11 +382,11 @@ class ModelSelector:
         
         current_model = self.session.get_current_model()
         selected = st.selectbox(
-            "Select Model",
+            " ",  # Spazio vuoto invece di "Select Model"
             list(models.keys()),
             format_func=lambda x: models[x],
-            index=list(models.keys()).index(current_model)
-            label_visibility="collapsed"
+            index=list(models.keys()).index(current_model),
+            label_visibility="collapsed"  # Nasconde il label
         )
         
         if selected != current_model:
