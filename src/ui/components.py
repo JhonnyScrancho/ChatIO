@@ -366,7 +366,7 @@ class ModelSelector:
         """Renderizza il componente."""
         models = {
             'gpt-4': '🧠 GPT-4 (Expert)',
-            'gpt-4-mini': '⚡ GPT-4 Mini (Fast)',
+            'gpt-4o-mini': '⚡ GPT-4 Mini (Fast)',
             'o1-mini': '🚀 O1 Mini (Fast)',
             'o1-preview': '🔍 O1 Preview (Advanced)',
             'claude-3-5-sonnet-20241022': '🎭 Claude 3.5 Sonnet (Detailed)'

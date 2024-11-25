@@ -49,7 +49,7 @@ def load_config() -> Dict[str, Any]:
             'cost_per_1k': {'input': 0.03, 'output': 0.06},
             'best_for': ['complex_analysis', 'expert_review']
             },
-            'gpt-4-mini': {
+            'gpt-4o-mini': {
                 'token_limit': 128000,
                 'cost_per_1k': {'input': 0.01, 'output': 0.03},
                 'best_for': ['quick_analysis', 'general_tasks']

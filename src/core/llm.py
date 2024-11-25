@@ -28,7 +28,7 @@ class LLMManager:
         # Costi per 1K tokens (in USD)
         self.cost_map = {
         'gpt-4': {'input': 0.03, 'output': 0.06},
-        'gpt-4-mini': {'input': 0.01, 'output': 0.03},
+        'gpt-4o-mini': {'input': 0.01, 'output': 0.03},
         'o1-preview': {'input': 0.01, 'output': 0.03},
         'o1-mini': {'input': 0.001, 'output': 0.002},
         'claude-3-5-sonnet-20241022': {'input': 0.008, 'output': 0.024}
@@ -57,7 +57,7 @@ class LLMManager:
                 'supports_system_message': True,
                 'supports_functions': True
             },
-            'gpt-4-mini': {
+            'gpt-4o-mini': {
                 'max_tokens': 128000,
                 'context_window': 128000,
                 'supports_files': True,
@@ -123,10 +123,10 @@ class LLMManager:
             'system_design': 'gpt-4',
             
             # Task di media complessità
-            'review': 'gpt-4-mini',
-            'refactoring': 'gpt-4-mini',
-            'optimization': 'gpt-4-mini',
-            'analysis': 'gpt-4-mini',
+            'review': 'gpt-4o-mini',
+            'refactoring': 'gpt-4o-mini',
+            'optimization': 'gpt-4o-mini',
+            'analysis': 'gpt-4o-mini',
             
             # Task rapidi o semplici
             'debug': 'o1-mini',
