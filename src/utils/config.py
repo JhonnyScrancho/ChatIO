@@ -44,7 +44,7 @@ def load_config() -> Dict[str, Any]:
                 'cost_per_1k': {'input': 0.001, 'output': 0.002},
                 'best_for': ['debug', 'quick_fix']
             },
-            'claude-3-5-sonnet': {
+            'claude-3-5-sonnet-20241022': {
                 'token_limit': 200000,
                 'cost_per_1k': {'input': 0.008, 'output': 0.024},
                 'best_for': ['large_files', 'documentation']

@@ -246,12 +246,7 @@ class LLMManager:
                 else:
                     claude_messages.append({
                         "role": msg["role"],
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": msg["content"]
-                            }
-                        ]
+                        "content": msg["content"]
                     })
             
             response = self.anthropic_client.messages.create(
