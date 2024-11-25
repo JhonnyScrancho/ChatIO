@@ -228,8 +228,8 @@ def load_custom_css():
         }        
         /* File Tree styles */
         [data-testid="stSidebar"] .block-container {
-            padding-left: 0.5rem;
-            padding-right: 0.5rem;
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
         }
         
         .file-button:hover {
@@ -243,25 +243,34 @@ def load_custom_css():
         .element-container:has(button[kind="secondary"]) {
             margin: 0 !important;
             padding: 0 !important;
+            height: 20px !important;
         }
         
         /* Riduci spazi nel file uploader */
         [data-testid="stFileUploader"] {
-            padding: 0.5rem 0;
+            padding: 0 !important;
+            margin-bottom: 1rem !important;
         }
         
         [data-testid="stFileUploader"] > div {
-            padding: 0.5rem !important;
+            padding: 0.25rem !important;
         }
         
         /* Riduci margini generali nella sidebar */
         [data-testid="stSidebar"] [data-testid="stMarkdown"] {
             margin: 0 !important;
+            padding: 0 !important;
         }
         
         [data-testid="stSidebar"] .block-container {
-            padding-top: 0.5rem;
-        }       
+            padding-top: 0.5rem !important;
+        }
+        
+        /* Rimuovi padding extra dai contenitori */
+        div[data-testid="stVerticalBlock"] > div {
+            padding: 0 !important;
+            margin: 0 !important;
+        }      
         </style>
     """, unsafe_allow_html=True)
 

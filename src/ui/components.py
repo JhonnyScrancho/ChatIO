@@ -57,9 +57,9 @@ class FileExplorer:
     def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", is_last: bool = True, full_path: str = ""):
         """Renderizza un nodo dell'albero dei file con chiavi uniche."""
         # Definisci i caratteri per l'albero
-        PIPE = "│ "  # Ridotto lo spazio
-        ELBOW = "└─"  # Ridotto i trattini
-        TEE = "├─"    # Ridotto i trattini
+        PIPE = "│"
+        ELBOW = "└─"
+        TEE = "├─"
         
         # Scegli il connettore appropriato
         connector = ELBOW if is_last else TEE
@@ -70,13 +70,13 @@ class FileExplorer:
         if isinstance(node, dict) and 'content' not in node:
             # È una directory
             st.markdown(f"""<div style='font-family: monospace; white-space: pre; 
-                    font-size: 0.85em; line-height: 1.2;'>{prefix}{connector}{path}/</div>""", 
+                    font-size: 0.9em; padding: 0; margin: 0; height: 20px;'>{prefix}{connector}{path}/</div>""", 
                     unsafe_allow_html=True)
             
             items = sorted(node.items())
             for i, (name, child) in enumerate(items):
                 is_last_item = i == len(items) - 1
-                new_prefix = prefix + (PIPE if not is_last else "  ")  # Ridotto lo spazio
+                new_prefix = prefix + (PIPE if not is_last else " ")
                 self._render_tree_node(
                     name,
                     child,
@@ -88,13 +88,16 @@ class FileExplorer:
             # È un file
             unique_key = f"file_{current_full_path.replace('/', '_')}"
             
+            # Bottone più compatto con altezza fissa
             st.markdown(f"""
-                <div style='font-family: monospace; white-space: pre; font-size: 0.85em; line-height: 1.2;'>
+                <div style='font-family: monospace; white-space: pre; font-size: 0.9em; height: 20px; line-height: 20px; margin: 0; padding: 0;'>
                     <button class='file-button' 
                             data-key='{unique_key}' 
-                            style='background: none; border: none; padding: 0; margin: 0;
-                                font-family: monospace; cursor: pointer; width: 100%; 
-                                font-size: inherit; text-align: left; color: inherit;'>
+                            style='background: none; border: none; margin: 0;
+                                padding: 0; height: 20px; line-height: 20px;
+                                font-family: monospace; cursor: pointer; 
+                                font-size: inherit; text-align: left; color: inherit;
+                                width: 100%; display: block;'>
                         {prefix}{connector}{self._get_file_icon(path)} {path}
                     </button>
                 </div>
