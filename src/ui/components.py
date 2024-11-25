@@ -40,6 +40,32 @@ class FileExplorer:
         }
         return icons.get(ext, '📄')
 
+    def _create_file_tree(self, files: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Crea una struttura ad albero dai file caricati.
+        
+        Args:
+            files: Dict con i file caricati
+            
+        Returns:
+            Dict con la struttura ad albero
+        """
+        tree = {}
+        for path, content in files.items():
+            current = tree
+            parts = path.split('/')
+            
+            # Processa tutte le parti tranne l'ultima (file)
+            for part in parts[:-1]:
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+            
+            # Aggiungi il file
+            current[parts[-1]] = content
+            
+        return tree
+
     def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", is_last: bool = True):
         """Renderizza un nodo dell'albero dei file con pipe style."""
         if isinstance(node, dict) and 'content' not in node:
@@ -155,6 +181,7 @@ class FileExplorer:
                     st.session_state.file_messages_sent.add(message_hash)
 
         if st.session_state.uploaded_files:
+            st.markdown("### 📁 Files")
             tree = self._create_file_tree(st.session_state.uploaded_files)
             items = sorted(tree.items())
             for i, (name, node) in enumerate(items):
