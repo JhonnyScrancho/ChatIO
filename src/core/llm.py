@@ -113,25 +113,15 @@ class LLMManager:
         return "o1-mini"
     
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
-                      file_content: Optional[str] = None, 
-                      context: Optional[str] = None,
-                      model: str = "claude-3-5-sonnet-20241022") -> Dict[str, Any]:
+                  file_content: Optional[str] = None, 
+                  context: Optional[str] = None,
+                  model: str = "claude-3-5-sonnet-20241022") -> Dict[str, Any]:
         """
         Prepara il prompt completo in base al modello.
-        
-        Args:
-            prompt: Prompt base
-            analysis_type: Tipo di analisi
-            file_content: Contenuto del file
-            context: Contesto aggiuntivo
-            model: Modello da utilizzare
-            
-        Returns:
-            Dict[str, Any]: Messaggio formattato per il modello
         """
         messages = []
         
-        # Aggiungi system message se supportato
+        # Aggiungi system message se supportato e richiesto
         if self.model_limits[model]['supports_system_message'] and analysis_type:
             template = self.system_templates[analysis_type]
             system_msg = {
@@ -238,30 +228,40 @@ class LLMManager:
             
             # Converti i messaggi nel formato corretto per Claude 3
             claude_messages = []
-            system_message = None
+            system_content = None
             
             for msg in messages:
                 if msg["role"] == "system":
-                    system_message = msg["content"]
+                    system_content = msg["content"]
                 else:
                     claude_messages.append({
                         "role": msg["role"],
-                        "content": msg["content"]
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": msg["content"]
+                            }
+                        ]
                     })
             
-            response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=4096,
-                temperature=0.7,
-                system=system_message,
-                messages=claude_messages,
-                stream=True
-            )
-            
-            for chunk in response:
-                if chunk.delta.text:
-                    yield chunk.delta.text
-                    
+            try:
+                response = self.anthropic_client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=4096,
+                    temperature=0.7,
+                    system=system_content,  # Passa il system message separatamente
+                    messages=claude_messages,  # Lista di messaggi nel formato corretto
+                    stream=True
+                )
+                
+                for chunk in response:
+                    if chunk.delta.text:
+                        yield chunk.delta.text
+                        
+            except Exception as e:
+                st.error(f"Errore nella chiamata API: {str(e)}")
+                yield f"Mi dispiace, si è verificato un errore: {str(e)}"
+                
         except Exception as e:
             error_msg = f"Errore Claude: {str(e)}"
             st.error(error_msg)
