@@ -3,6 +3,7 @@ UI components for Allegro IO Code Assistant.
 """
 
 import streamlit as st
+from datetime import datetime
 from src.core.session import SessionManager
 from src.core.files import FileManager
 from src.core.llm import LLMManager
@@ -50,34 +51,54 @@ class FileExplorer:
             current[parts[-1]] = content
         return tree
 
-    def _render_tree_node(self, path: str, node: Dict[str, Any], indent: int = 0):
-        """Renderizza un nodo dell'albero dei file."""
+    def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = "", is_last: bool = True, full_path: str = ""):
+        """Renderizza un nodo dell'albero dei file con chiavi uniche."""
+        # Definisci i caratteri per l'albero
+        PIPE = "│   "
+        ELBOW = "└── "
+        TEE = "├── "
+        
+        # Scegli il connettore appropriato
+        connector = ELBOW if is_last else TEE
+        
+        # Costruisci il path completo per questo nodo
+        current_full_path = f"{full_path}/{path}" if full_path else path
+        
         if isinstance(node, dict) and 'content' not in node:
             # È una directory
-            st.markdown(f"""
-                <div class="file-tree-folder" style="margin-left: {indent*10}px">
-                    <span>📁 {path.split('/')[-1]}</span>
-                </div>
-            """, unsafe_allow_html=True)
-            for name, child in sorted(node.items()):
-                self._render_tree_node(f"{path}/{name}", child, indent + 1)
+            st.markdown(f"<div style='font-family: monospace; white-space: pre;'>{prefix}{connector}{path}/</div>", 
+                       unsafe_allow_html=True)
+            
+            items = sorted(node.items())
+            for i, (name, child) in enumerate(items):
+                is_last_item = i == len(items) - 1
+                new_prefix = prefix + (PIPE if not is_last else "    ")
+                self._render_tree_node(
+                    name, 
+                    child, 
+                    new_prefix, 
+                    is_last_item, 
+                    current_full_path
+                )
         else:
-            # È un file
-            icon = self._get_file_icon(path)
+            # È un file - usa il path completo per la chiave
+            unique_key = f"file_{current_full_path.replace('/', '_')}"
             if st.button(
-                f"{'    ' * indent}{icon} {path.split('/')[-1]}", 
-                key=f"file_{path}",
-                use_container_width=True
+                f"{prefix}{connector}{path}",
+                key=unique_key,
+                use_container_width=True,
+                type="secondary"
             ):
-                st.session_state.selected_file = path
-                st.session_state.current_file = path
+                st.session_state.selected_file = current_full_path
+                st.session_state.current_file = current_full_path
 
     def render(self):
         """Renderizza il componente."""
         uploaded_files = st.file_uploader(
             "Drag and drop files here",
             type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
-            accept_multiple_files=True
+            accept_multiple_files=True,
+            key="file_uploader"  # Added unique key for uploader
         )
 
         if uploaded_files:
@@ -87,7 +108,6 @@ class FileExplorer:
                         import zipfile
                         import io
                         
-                        # Processa il file ZIP
                         zip_content = zipfile.ZipFile(io.BytesIO(file.read()))
                         for zip_file in zip_content.namelist():
                             if not zip_file.startswith('__') and not zip_file.startswith('.'):
@@ -99,9 +119,8 @@ class FileExplorer:
                                         'name': zip_file
                                     }
                                 except Exception as e:
-                                    continue  # Salta i file che non possono essere decodificati
+                                    continue
                     else:
-                        # Processa file singolo
                         content = file.read().decode('utf-8')
                         st.session_state.uploaded_files[file.name] = {
                             'content': content,
@@ -109,18 +128,44 @@ class FileExplorer:
                             'name': file.name
                         }
                 except Exception as e:
-                    st.error(f"Errore nel processare {file.name}: {str(e)}")
+                    st.error(f"Error processing {file.name}: {str(e)}")
 
-        # Visualizza struttura ad albero
+        # File tree visualization
         if st.session_state.uploaded_files:
             st.markdown("""
-                <div class="file-tree">
-                    <p style='margin-bottom: 8px; color: #666;'>Files:</p>
-                </div>
+                <style>
+                    .stButton button {
+                        background: none !important;
+                        border: none !important;
+                        padding: 0 !important;
+                        font-family: monospace !important;
+                        color: inherit !important;
+                        text-align: left !important;
+                        width: 100% !important;
+                        margin: 0 !important;
+                        height: auto !important;
+                        line-height: 1.5 !important;
+                    }
+                    .stButton button:hover {
+                        color: #ff4b4b !important;
+                    }
+                    .directory {
+                        color: #666;
+                        font-family: monospace;
+                    }
+                </style>
             """, unsafe_allow_html=True)
+            
             tree = self._create_file_tree(st.session_state.uploaded_files)
-            for name, node in sorted(tree.items()):
-                self._render_tree_node(name, node)
+            st.markdown(
+                "<div style='font-family: monospace;'>allegro-io/</div>", 
+                unsafe_allow_html=True
+            )
+            
+            items = sorted(tree.items())
+            for i, (name, node) in enumerate(items):
+                is_last = i == len(items) - 1
+                self._render_tree_node(name, node, "", is_last)
 
 class ChatInterface:
     """Componente per l'interfaccia chat."""
@@ -128,22 +173,25 @@ class ChatInterface:
     def __init__(self):
         self.session = SessionManager()
         self.llm = LLMManager()
-        if 'messages' not in st.session_state:
-            st.session_state.messages = []
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
-            })
+        if 'chats' not in st.session_state:
+            st.session_state.chats = {
+                'Chat principale': {
+                    'messages': [{
+                        "role": "assistant",
+                        "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
+                    }],
+                    'created_at': datetime.now().isoformat()
+                }
+            }
+            st.session_state.current_chat = 'Chat principale'
 
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
         try:
-            # Prepara il contesto con i file disponibili
             context = ""
             for filename, file_info in st.session_state.uploaded_files.items():
                 context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
 
-            # Genera la risposta
             response = ""
             with st.spinner("Analyzing code..."):
                 for chunk in self.llm.process_request(
@@ -152,69 +200,92 @@ class ChatInterface:
                 ):
                     response += chunk
             return response
-            
         except Exception as e:
             return f"Mi dispiace, si è verificato un errore: {str(e)}"
-
-    def render(self):
-        """Renderizza l'interfaccia chat."""
-        # CSS per fissare l'input in basso
+        
+    def render_chat_controls(self):
+        """Renderizza i controlli per la gestione delle chat."""
         st.markdown("""
             <style>
-                /* Nasconde il footer standard di Streamlit */
-                footer {display: none !important;}
-                
-                /* Contenitore principale della chat */
-                .stChatFloatingInputContainer, .stChatInputContainer {
-                    position: fixed !important;
-                    bottom: 0 !important;
-                    background: white !important;
-                    padding: 1rem !important;
-                    border-top: 1px solid #ddd !important;
-                    z-index: 999999 !important;
-                    left: 18rem !important; /* Larghezza della sidebar */
-                    right: 0 !important;
+                .chat-controls {
+                    display: flex;
+                    gap: 1rem;
+                    margin-bottom: 1rem;
                 }
-                
-                /* Aggiunge spazio in fondo per evitare che i messaggi vengano nascosti dall'input */
-                [data-testid="stChatMessageContainer"] {
-                    padding-bottom: 100px !important;
-                }
-                
-                .main .block-container {
-                    padding-bottom: 100px !important;
-                }
-                
-                /* Stile per i messaggi della chat */
-                .stChatMessage {
-                    background: white !important;
-                    border: 1px solid #ddd !important;
-                    border-radius: 5px !important;
-                    margin-bottom: 0.5rem !important;
-                    padding: 0.5rem !important;
+                .stSelectbox {
+                    flex-grow: 1;
                 }
             </style>
         """, unsafe_allow_html=True)
+
+        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
         
-        # Contenitore per i messaggi con padding extra in fondo
+        with col1:
+            # Selettore chat corrente
+            current_chat = st.selectbox(
+                "Seleziona chat",
+                options=list(st.session_state.chats.keys()),
+                index=list(st.session_state.chats.keys()).index(st.session_state.current_chat)
+            )
+            if current_chat != st.session_state.current_chat:
+                st.session_state.current_chat = current_chat
+
+        with col2:
+            # Pulsante nuova chat
+            if st.button("🆕 Nuova", use_container_width=True):
+                new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
+                st.session_state.chats[new_chat_name] = {
+                    'messages': [],
+                    'created_at': datetime.now().isoformat()
+                }
+                st.session_state.current_chat = new_chat_name
+                st.rerun()
+
+        with col3:
+            # Pulsante rinomina
+            if st.button("✏️ Rinomina", use_container_width=True):
+                st.session_state.renaming = True
+                st.rerun()
+
+        with col4:
+            # Pulsante elimina
+            if len(st.session_state.chats) > 1 and st.button("🗑️ Elimina", use_container_width=True):
+                if st.session_state.current_chat in st.session_state.chats:
+                    del st.session_state.chats[st.session_state.current_chat]
+                    st.session_state.current_chat = list(st.session_state.chats.keys())[0]
+                    st.rerun()
+
+        # Dialog per rinominare la chat
+        if getattr(st.session_state, 'renaming', False):
+            with st.form("rename_chat"):
+                new_name = st.text_input("Nuovo nome", value=st.session_state.current_chat)
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.form_submit_button("Salva"):
+                        if new_name and new_name != st.session_state.current_chat:
+                            # Rinomina la chat
+                            st.session_state.chats[new_name] = st.session_state.chats.pop(st.session_state.current_chat)
+                            st.session_state.current_chat = new_name
+                        st.session_state.renaming = False
+                        st.rerun()
+                with col2:
+                    if st.form_submit_button("Annulla"):
+                        st.session_state.renaming = False
+                        st.rerun()    
+
+    def render(self):
+        """Renderizza l'interfaccia chat."""
+        # Renderizza i controlli delle chat
+        self.render_chat_controls()
+        
+        # Container per i messaggi della chat corrente
         messages_container = st.container()
         
-        # Input container separato che verrà fissato dal CSS
-        input_container = st.container()
-        
-        # Renderizza i messaggi
+        current_chat = st.session_state.chats[st.session_state.current_chat]
         with messages_container:
-            for message in st.session_state.messages:
+            for message in current_chat['messages']:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
-        
-        # Renderizza l'input
-        with input_container:
-            if prompt := st.chat_input("Ask about your code...", key="chat_input"):
-                st.session_state.messages.append({"role": "user", "content": prompt})
-                with st.spinner("Processing..."):
-                    response = self._process_response(prompt)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
@@ -242,7 +313,7 @@ class ModelSelector:
         models = {
             'o1-mini': '🚀 O1 Mini (Fast)',
             'o1-preview': '🔍 O1 Preview (Advanced)',
-            'claude-3-5-sonnet': '🎭 Claude 3.5 Sonnet (Detailed)'
+            'claude-3-sonnet': '🎭 Claude 3 Sonnet (Detailed)'
         }
         
         current_model = self.session.get_current_model()

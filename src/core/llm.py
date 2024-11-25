@@ -24,7 +24,7 @@ class LLMManager:
         self.cost_map = {
             'o1-preview': {'input': 0.01, 'output': 0.03},
             'o1-mini': {'input': 0.001, 'output': 0.002},
-            'claude-3-5-sonnet': {'input': 0.008, 'output': 0.024}
+            'claude-3-5-sonnet-20241022': {'input': 0.008, 'output': 0.024}
         }
         
         # Limiti dei modelli
@@ -43,7 +43,7 @@ class LLMManager:
                 'supports_system_message': False,
                 'supports_functions': False
             },
-            'claude-3-5-sonnet': {
+            'claude-3-5-sonnet-20241022': {
                 'max_tokens': 200000,
                 'context_window': 200000,
                 'supports_files': True,
@@ -96,14 +96,14 @@ class LLMManager:
         """
         # Se richiede gestione file, usa Claude
         if requires_file_handling:
-            return "claude-3-5-sonnet"
+            return "claude-3-5-sonnet-20241022"
         
         # Stima tokens (1 token ~ 4 caratteri)
         estimated_tokens = content_length // 4
         
         # Se supera i limiti di o1-preview, usa Claude
         if estimated_tokens > 32000:
-            return "claude-3-5-sonnet"
+            return "claude-3-5-sonnet-20241022"
         
         # Per task complessi usa o1-preview
         if task_type in ["architecture", "review", "security"]:
@@ -115,7 +115,7 @@ class LLMManager:
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
                       file_content: Optional[str] = None, 
                       context: Optional[str] = None,
-                      model: str = "claude-3-5-sonnet") -> Dict[str, Any]:
+                      model: str = "claude-3-5-sonnet-20241022") -> Dict[str, Any]:
         """
         Prepara il prompt completo in base al modello.
         
@@ -234,27 +234,36 @@ class LLMManager:
             str: Chunks della risposta
         """
         try:
-            self._enforce_rate_limit("claude-3-5-sonnet")
+            self._enforce_rate_limit("claude-3-5-sonnet-20241022")
             
-            # Converte i messaggi nel formato Claude
+            # Converti i messaggi nel formato corretto per Claude 3
             claude_messages = []
+            system_message = None
+            
             for msg in messages:
                 if msg["role"] == "system":
-                    claude_messages.append({
-                        "role": "assistant",
-                        "content": f"I understand. I will act as: {msg['content']}"
-                    })
+                    system_message = msg["content"]
                 else:
-                    claude_messages.append(msg)
+                    claude_messages.append({
+                        "role": msg["role"],
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": msg["content"]
+                            }
+                        ]
+                    })
             
-            message = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet",
+            response = self.anthropic_client.messages.create(
+                model="claude-3-5-sonnet-20241022",
                 max_tokens=4096,
+                temperature=0.7,
+                system=system_message,
                 messages=claude_messages,
                 stream=True
             )
             
-            for chunk in message:
+            for chunk in response:
                 if chunk.delta.text:
                     yield chunk.delta.text
                     

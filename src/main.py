@@ -203,6 +203,35 @@ def load_custom_css():
             visibility: visible;
             opacity: 1;
         }
+                
+        [data-testid="stSidebar"] {
+        background-color: var(--surface-container);  /* Usa la variabile del tema corrente */
+        }
+
+        /* Adatta il colore del testo nella sidebar al tema */
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+            color: var(--text-color);
+        }
+
+        /* Bottoni e input nella sidebar */
+        [data-testid="stSidebar"] button {
+            background-color: var(--surface-container-highest) !important;
+            color: var(--text-color) !important;
+        }
+
+        [data-testid="stSidebar"] input {
+            background-color: var(--surface-container-highest) !important;
+            color: var(--text-color) !important;
+        }
+
+        /* File explorer nella sidebar */
+        [data-testid="stSidebar"] .file-tree button {
+            color: var(--text-color) !important;
+        }
+
+        [data-testid="stSidebar"] .file-tree button:hover {
+            background-color: var(--surface-container-highest) !important;
+        }        
         </style>
     """, unsafe_allow_html=True)
 
@@ -238,6 +267,29 @@ def init_clients():
 
 def render_main_layout():
     """Renderizza il layout principale dell'applicazione."""
+    # CSS per gestire correttamente il layout di pagina
+    st.markdown("""
+        <style>
+            /* Layout principale */
+            .main .block-container {
+                max-width: 100% !important;
+                padding-top: 1rem !important;
+                padding-right: 1rem !important;
+                padding-left: 1rem !important;
+                padding-bottom: 80px !important;   /* Spazio per il footer */
+            }
+
+            /* Stile input chat */
+            .stChatFloatingInputContainer {
+                bottom: 0;
+                background: white;
+                padding: 1rem;
+                z-index: 999999;
+                width: 100%;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    
     # Setup iniziale della sessione
     clients = init_clients()
     clients['session'].init_session()
@@ -245,7 +297,7 @@ def render_main_layout():
     # Title Area con Stats
     col1, col2, col3 = st.columns([4, 1, 1])
     with col1:
-        st.title(" 👲🏿 Allegro IO")
+        st.title("👲🏿 Allegro IO")
     with col2:
         st.metric("Tokens Used", f"{st.session_state.get('token_count', 0):,}")
     with col3:
@@ -269,6 +321,23 @@ def render_main_layout():
     with col2:
         st.markdown("### 📝 Code Viewer")
         CodeViewer().render()
+    
+    # Chat input al fondo della pagina
+    chat_input_container = st.empty()
+    
+    # Inserisci l'input nel container vuoto
+    with chat_input_container:
+        if prompt := st.chat_input("Chiedi qualcosa sul tuo codice...", key="chat_input"):
+            current_chat = st.session_state.chats[st.session_state.current_chat]
+            current_chat['messages'].append({"role": "user", "content": prompt})
+            
+            with st.spinner("Elaborazione in corso..."):
+                response = clients['llm'].process_request(prompt)
+                current_chat['messages'].append({
+                    "role": "assistant", 
+                    "content": "".join(response)
+                })
+            st.rerun()
 
 def main():
     """Funzione principale dell'applicazione."""

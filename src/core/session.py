@@ -5,6 +5,7 @@ Handles global state and caching through Streamlit's session state.
 
 import streamlit as st
 from typing import Dict, Any, Optional
+from datetime import datetime
 
 class SessionManager:
     """Gestisce lo stato globale dell'applicazione e il caching."""
@@ -14,7 +15,16 @@ class SessionManager:
         """Inizializza o recupera lo stato della sessione."""
         if 'initialized' not in st.session_state:
             st.session_state.initialized = True
-            st.session_state.chat_history = []
+            st.session_state.chats = {
+                'Chat principale': {
+                    'messages': [{
+                        "role": "assistant",
+                        "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
+                    }],
+                    'created_at': datetime.now().isoformat()
+                }
+            }
+            st.session_state.current_chat = 'Chat principale'
             st.session_state.current_model = 'o1-mini'
             st.session_state.files = {}
             st.session_state.current_file = None
@@ -26,7 +36,7 @@ class SessionManager:
     @staticmethod
     def get_current_model() -> str:
         """Restituisce il modello LLM attualmente selezionato."""
-        return st.session_state.current_model
+        return st.session_state.get('current_model', 'o1-mini')
     
     @staticmethod
     def set_current_model(model: str):
@@ -34,19 +44,97 @@ class SessionManager:
         st.session_state.current_model = model
     
     @staticmethod
-    def add_to_chat_history(message: Dict[str, str]):
-        """Aggiunge un messaggio alla chat history."""
-        st.session_state.chat_history.append(message)
+    def get_current_chat() -> Dict:
+        """Restituisce la chat corrente."""
+        return st.session_state.chats[st.session_state.current_chat]
     
     @staticmethod
-    def get_chat_history() -> list:
-        """Restituisce la chat history completa."""
-        return st.session_state.chat_history
+    def set_current_chat(chat_name: str):
+        """Imposta la chat corrente."""
+        if chat_name in st.session_state.chats:
+            st.session_state.current_chat = chat_name
     
     @staticmethod
-    def clear_chat_history():
-        """Pulisce la chat history."""
-        st.session_state.chat_history = []
+    def get_all_chats() -> Dict[str, Dict]:
+        """Restituisce tutte le chat."""
+        return st.session_state.chats
+    
+    @staticmethod
+    def add_message_to_current_chat(message: Dict[str, str]):
+        """Aggiunge un messaggio alla chat corrente."""
+        if 'chats' not in st.session_state or st.session_state.current_chat not in st.session_state.chats:
+            SessionManager.init_session()
+        st.session_state.chats[st.session_state.current_chat]['messages'].append(message)
+    
+    @staticmethod
+    def get_messages_from_current_chat() -> list:
+        """Restituisce i messaggi della chat corrente."""
+        if 'chats' not in st.session_state or st.session_state.current_chat not in st.session_state.chats:
+            SessionManager.init_session()
+        return st.session_state.chats[st.session_state.current_chat]['messages']
+    
+    @staticmethod
+    def clear_current_chat():
+        """Pulisce i messaggi della chat corrente."""
+        if 'chats' in st.session_state and st.session_state.current_chat in st.session_state.chats:
+            st.session_state.chats[st.session_state.current_chat]['messages'] = []
+    
+    @staticmethod
+    def create_new_chat(name: str) -> bool:
+        """
+        Crea una nuova chat.
+        
+        Args:
+            name: Nome della nuova chat
+            
+        Returns:
+            bool: True se la chat è stata creata, False se esiste già
+        """
+        if name not in st.session_state.chats:
+            st.session_state.chats[name] = {
+                'messages': [],
+                'created_at': datetime.now().isoformat()
+            }
+            st.session_state.current_chat = name
+            return True
+        return False
+    
+    @staticmethod
+    def rename_chat(old_name: str, new_name: str) -> bool:
+        """
+        Rinomina una chat esistente.
+        
+        Args:
+            old_name: Nome attuale della chat
+            new_name: Nuovo nome della chat
+            
+        Returns:
+            bool: True se la chat è stata rinominata, False se non è possibile
+        """
+        if old_name in st.session_state.chats and new_name not in st.session_state.chats:
+            st.session_state.chats[new_name] = st.session_state.chats.pop(old_name)
+            if st.session_state.current_chat == old_name:
+                st.session_state.current_chat = new_name
+            return True
+        return False
+    
+    @staticmethod
+    def delete_chat(name: str) -> bool:
+        """
+        Elimina una chat esistente.
+        
+        Args:
+            name: Nome della chat da eliminare
+            
+        Returns:
+            bool: True se la chat è stata eliminata, False se non è possibile
+        """
+        if name in st.session_state.chats and len(st.session_state.chats) > 1:
+            del st.session_state.chats[name]
+            if st.session_state.current_chat == name:
+                st.session_state.current_chat = list(st.session_state.chats.keys())[0]
+            return True
+        return False
     
     @staticmethod
     def add_file(file_name: str, content: Any):
@@ -90,7 +178,7 @@ class SessionManager:
             'token_count': st.session_state.token_count,
             'cost': st.session_state.cost,
             'files_count': len(st.session_state.files),
-            'messages_count': len(st.session_state.chat_history)
+            'chats_count': len(st.session_state.chats)
         }
     
     @staticmethod
