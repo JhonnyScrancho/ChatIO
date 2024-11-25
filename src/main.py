@@ -4,28 +4,16 @@ Streamlit-based interface for code analysis using LLMs.
 """
 
 import streamlit as st
+from dotenv import load_dotenv
 from pathlib import Path
-import sys
 import os
-from datetime import datetime
-from typing import Dict, Any
-import logging
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-
-# Configurazione logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+import sys
 
 # Deve essere la prima chiamata Streamlit
 st.set_page_config(
     page_title="Allegro IO - Code Assistant",
     page_icon="🎯",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 # Aggiungi la directory root al path per permettere gli import relativi
@@ -35,133 +23,13 @@ sys.path.append(str(root_path))
 from src.core.session import SessionManager
 from src.core.llm import LLMManager
 from src.core.files import FileManager
-from src.ui.layout import render_app_layout, render_error_message, render_success_message, render_info_message
-from src.utils.config import load_config
-from src.utils.cache_manager import CacheManager, cache_manager
+from src.ui.components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay
 
-class FileChangeHandler(FileSystemEventHandler):
-    """Gestisce gli eventi di modifica dei file."""
-    
-    def __init__(self, cache_manager: CacheManager):
-        self.cache_manager = cache_manager
-    
-    def on_modified(self, event):
-        if not event.is_directory:
-            logger.info(f"File modificato: {event.src_path}")
-            self.cache_manager.clear_all_caches()
-            # Forza il ricaricamento della pagina
-            st.experimental_rerun()
-
-def setup_file_monitoring(cache_manager: CacheManager):
-    """
-    Configura il monitoraggio dei file per il ricaricamento automatico.
-    
-    Args:
-        cache_manager: Istanza del CacheManager
-    """
-    # Lista dei percorsi da monitorare
-    paths_to_watch = [
-        'src/core',
-        'src/ui',
-        'src/utils',
-        'templates'
-    ]
-    
-    # Configura l'observer per ogni percorso
-    observer = Observer()
-    for path in paths_to_watch:
-        if os.path.exists(path):
-            observer.schedule(
-                FileChangeHandler(cache_manager),
-                path=path,
-                recursive=True
-            )
-    
-    # Avvia l'observer
-    observer.start()
-    logger.info("File monitoring attivato")
-    
-    # Registra l'observer per lo shutdown
-    import atexit
-    atexit.register(lambda: observer.stop())
-
-def setup_directory_structure():
-    """
-    Verifica e crea la struttura delle directory necessarie.
-    """
-    required_dirs = {
-        'templates': ['code_review', 'architecture', 'security'],
-        'src/core': [],
-        'src/ui': [],
-        'src/utils': [],
-        'logs': []
-    }
-    
-    base_path = Path(__file__).parent.parent
-    
-    try:
-        for dir_name, subdirs in required_dirs.items():
-            dir_path = base_path / dir_name
-            dir_path.mkdir(parents=True, exist_ok=True)
-            
-            for subdir in subdirs:
-                subdir_path = dir_path / subdir
-                subdir_path.mkdir(exist_ok=True)
-                
-        logger.info("Directory structure setup completed")
-    except Exception as e:
-        logger.error(f"Error setting up directory structure: {e}")
-        raise
-
-def validate_environment() -> bool:
-    """
-    Valida l'ambiente e le configurazioni necessarie.
-    
-    Returns:
-        bool: True se la validazione ha successo
-    """
-    required_secrets = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']
-    missing_secrets = [secret for secret in required_secrets if secret not in st.secrets]
-    
-    if missing_secrets:
-        render_error_message(
-            f"Configurazione incompleta. Mancano le seguenti API keys: {', '.join(missing_secrets)}\n"
-            "Configura le API keys in .streamlit/secrets.toml"
-        )
-        return False
-    
-    required_packages = ['openai', 'anthropic', 'watchdog']
-    try:
-        for package in required_packages:
-            __import__(package)
-    except ImportError as e:
-        render_error_message(f"Pacchetto mancante: {str(e)}")
-        return False
-    
-    return True
-
-@cache_manager.cache_data(ttl_seconds=3600)  # Cache per 1 ora
-def initialize_clients() -> Dict[str, Any]:
-    """
-    Inizializza e cachea i client necessari per l'applicazione.
-    
-    Returns:
-        Dict[str, Any]: Dictionary contenente i client inizializzati
-    """
-    try:
-        return {
-            'llm': LLMManager(),
-            'session': SessionManager(),
-            'file_manager': FileManager()
-        }
-    except Exception as e:
-        logger.error(f"Error initializing clients: {e}")
-        raise
+# Carica variabili d'ambiente
+load_dotenv()
 
 def load_custom_css():
-    """
-    Carica gli stili CSS personalizzati per l'applicazione.
-    """
+    """Carica stili CSS personalizzati."""
     st.markdown("""
         <style>
         /* Layout generale */
@@ -187,180 +55,236 @@ def load_custom_css():
         
         /* Chat UI */
         .stChatFloatingInputContainer {
+            position: fixed !important;
             bottom: 0 !important;
+            left: 18rem !important;
+            right: 0 !important;
+            padding: 1rem 2rem !important;
             background: white !important;
-            padding: 1rem !important;
-            z-index: 999999 !important;
-            width: 100% !important;
-            border-top: 1px solid #eee;
+            border-top: 1px solid #eee !important;
+            z-index: 1000 !important;
         }
         
         .stChatMessage {
+            max-width: none !important;
+            width: 100% !important;
+            margin: 0.5rem 0 !important;
+        }
+        
+        /* Spazio per l'input fisso */
+        [data-testid="stChatMessageContainer"] {
+            padding-bottom: 80px !important;
+            position: fixed !important;
+            bottom: 0 !important;
+        }
+        
+        /* Code viewer */
+        .code-viewer {
+            background: #ffffff;
+            border-radius: 0.5rem;
+            border: 1px solid #eee;
+            padding: 1rem;
+            height: calc(100vh - 130px);
+            overflow-y: auto;
+        }
+        
+        .source {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            line-height: 1.4;
+            background-color: #272822;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        /* File explorer minimalista */
+        .file-tree button {
+            background: none !important;
+            border: none !important;
+            padding: 0.2rem 0.5rem !important;
+            text-align: left !important;
+            font-size: 0.9rem !important;
+            color: #0e1117 !important;
+            width: 100% !important;
+            margin: 0 !important;
+        }
+        
+        .file-tree button:hover {
+            background-color: #eef2f5 !important;
+        }
+        
+        /* Loader animation */
+        .thinking-loader {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem;
             background: #f8f9fa;
             border-radius: 0.5rem;
-            padding: 1rem;
-            margin-bottom: 0.5rem;
+            margin: 1rem 0;
         }
         
-        /* Code blocks */
-        pre {
-            background-color: #2d2d2d;
-            border-radius: 0.5rem;
-            padding: 1rem;
+        .loader-dots {
+            display: inline-flex;
+            gap: 0.3rem;
         }
         
-        code {
-            font-family: 'Fira Code', monospace;
-        }
-        
-        /* Custom components */
-        .file-tree {
-            font-family: monospace;
-            white-space: pre;
-        }
-        
-        .status-indicator {
-            width: 10px;
-            height: 10px;
+        .loader-dots span {
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            display: inline-block;
-            margin-right: 5px;
+            background-color: #666;
+            animation: loader 1.4s infinite;
         }
         
-        .status-online {
-            background-color: #28a745;
+        .loader-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .loader-dots span:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes loader {
+            0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1); }
         }
         
-        .status-error {
-            background-color: #dc3545;
-        }
-        
-        /* Cache status indicator */
-        .cache-status {
-            position: fixed;
-            bottom: 1rem;
-            right: 1rem;
+        /* Stats display */
+        .stats-container {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
             padding: 0.5rem;
-            border-radius: 0.25rem;
-            background: rgba(0,0,0,0.8);
-            color: white;
-            font-size: 0.8rem;
-            z-index: 9999;
+            background: #f8f9fa;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        /* Scrollbars */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
+        /* Tooltips */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            padding: 5px;
+            border-radius: 4px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
         }
         </style>
     """, unsafe_allow_html=True)
 
-def initialize_session_state():
-    """
-    Inizializza o recupera lo stato della sessione.
-    """
-    # Inizializzazione base della sessione
-    if 'initialized' not in st.session_state:
-        st.session_state.initialized = True
-        st.session_state.start_time = datetime.now().isoformat()
-        st.session_state.error_log = []
-        st.session_state.debug_mode = os.getenv('DEBUG', 'False').lower() == 'true'
-        st.session_state.current_model = 'o1-mini'  # Default model
-        st.session_state.uploaded_files = {}
-        st.session_state.selected_file = None
-        st.session_state.current_file = None
-        st.session_state.token_count = 0
-        st.session_state.cost = 0.0
-        
-        # Inizializza la chat principale
-        st.session_state.chats = {
-            'Chat principale': {
-                'messages': [{
-                    "role": "assistant",
-                    "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
-                }],
-                'created_at': datetime.now().isoformat()
-            }
-        }
-        st.session_state.current_chat = 'Chat principale'
+def check_environment():
+    """Verifica la presenza delle secrets necessari."""
+    required_vars = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']
+    missing_vars = [var for var in required_vars if var not in st.secrets]
+    
+    if missing_vars:
+        st.error(f"⚠️ Secrets mancanti: {', '.join(missing_vars)}")
+        st.info("ℹ️ Configura le API keys in .streamlit/secrets.toml")
+        st.stop()
+
+def check_directories():
+    """Verifica e crea le cartelle necessarie se non esistono."""
+    required_dirs = ['templates', 'src/core', 'src/ui', 'src/utils']
+    base_path = Path(__file__).parent.parent
+    
+    for dir_name in required_dirs:
+        dir_path = base_path / dir_name
+        if not dir_path.exists():
+            st.warning(f"⚠️ Cartella {dir_name} mancante. Creazione in corso...")
+            dir_path.mkdir(parents=True, exist_ok=True)
+
+@st.cache_resource
+def init_clients():
+    """Inizializza e cachea i clients API."""
+    return {
+        'llm': LLMManager(),
+        'session': SessionManager(),
+        'file_manager': FileManager()
+    }
+
+def render_main_layout():
+    """Renderizza il layout principale dell'applicazione."""
+    # Setup iniziale della sessione
+    clients = init_clients()
+    clients['session'].init_session()
+    
+    # Title Area con Stats
+    col1, col2, col3 = st.columns([4, 1, 1])
+    with col1:
+        st.title(" 👲🏿 Allegro IO")
+    with col2:
+        st.metric("Tokens Used", f"{st.session_state.get('token_count', 0):,}")
+    with col3:
+        st.metric("Cost ($)", f"${st.session_state.get('cost', 0):.3f}")
+    
+    # Sidebar con File Manager e Model Selector
+    with st.sidebar:
+        st.markdown("### 📁 File Manager")
+        FileExplorer().render()
+        st.markdown("---")
+        st.markdown("### 🤖 Model Settings")
+        ModelSelector().render()
+    
+    # Main Content Area con Chat e Code Viewer
+    col1, col2 = st.columns([3, 2])
+    
+    with col1:
+        st.markdown("### 💬 Chat")
+        ChatInterface().render()
+    
+    with col2:
+        st.markdown("### 📝 Code Viewer")
+        CodeViewer().render()
 
 def main():
-    """
-    Funzione principale dell'applicazione.
-    Gestisce l'inizializzazione e il flusso principale.
-    """
+    """Funzione principale dell'applicazione."""
     try:
-        # Step 1: Setup iniziale
-        setup_directory_structure()
-        
-        # Step 2: Validazione ambiente
-        if not validate_environment():
-            st.stop()
-        
-        # Step 3: Caricamento configurazione
-        config = load_config()
-        
-        # Step 4: Inizializzazione stato
-        initialize_session_state()
-        
-        # Step 5: Inizializzazione SessionManager
-        SessionManager.init_session()
-        
-        # Step 6: Setup monitoraggio file
-        setup_file_monitoring(cache_manager)
-        
-        # Step 7: Inizializzazione clients
-        clients = initialize_clients()
-        
-        # Step 8: Caricamento CSS
+        # Controlli iniziali
+        check_environment()
+        check_directories()
         load_custom_css()
         
-        # Step 9: Pulsante per pulire la cache
-        if st.sidebar.button("🧹 Pulisci Cache"):
-            cache_manager.clear_all_caches()
-            st.success("Cache pulita con successo!")
-            st.experimental_rerun()
-        
-        # Step 10: Renderizza l'interfaccia
-        render_app_layout(clients)
-        
-        # Step 11: Debug mode
-        if st.session_state.debug_mode:
-            with st.expander("Debug Information", expanded=False):
-                st.json({
-                    'session_state': {
-                        k: str(v) for k, v in st.session_state.items()
-                        if k not in ['client_config', 'secrets']
-                    },
-                    'start_time': st.session_state.start_time,
-                    'error_log': st.session_state.error_log,
-                    'cache_info': cache_manager.get_cache_info()
-                })
-        
-        # Step 12: Indicatore stato cache
-        st.markdown(
-            f"""
-            <div class="cache-status">
-                Cache last cleared: {cache_manager.get_last_clear_time()}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        # Renderizza il layout principale
+        render_main_layout()
         
     except Exception as e:
-        logger.error(f"Application error: {e}", exc_info=True)
-        render_error_message(
-            "Si è verificato un errore nell'applicazione. "
-            "Per favore, controlla i log per maggiori dettagli."
-        )
-        
-        if st.session_state.debug_mode:
+        st.error(f"❌ Si è verificato un errore: {str(e)}")
+        if os.getenv('DEBUG') == 'True':
             st.exception(e)
-        
-        # Aggiungi l'errore al log
-        if 'error_log' not in st.session_state:
-            st.session_state.error_log = []
-        
-        st.session_state.error_log.append({
-            'timestamp': datetime.now().isoformat(),
-            'error': str(e),
-            'type': type(e).__name__
-        })
 
 if __name__ == "__main__":
     main()

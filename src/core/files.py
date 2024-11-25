@@ -12,7 +12,6 @@ from pygments import highlight
 from pygments.lexers import get_lexer_for_filename, TextLexer
 from pygments.formatters import HtmlFormatter
 import mimetypes
-from src.utils.cache_manager import cache_manager
 
 class FileManager:
     """Gestisce l'upload, il processing e il caching dei file."""
@@ -43,7 +42,7 @@ class FileManager:
         return self._process_file_cached(uploaded_file)
     
     @staticmethod
-    @cache_manager.cache_data(ttl_seconds=300)  # 5 minuti
+    @st.cache_data
     def _process_file_cached(uploaded_file) -> Optional[Dict]:
         """Versione cacheable del process_file."""
         if uploaded_file.size > FileManager.MAX_FILE_SIZE:
@@ -90,7 +89,7 @@ class FileManager:
         return self._process_zip_cached(zip_file)
     
     @staticmethod
-    @cache_manager.cache_data(ttl_seconds=300)  # 5 minuti
+    @st.cache_data
     def _process_zip_cached(zip_file) -> Dict[str, Dict]:
         """Versione cacheable del process_zip."""
         processed_files = {}
@@ -138,7 +137,7 @@ class FileManager:
         return processed_files
     
     @staticmethod
-    @cache_manager.cache_data(ttl_seconds=3600)  # 1 ora
+    @st.cache_data
     def _highlight_code_cached(content: str, language: str) -> str:
         """
         Versione cacheable del syntax highlighting.
@@ -221,7 +220,6 @@ class FileManager:
                     current = current[part]
         return tree
     
-    @cache_manager.cache_data(ttl_seconds=60)  # 1 minuto
     def analyze_codebase(self, files: Dict[str, Dict]) -> Dict:
         """
         Analizza la codebase per statistiche generali.
