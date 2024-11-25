@@ -253,12 +253,13 @@ class ChatInterface:
         with col1:
             # Selettore chat corrente
             current_chat = st.selectbox(
-                "Seleziona chat",
-                options=list(st.session_state.chats.keys()),
-                index=list(st.session_state.chats.keys()).index(st.session_state.current_chat)
-            )
-            if current_chat != st.session_state.current_chat:
-                st.session_state.current_chat = current_chat
+            label=" ",
+            options=list(st.session_state.chats.keys()),
+            index=list(st.session_state.chats.keys()).index(st.session_state.current_chat),
+            label_visibility="collapsed"
+        )
+        if current_chat != st.session_state.current_chat:
+            st.session_state.current_chat = current_chat
 
         with col2:
             # Pulsante nuova chat
