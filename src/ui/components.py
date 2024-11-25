@@ -234,191 +234,66 @@ class ChatInterface:
             st.error(error_msg)
             return error_msg
         
-    def render_chat_controls(self):
-        """Renderizza i controlli per la gestione delle chat."""
-        st.markdown("""
-            <style>
-                .chat-controls {
-                    display: flex;
-                    gap: 1rem;
-                    margin-bottom: 1rem;
-                }
-                .stSelectbox {
-                    flex-grow: 1;
-                }
-            </style>
-        """, unsafe_allow_html=True)
-
-        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
-        
-        with col1:
-            # Selettore chat corrente
-            current_chat = st.selectbox(
-            label=" ",
-            options=list(st.session_state.chats.keys()),
-            index=list(st.session_state.chats.keys()).index(st.session_state.current_chat),
-            label_visibility="collapsed"
-        )
-        if current_chat != st.session_state.current_chat:
-            st.session_state.current_chat = current_chat
-
-        with col2:
-            # Pulsante nuova chat
-            if st.button("🆕", use_container_width=True):
-                new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
-                st.session_state.chats[new_chat_name] = {
-                    'messages': [],
-                    'created_at': datetime.now().isoformat()
-                }
-                st.session_state.current_chat = new_chat_name
-
-        with col3:
-            # Pulsante rinomina
-            if st.button("✏️", use_container_width=True):
-                st.session_state.renaming = True
-
-        with col4:
-            # Pulsante elimina
-            if len(st.session_state.chats) > 1 and st.button("🗑️", use_container_width=True):
-                if st.session_state.current_chat in st.session_state.chats:
-                    del st.session_state.chats[st.session_state.current_chat]
-                    st.session_state.current_chat = list(st.session_state.chats.keys())[0]
-
-        # Dialog per rinominare la chat
-        if getattr(st.session_state, 'renaming', False):
-            with st.form("rename_chat"):
-                new_name = st.text_input("Nuovo nome", value=st.session_state.current_chat)
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.form_submit_button("Salva"):
-                        if new_name and new_name != st.session_state.current_chat:
-                            # Rinomina la chat
-                            st.session_state.chats[new_name] = st.session_state.chats.pop(st.session_state.current_chat)
-                            st.session_state.current_chat = new_name
-                        st.session_state.renaming = False
-                with col2:
-                    if st.form_submit_button("Annulla"):
-                        st.session_state.renaming = False
+    
 
     def process_user_message(self, prompt: str):
         """
-        Processa un nuovo messaggio utente con debug dettagliato.
+        Processa un nuovo messaggio utente e renderizza correttamente le risposte.
         """
         if not prompt.strip():
             return
-            
-        # Container per debug
-        debug_container = st.empty()
-        
-        def show_debug(title: str, content: Any):
-            """Helper per mostrare informazioni di debug."""
-            with debug_container:
-                st.write(f"🔍 DEBUG - {title}:")
-                st.code(str(content))
-        
-        chat_container = st.container()
-        
-        with chat_container:
-            show_debug("Prompt ricevuto", prompt)
-            
-            # Aggiungi il messaggio utente
-            st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                "role": "user",
-                "content": prompt
-            })
-            
-            show_debug("Stato messaggi pre-elaborazione", 
-                      st.session_state.chats[st.session_state.current_chat]['messages'])
 
-            # Processa la risposta con debug
-            response = ""
-            with st.spinner("Elaborazione in corso..."):
-                try:
-                    show_debug("Inizia elaborazione LLM", "Chiamata a process_request")
-                    
-                    chunks_received = 0
-                    total_length = 0
-                    
-                    for chunk in self.llm.process_request(prompt=prompt):
-                        chunks_received += 1
-                        if chunk:
-                            total_length += len(chunk)
-                            response += chunk
-                            
-                        # Aggiorna debug ogni 5 chunks
-                        if chunks_received % 5 == 0:
-                            show_debug("Stato streaming", {
-                                "chunks_ricevuti": chunks_received,
-                                "lunghezza_totale": total_length,
-                                "ultimo_chunk": chunk,
-                                "risposta_parziale": response[-100:] + "..." # ultimi 100 caratteri
-                            })
-                    
-                    show_debug("Risposta completa ricevuta", {
-                        "lunghezza": len(response),
-                        "chunks_totali": chunks_received,
-                        "risposta": response[:200] + "..." # primi 200 caratteri
-                    })
-                    
-                except Exception as e:
-                    show_debug("ERRORE durante l'elaborazione", {
-                        "tipo": type(e).__name__,
-                        "messaggio": str(e),
-                        "risposta_parziale": response
-                    })
-                    st.error(f"Errore durante l'elaborazione: {str(e)}")
-            
-            # Verifica e aggiunta risposta
-            if response.strip():
-                st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                    "role": "assistant",
-                    "content": response
-                })
-                show_debug("Risposta aggiunta alla chat", "Successo")
-            else:
-                st.error("Risposta vuota ricevuta da Claude")
-                show_debug("ERRORE", "Risposta vuota da Claude")
-            
-            show_debug("Stato finale messaggi", 
-                      st.session_state.chats[st.session_state.current_chat]['messages'])
+        # Aggiungi il messaggio utente
+        st.session_state.chats[st.session_state.current_chat]['messages'].append({
+            "role": "user",
+            "content": prompt
+        })
+
+        # Container per la risposta in tempo reale
+        response_container = st.empty()
+        
+        # Processa la risposta
+        response = ""
+        with st.spinner("Elaborazione in corso..."):
+            for chunk in self.llm.process_request(prompt=prompt):
+                if chunk:
+                    response += chunk
+                    # Aggiorna la risposta in tempo reale nel container appropriato
+                    with response_container:
+                        with st.chat_message("assistant"):
+                            st.markdown(response)
+
+        # Se abbiamo una risposta valida, la aggiungiamo alla chat
+        if response.strip():
+            st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                "role": "assistant",
+                "content": response
+            })
 
 
     def render(self):
-        """Renderizza l'interfaccia chat con debug."""
+        """
+        Renderizza l'interfaccia chat con il corretto stile dei messaggi.
+        """
         self.render_chat_controls()
         
-        # Debug counter per i messaggi
-        message_count = {
-            "user": 0,
-            "assistant": 0,
-            "system": 0
-        }
-        
+        # Container per i messaggi
         messages_container = st.container()
         
+        # Set per tenere traccia dei messaggi già renderizzati
         rendered_messages = set()
         
-        current_chat = st.session_state.chats[st.session_state.current_chat]
         with messages_container:
-            for idx, message in enumerate(current_chat['messages']):
-                message_count[message['role']] += 1
-                message_hash = hash(f"{idx}:{message['role']}:{message['content']}")
+            # Renderizza tutti i messaggi nella chat corrente
+            for message in st.session_state.chats[st.session_state.current_chat]['messages']:
+                # Crea un hash univoco per il messaggio
+                message_hash = hash(f"{message['role']}:{message['content']}")
                 
+                # Renderizza solo se non è già stato mostrato
                 if message_hash not in rendered_messages:
                     with st.chat_message(message["role"]):
                         st.markdown(message["content"])
-                        st.caption(f"Message ID: {idx} | Hash: {message_hash}")
                     rendered_messages.add(message_hash)
-            
-            # Mostra statistiche debug
-            st.sidebar.markdown("### 📊 Debug Stats")
-            st.sidebar.write({
-                "Messaggi Utente": message_count["user"],
-                "Risposte Claude": message_count["assistant"],
-                "Messaggi Sistema": message_count["system"],
-                "Totale Messaggi": sum(message_count.values()),
-                "Messaggi Unici": len(rendered_messages)
-            })
 
     def handle_user_input(self, prompt: str):
         """
@@ -430,7 +305,41 @@ class ChatInterface:
         if not st.session_state.processing and prompt:
             st.session_state.processing = True
             self.process_user_message(prompt)
-            st.session_state.processing = False                
+            st.session_state.processing = False
+
+    def render_chat_controls(self):
+        """
+        Renderizza i controlli della chat.
+        """
+        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+        
+        with col1:
+            current_chat = st.selectbox(
+                " ",
+                options=list(st.session_state.chats.keys()),
+                index=list(st.session_state.chats.keys()).index(st.session_state.current_chat),
+                label_visibility="collapsed"
+            )
+            if current_chat != st.session_state.current_chat:
+                st.session_state.current_chat = current_chat
+        
+        with col2:
+            if st.button("🆕", help="Nuova chat"):
+                new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
+                st.session_state.chats[new_chat_name] = {
+                    'messages': [],
+                    'created_at': datetime.now().isoformat()
+                }
+                st.session_state.current_chat = new_chat_name
+        
+        with col3:
+            if st.button("✏️", help="Rinomina chat"):
+                st.session_state.renaming = True
+        
+        with col4:
+            if len(st.session_state.chats) > 1 and st.button("🗑️", help="Elimina chat"):
+                del st.session_state.chats[st.session_state.current_chat]
+                st.session_state.current_chat = list(st.session_state.chats.keys())[0]
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
