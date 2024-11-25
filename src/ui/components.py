@@ -7,7 +7,7 @@ from datetime import datetime
 from src.core.session import SessionManager
 from src.core.files import FileManager
 from src.core.llm import LLMManager
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 class FileExplorer:
     """Component per l'esplorazione e l'upload dei file."""
@@ -195,11 +195,8 @@ class ChatInterface:
     """Componente per l'interfaccia chat."""
     
     def __init__(self):
-        """Inizializza l'interfaccia chat."""
         self.session = SessionManager()
         self.llm = LLMManager()
-        
-        # Inizializza la chat se necessario
         if 'chats' not in st.session_state:
             st.session_state.chats = {
                 'Chat principale': {
@@ -211,7 +208,6 @@ class ChatInterface:
                 }
             }
             st.session_state.current_chat = 'Chat principale'
-
 
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
@@ -241,7 +237,9 @@ class ChatInterface:
     
 
     def process_user_message(self, prompt: str):
-        """Processa un messaggio utente."""
+        """
+        Processa un nuovo messaggio utente e renderizza correttamente le risposte.
+        """
         if not prompt.strip():
             return
 
@@ -251,42 +249,51 @@ class ChatInterface:
             "content": prompt
         })
 
+        # Container per la risposta in tempo reale
+        response_container = st.empty()
+        
         # Processa la risposta
         response = ""
-        message_placeholder = st.empty()
-        
-        for chunk in self.llm.process_request(prompt=prompt):
-            if chunk:
-                response += chunk
-                with message_placeholder.container():
-                    with st.chat_message("assistant"):
-                        st.markdown(response)
-                # Aggiorna le metriche una sola volta per chunk
-                StatsDisplay.update_metrics()
+        with st.spinner("Elaborazione in corso..."):
+            for chunk in self.llm.process_request(prompt=prompt):
+                if chunk:
+                    response += chunk
+                    # Aggiorna la risposta in tempo reale nel container appropriato
+                    with response_container:
+                        with st.chat_message("assistant"):
+                            st.markdown(response)
 
-        # Aggiungi la risposta completa alla chat
+        # Se abbiamo una risposta valida, la aggiungiamo alla chat
         if response.strip():
             st.session_state.chats[st.session_state.current_chat]['messages'].append({
                 "role": "assistant",
                 "content": response
             })
 
+
     def render(self):
-        """Renderizza l'interfaccia chat completa."""
-        # Renderizza i controlli della chat
+        """
+        Renderizza l'interfaccia chat con il corretto stile dei messaggi.
+        """
         self.render_chat_controls()
         
-        # Renderizza i messaggi non duplicati
-        messages = st.session_state.chats[st.session_state.current_chat]['messages']
-        for idx, message in enumerate(messages):
-            # Crea un hash unico per ogni messaggio
-            message_hash = hash(f"{idx}:{message['role']}:{message['content']}")
-            
-            # Renderizza solo se non è già stato mostrato
-            if message_hash not in st.session_state.rendered_messages:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
-                st.session_state.rendered_messages.add(message_hash)
+        # Container per i messaggi
+        messages_container = st.container()
+        
+        # Set per tenere traccia dei messaggi già renderizzati
+        rendered_messages = set()
+        
+        with messages_container:
+            # Renderizza tutti i messaggi nella chat corrente
+            for message in st.session_state.chats[st.session_state.current_chat]['messages']:
+                # Crea un hash univoco per il messaggio
+                message_hash = hash(f"{message['role']}:{message['content']}")
+                
+                # Renderizza solo se non è già stato mostrato
+                if message_hash not in rendered_messages:
+                    with st.chat_message(message["role"]):
+                        st.markdown(message["content"])
+                    rendered_messages.add(message_hash)
 
     def handle_user_input(self, prompt: str):
         """
@@ -301,79 +308,38 @@ class ChatInterface:
             st.session_state.processing = False
 
     def render_chat_controls(self):
-        """Renderizza i controlli della chat."""
-        cols = st.columns([3, 1, 1, 1])
-        
-        # Selezione chat
-        current_chat = cols[0].selectbox(
-            "Seleziona chat",
-            options=list(st.session_state.chats.keys()),
-            index=list(st.session_state.chats.keys()).index(st.session_state.current_chat),
-            label_visibility="collapsed"
-        )
-        
-        # Nuova chat
-        if cols[1].button("🆕", help="Nuova chat"):
-            new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
-            st.session_state.chats[new_chat_name] = {
-                'messages': [],
-                'created_at': datetime.now().isoformat()
-            }
-            st.session_state.current_chat = new_chat_name
-            st.rerun()
-        
-        # Rinomina chat
-        if cols[2].button("✏️", help="Rinomina chat"):
-            st.session_state.renaming = True
-        
-        # Elimina chat
-        if len(st.session_state.chats) > 1 and cols[3].button("🗑️", help="Elimina chat"):
-            del st.session_state.chats[st.session_state.current_chat]
-            st.session_state.current_chat = list(st.session_state.chats.keys())[0]
-            st.rerun()
-
-        if current_chat != st.session_state.current_chat:
-            st.session_state.current_chat = current_chat
-            st.rerun()
-
-    def process_message(self, prompt: str):
         """
-        Processa un nuovo messaggio.
+        Renderizza i controlli della chat.
         """
-        if not prompt.strip():
-            return
-
-        # Aggiungi messaggio utente
-        st.session_state.chats[st.session_state.current_chat]['messages'].append({
-            "role": "user",
-            "content": prompt
-        })
-
-        # Processa risposta
-        response = ""
-        with st.chat_message("assistant"):
-            placeholder = st.empty()
-            for chunk in self.llm.process_request(prompt=prompt):
-                if chunk:
-                    response += chunk
-                    placeholder.markdown(response)
-
-        # Salva risposta completa
-        if response.strip():
-            st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                "role": "assistant",
-                "content": response
-            }) 
-
-    def render(self):
-        """Renderizza l'interfaccia chat."""
-        # Controlli chat
-        self.render_chat_controls()
+        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
         
-        # Messaggi chat
-        for message in st.session_state.chats[st.session_state.current_chat]['messages']:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])               
+        with col1:
+            current_chat = st.selectbox(
+                " ",
+                options=list(st.session_state.chats.keys()),
+                index=list(st.session_state.chats.keys()).index(st.session_state.current_chat),
+                label_visibility="collapsed"
+            )
+            if current_chat != st.session_state.current_chat:
+                st.session_state.current_chat = current_chat
+        
+        with col2:
+            if st.button("🆕", help="Nuova chat"):
+                new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
+                st.session_state.chats[new_chat_name] = {
+                    'messages': [],
+                    'created_at': datetime.now().isoformat()
+                }
+                st.session_state.current_chat = new_chat_name
+        
+        with col3:
+            if st.button("✏️", help="Rinomina chat"):
+                st.session_state.renaming = True
+        
+        with col4:
+            if len(st.session_state.chats) > 1 and st.button("🗑️", help="Elimina chat"):
+                del st.session_state.chats[st.session_state.current_chat]
+                st.session_state.current_chat = list(st.session_state.chats.keys())[0]
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
@@ -417,153 +383,26 @@ class ModelSelector:
             self.session.set_current_model(selected)
 
 class StatsDisplay:
-    """Componente per visualizzazione statistiche e metriche."""
-
-    @staticmethod
-    def _format_number(num: float, decimals: int = 4) -> str:
-        """Formatta un numero in modo leggibile."""
-        if abs(num) >= 1_000_000:
-            return f"{num/1_000_000:.1f}M"
-        elif abs(num) >= 1_000:
-            return f"{num/1_000:.1f}K"
-        else:
-            return f"{num:,.{decimals}f}"
-
-    @staticmethod
-    def _get_metrics_history() -> Dict[str, list]:
-        """Recupera o inizializza la cronologia delle metriche."""
-        if 'metrics_history' not in st.session_state:
-            st.session_state.metrics_history = {
-                'tokens': [],
-                'costs': [],
-                'timestamps': []
-            }
-        return st.session_state.metrics_history
-
-    @staticmethod
-    def _calculate_delta(current: float, history: list) -> Optional[float]:
-        """Calcola il delta rispetto al valore precedente."""
-        if not history:
-            return None
-        previous = history[-1]
-        return current - previous if previous != 0 else None
-
-    @staticmethod
-    def _update_history(tokens: int, cost: float):
-        """Aggiorna la cronologia delle metriche."""
-        history = StatsDisplay._get_metrics_history()
-        history['tokens'].append(tokens)
-        history['costs'].append(cost)
-        history['timestamps'].append(datetime.now())
-        
-        # Mantieni solo le ultime 100 misurazioni
-        if len(history['tokens']) > 100:
-            history['tokens'] = history['tokens'][-100:]
-            history['costs'] = history['costs'][-100:]
-            history['timestamps'] = history['timestamps'][-100:]
-
-    @staticmethod
-    def render():
-        """Renderizza il display delle statistiche."""
-        # Recupera i valori correnti
-        current_tokens = st.session_state.get('token_count', 0)
-        current_cost = st.session_state.get('cost', 0.0)
-        
-        # Aggiorna la cronologia
-        StatsDisplay._update_history(current_tokens, current_cost)
-        history = StatsDisplay._get_metrics_history()
-        
-        # Calcola i delta
-        token_delta = StatsDisplay._calculate_delta(current_tokens, history['tokens'])
-        cost_delta = StatsDisplay._calculate_delta(current_cost, history['costs'])
-
-        # Layout principale
-        st.markdown("### 📊 Statistiche")
-        
-        # Prima riga: Metriche principali
+    """Componente per la visualizzazione delle statistiche."""
+    
+    def __init__(self):
+        self.session = SessionManager()
+    
+    def render(self):
+        """Renderizza il componente."""
+        stats = self.session.get_stats()
         col1, col2 = st.columns(2)
         
         with col1:
             st.metric(
-                "Token Utilizzati",
-                StatsDisplay._format_number(current_tokens, decimals=0),
-                delta=StatsDisplay._format_number(token_delta, decimals=0) if token_delta else None,
-                delta_color="off",
-                help="Numero totale di token utilizzati nella sessione"
+                "Tokens Used",
+                f"{stats['token_count']:,}",
+                delta=None
             )
-            
+        
         with col2:
             st.metric(
-                "Costo Totale ($)",
-                StatsDisplay._format_number(current_cost),
-                delta=StatsDisplay._format_number(cost_delta) if cost_delta else None,
-                delta_color="off",
-                help="Costo totale della sessione in USD"
+                "Cost ($)",
+                f"${stats['cost']:.3f}",
+                delta=None
             )
-        
-        # Seconda riga: Metriche avanzate (espandibili)
-        with st.expander("🔍 Metriche Dettagliate", expanded=False):
-            detailed_col1, detailed_col2 = st.columns(2)
-            
-            with detailed_col1:
-                # Media token per messaggio
-                if history['tokens']:
-                    avg_tokens = sum(history['tokens']) / len(history['tokens'])
-                    st.metric(
-                        "Media Token/Messaggio",
-                        StatsDisplay._format_number(avg_tokens, decimals=0),
-                        help="Media dei token utilizzati per messaggio"
-                    )
-                
-                # Velocità token
-                if len(history['timestamps']) > 1:
-                    time_diff = (history['timestamps'][-1] - history['timestamps'][0]).total_seconds()
-                    if time_diff > 0:
-                        tokens_per_second = sum(history['tokens']) / time_diff
-                        st.metric(
-                            "Token/Secondo",
-                            StatsDisplay._format_number(tokens_per_second, decimals=1),
-                            help="Velocità media di elaborazione token"
-                        )
-            
-            with detailed_col2:
-                # Costo medio per messaggio
-                if history['costs']:
-                    avg_cost = sum(history['costs']) / len(history['costs'])
-                    st.metric(
-                        "Costo Medio/Messaggio",
-                        f"${StatsDisplay._format_number(avg_cost)}",
-                        help="Costo medio per messaggio"
-                    )
-                
-                # Costo per token
-                if current_tokens > 0:
-                    cost_per_token = current_cost / current_tokens
-                    st.metric(
-                        "Costo/Token",
-                        f"${StatsDisplay._format_number(cost_per_token * 1000)} per 1K token",
-                        help="Costo medio per 1000 token"
-                    )
-        
-        # Aggiungi pulsante di reset se necessario
-        if current_tokens > 0 or current_cost > 0:
-            if st.button("🔄 Reset Statistiche"):
-                st.session_state.token_count = 0
-                st.session_state.cost = 0.0
-                st.session_state.metrics_history = {
-                    'tokens': [],
-                    'costs': [],
-                    'timestamps': []
-                }
-                st.rerun()
-
-    @staticmethod
-    def update():
-        """
-        Aggiorna le statistiche senza ricostruire l'interfaccia.
-        Da chiamare quando si vogliono aggiornare solo i valori.
-        """
-        StatsDisplay._update_history(
-            st.session_state.get('token_count', 0),
-            st.session_state.get('cost', 0.0)
-        )

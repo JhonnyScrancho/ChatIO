@@ -4,40 +4,14 @@ Manages interactions with OpenAI and Anthropic models with proper error handling
 rate limiting, and model-specific optimizations.
 """
 
-from typing import Dict, Optional, Tuple, Generator, List, Any, Union, AsyncGenerator
-from contextlib import asynccontextmanager
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
-import functools
-import asyncio
-import logging
-import random
-import json
-import time
-import sys
-import traceback
-
-# Third-party imports
 import streamlit as st
+from typing import Dict, Optional, Tuple, Generator, List, Any
 from openai import OpenAI
-import anthropic
-from openai.types.chat import (
-    ChatCompletion,
-    ChatCompletionChunk,
-    ChatCompletionMessage,
-    ChatCompletionMessageParam
-)
-
-# Local imports
-from .session import SessionManager
-from ..utils.helpers import TokenCounter
-
-# Type aliases for better code clarity
-ModelName = str
-TokenCount = int
-Cost = float
-ErrorMessage = str
-CompletionResponse = Union[str, Generator[str, None, None]]
+from anthropic import Anthropic
+import time
+from datetime import datetime
+import json
+import random
 
 class LLMManager:
     """Gestisce le interazioni con i modelli LLM."""
@@ -48,9 +22,8 @@ class LLMManager:
     
     def __init__(self):
         """Inizializza le connessioni API e le configurazioni."""
-        self.logger = logging.getLogger(__name__)
         self.openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-        self.anthropic_client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+        self.anthropic_client = Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
         
         # Costi per 1K tokens (in USD)
         self.cost_map = {
@@ -112,64 +85,6 @@ class LLMManager:
         self._last_call_time = {}
         self._call_count = {}
         self._reset_time = {}
-        
-        # Metriche e statistiche
-        self._metrics = {
-            'total_requests': 0,
-            'successful_requests': 0,
-            'failed_requests': 0,
-            'total_tokens': 0,
-            'total_cost': 0.0,
-            'average_latency': 0.0,
-            'errors': []
-        }
-    
-    def _prepare_file_context(self) -> str:
-        """
-        Prepara il contesto dai file caricati.
-        """
-        if not st.session_state.get('uploaded_files'):
-            return ""
-            
-        context = "I file caricati sono:\n\n"
-        for filename, file_info in st.session_state.uploaded_files.items():
-            context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
-        return context
-    
-    def _prepare_messages(self, prompt: str, current_model: str) -> List[Dict[str, str]]:
-        """
-        Prepara i messaggi in base al modello specifico.
-        """
-        file_context = self._prepare_file_context()
-        messages = []
-        
-        if current_model.startswith('o1'):
-            # Per O1, includiamo il contesto nel prompt utente
-            if file_context:
-                full_prompt = (
-                    "Sei un assistente esperto in programmazione. "
-                    "Analizza il codice fornito e rispondi alle domande dell'utente.\n\n"
-                    f"{file_context}\n\nDomanda dell'utente: {prompt}"
-                )
-            else:
-                full_prompt = prompt
-            
-            messages.append({"role": "user", "content": full_prompt})
-            
-        else:  # Claude
-            if file_context:
-                messages.append({
-                    "role": "assistant",
-                    "content": (
-                        "Sei un assistente esperto in programmazione. "
-                        "Analizza il codice fornito e rispondi alle domande dell'utente.\n\n"
-                        f"{file_context}"
-                    )
-                })
-            messages.append({"role": "user", "content": prompt})
-        
-        return messages
-
 
     def select_model(self, task_type: str, content_length: int, 
                     requires_file_handling: bool = False) -> str:
@@ -188,11 +103,11 @@ class LLMManager:
         if requires_file_handling:
             return "claude-3-5-sonnet-20241022"
         
-        # Stima tokens
-        estimated_tokens = TokenCounter.count_tokens(content_length)
+        # Stima tokens (1 token ~ 4 caratteri)
+        estimated_tokens = content_length // 4
         
         # Se supera i limiti di o1-preview, usa Claude
-        if estimated_tokens > self.model_limits['o1-preview']['max_tokens']:
+        if estimated_tokens > 32000:
             return "claude-3-5-sonnet-20241022"
         
         # Per task complessi usa o1-preview
@@ -203,19 +118,27 @@ class LLMManager:
         return "o1-mini"
 
     def _enforce_rate_limit(self, model: str):
-        """Implementa rate limiting per le chiamate API."""
+        """
+        Implementa rate limiting per le chiamate API.
+        
+        Args:
+            model: Nome del modello
+        """
         current_time = time.time()
         
+        # Inizializza contatori se necessario
         if model not in self._last_call_time:
             self._last_call_time[model] = current_time
             self._call_count[model] = 0
             self._reset_time[model] = current_time + 60
         
+        # Resetta contatori se necessario
         if current_time > self._reset_time[model]:
             self._call_count[model] = 0
             self._reset_time[model] = current_time + 60
         
-        if self._call_count[model] >= 50:
+        # Applica rate limiting
+        if self._call_count[model] >= 50:  # 50 richieste al minuto
             sleep_time = self._reset_time[model] - current_time
             if sleep_time > 0:
                 time.sleep(sleep_time)
@@ -224,22 +147,28 @@ class LLMManager:
         
         self._call_count[model] += 1
         self._last_call_time[model] = current_time
-    
+
     def _exponential_backoff(self, attempt: int) -> float:
         """
         Calcola il tempo di attesa per il retry con jitter.
+        
+        Args:
+            attempt: Numero del tentativo
+            
+        Returns:
+            float: Tempo di attesa in secondi
         """
         delay = min(self.MAX_RETRY_DELAY, 
                    self.INITIAL_RETRY_DELAY * (2 ** attempt))
         jitter = random.uniform(-0.25, 0.25) * delay
         return delay + jitter
 
-    async def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
+    def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
         """
-        Gestisce le chiamate ai modelli o1 con streaming.
+        Gestisce le chiamate ai modelli o1.
         
         Args:
-            messages: Lista di messaggi per la chat
+            messages: Lista di messaggi
             model: Nome del modello o1
             
         Yields:
@@ -248,65 +177,73 @@ class LLMManager:
         try:
             self._enforce_rate_limit(model)
             
-            completion = await self.openai_client.chat.completions.create(
+            completion = self.openai_client.chat.completions.create(
                 model=model,
                 messages=messages,
                 stream=True,
-                max_completion_tokens=self.model_limits[model]['max_tokens']
+                max_completion_tokens=32768 if model == "o1-preview" else 65536
             )
             
-            async for chunk in completion:
+            for chunk in completion:
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
                     
         except Exception as e:
             error_msg = f"Errore con {model}: {str(e)}"
-            self._metrics['failed_requests'] += 1
-            self._metrics['errors'].append({
-                'model': model,
-                'error': str(e),
-                'timestamp': datetime.now().isoformat()
-            })
-            self.logger.error(error_msg)
             st.error(error_msg)
             yield error_msg
 
-    async def _handle_claude_completion_with_user_control(self, messages: List[Dict], 
+    def _handle_claude_completion_with_user_control(self, messages: List[Dict], 
                                                   placeholder: st.empty) -> Generator[str, None, None]:
         """
         Gestisce le chiamate a Claude con retry controllato dall'utente.
+        
+        Args:
+            messages: Lista di messaggi
+            placeholder: Streamlit placeholder per l'UI
+            
+        Yields:
+            str: Chunks della risposta
         """
         for attempt in range(self.MAX_RETRIES):
             try:
                 self._enforce_rate_limit("claude-3-5-sonnet-20241022")
                 
-                # Convert messages to Claude format
                 claude_messages = []
                 for msg in messages:
                     if msg["role"] == "user":
-                        claude_messages.append({
+                        content_msg = {
                             "role": "user",
-                            "content": msg["content"]
-                        })
+                            "content": [{"type": "text", "text": msg["content"]}]
+                        }
+                        claude_messages.append(content_msg)
                 
-                response = await self.anthropic_client.messages.create(
+                response = self.anthropic_client.messages.create(
                     model="claude-3-5-sonnet-20241022",
                     max_tokens=4096,
                     messages=claude_messages,
                     stream=True
                 )
                 
-                async for chunk in response:
-                    if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'text'):
-                        yield chunk.delta.text
-                    elif hasattr(chunk, 'content'):
-                        yield chunk.content[0].text
+                for chunk in response:
+                    if hasattr(chunk, 'type'):
+                        if chunk.type == 'content_block_delta':
+                            if hasattr(chunk.delta, 'text'):
+                                yield chunk.delta.text
+                        elif chunk.type == 'message_start':
+                            continue
+                        elif chunk.type == 'content_block_start':
+                            continue
+                        elif chunk.type == 'content_block_stop':
+                            continue
+                        elif chunk.type == 'message_stop':
+                            continue
                 return
                 
             except Exception as e:
                 error_msg = str(e)
                 
-                if "overloaded_error" in error_msg.lower():
+                if "overloaded_error" in error_msg:
                     with placeholder.container():
                         st.error("⚠️ Server Claude sovraccarico")
                         col1, col2, col3 = st.columns(3)
@@ -318,220 +255,171 @@ class LLMManager:
                         if retry:
                             retry_delay = self._exponential_backoff(attempt)
                             st.info(f"Nuovo tentativo tra {retry_delay:.1f} secondi...")
-                            await asyncio.sleep(retry_delay)
+                            time.sleep(retry_delay)
                             continue
                         elif switch_o1:
                             st.info("Passaggio a O1-preview...")
-                            async for chunk in self._handle_o1_completion(messages, "o1-preview"):
-                                yield chunk
+                            yield from self._handle_o1_completion(messages, "o1-preview")
                             return
                         elif switch_mini:
                             st.info("Passaggio a O1-mini...")
-                            async for chunk in self._handle_o1_completion(messages, "o1-mini"):
-                                yield chunk
+                            yield from self._handle_o1_completion(messages, "o1-mini")
                             return
                         else:
                             st.stop()
                 else:
-                    self._metrics['failed_requests'] += 1
-                    self._metrics['errors'].append({
-                        'model': 'claude-3-5-sonnet-20241022',
-                        'error': error_msg,
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    self.logger.error(f"Errore API: {error_msg}")
                     st.error(f"Errore API: {error_msg}")
                     if attempt < self.MAX_RETRIES - 1:
                         retry_delay = self._exponential_backoff(attempt)
                         st.warning(f"Nuovo tentativo tra {retry_delay:.1f} secondi...")
-                        await asyncio.sleep(retry_delay)
+                        time.sleep(retry_delay)
                     else:
                         yield f"Mi dispiace, si è verificato un errore persistente: {error_msg}"
 
-    
-    async def process_model_response(self, messages: List[Dict], current_model: str, placeholder: st.empty) -> AsyncGenerator[str, None]:
+    def test_claude(self):
         """
-        Processa la risposta del modello in modo unificato.
+        Test di connessione base con Claude.
+        """
+        try:
+            test_message = {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Ciao, questo è un test di connessione."
+                    }
+                ]
+            }
+            
+            response = self.anthropic_client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=100,
+                messages=[test_message],
+                stream=True
+            )
+            
+            result = ""
+            for chunk in response:
+                if hasattr(chunk, 'type') and chunk.type == 'content_block_delta':
+                    if hasattr(chunk.delta, 'text'):
+                        result += chunk.delta.text
+            
+            return True, result
+            
+        except Exception as e:
+            return False, str(e)
+
+    def _prepare_file_context(self, files: Dict[str, Dict]) -> str:
+        """
+        Prepara il contesto dei file in un formato strutturato.
         
         Args:
-            messages: Lista dei messaggi
-            current_model: Nome del modello corrente
-            placeholder: Placeholder Streamlit per UI
+            files: Dizionario dei file processati
+            
+        Returns:
+            str: Contesto formattato dei file
+        """
+        if not files:
+            return ""
+            
+        context = "\n### File Context ###\n"
+        for filename, file_info in files.items():
+            context += f"\nFile: {filename} (language: {file_info['language']})\n"
+            context += f"```{file_info['language']}\n{file_info['content']}\n```\n"
+        return context
+
+    def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
+                    file_content: Optional[str] = None, 
+                    context: Optional[str] = None,
+                    model: str = "claude-3-5-sonnet-20241022") -> List[Dict]:
+        """
+        Prepara il prompt includendo il contesto dei file.
+        """
+        # Prepara il contesto dei file caricati
+        file_context = ""
+        if 'uploaded_files' in st.session_state:
+            file_context = self._prepare_file_context(st.session_state.uploaded_files)
+        
+        # Prepara il contenuto principale
+        main_content = prompt
+        
+        # Aggiungi il contesto dei file se presente
+        if file_context:
+            main_content = f"{file_context}\n\n{prompt}"
+        
+        # Aggiungi file_content specifico se fornito
+        if file_content:
+            main_content += f"\nSpecific file content:\n```\n{file_content}\n```"
+        
+        # Aggiungi contesto aggiuntivo se fornito
+        if context:
+            main_content += f"\nAdditional context: {context}"
+        
+        # Restituisce il messaggio utente con il contesto completo
+        return [{
+            "role": "user",
+            "content": main_content
+        }]
+
+    def process_request(self, prompt: str, analysis_type: Optional[str] = None,
+                       file_content: Optional[str] = None, 
+                       context: Optional[str] = None) -> Generator[str, None, None]:
+        """
+        Processa una richiesta completa con controllo utente sul retry e fallback.
+        
+        Args:
+            prompt: Prompt dell'utente
+            analysis_type: Tipo di analisi
+            file_content: Contenuto del file
+            context: Contesto aggiuntivo
             
         Yields:
             str: Chunks della risposta
         """
+        requires_file_handling = bool(file_content)
+        
+        if analysis_type and file_content:
+            model = self.select_model(analysis_type, len(file_content), requires_file_handling)
+        else:
+            model = st.session_state.current_model
+        
+        messages = self.prepare_prompt(
+            prompt=prompt,
+            analysis_type=analysis_type,
+            file_content=file_content,
+            context=context,
+            model=model
+        )
+        
+        # Placeholder per i controlli utente
+        placeholder = st.empty()
+        
         try:
-            handler = None
-            if current_model.startswith('o1'):
-                handler = self._handle_o1_completion(messages, current_model)
-            elif current_model == "claude-3-5-sonnet-20241022":
-                handler = self._handle_claude_completion_with_user_control(messages, placeholder)
+            if model.startswith('o1'):
+                yield from self._handle_o1_completion(messages, model)
             else:
-                raise ValueError(f"Modello non supportato: {current_model}")
+                yield from self._handle_claude_completion_with_user_control(messages, placeholder)
                 
-            # Process response chunks
-            async for chunk in handler:
-                if chunk and isinstance(chunk, str):
-                    yield chunk.strip()
-                    
         except Exception as e:
-            error_msg = f"Errore durante la generazione della risposta: {str(e)}"
-            self.logger.error(f"{error_msg}\n{traceback.format_exc()}")
+            error_msg = f"Errore generale: {str(e)}"
             st.error(error_msg)
-            yield error_msg
-    
-    def process_request(self, prompt: str, analysis_type: Optional[str] = None,
-                   file_content: Optional[str] = None) -> Generator[str, None, None]:
-        """
-        Processa una richiesta in modo sincrono con aggiornamento metriche per chunk.
-        """
-        current_model = SessionManager.get_current_model()
-        messages = self._prepare_messages(prompt, current_model)
-        input_tokens = sum(TokenCounter.count_tokens(msg["content"]) for msg in messages)
-        
-        try:
-            if current_model.startswith('o1'):
-                self._enforce_rate_limit(current_model)
-                response = self.openai_client.chat.completions.create(
-                    model=current_model,
-                    messages=messages,
-                    stream=True
-                )
-                
-                accumulated_response = ""
-                for chunk in response:
-                    if chunk.choices[0].delta.content:
-                        content = chunk.choices[0].delta.content
-                        accumulated_response += content
-                        # Update metrics per chunk
-                        chunk_tokens = TokenCounter.count_tokens(content)
-                        self._update_metrics(0, chunk_tokens, current_model)
-                        yield content
-                
-            else:  # Claude model
-                self._enforce_rate_limit(current_model)
-                response = self.anthropic_client.messages.create(
-                    model=current_model,
-                    max_tokens=4096,
-                    messages=messages,
-                    stream=True
-                )
-                
-                accumulated_response = ""
-                for chunk in response:
-                    content = None
-                    if hasattr(chunk, 'delta') and hasattr(chunk.delta, 'text'):
-                        content = chunk.delta.text
-                    elif hasattr(chunk, 'content') and chunk.content:
-                        content = chunk.content[0].text
-                    
-                    if content:
-                        accumulated_response += content
-                        # Update metrics per chunk
-                        chunk_tokens = TokenCounter.count_tokens(content)
-                        self._update_metrics(0, chunk_tokens, current_model)
-                        yield content
-                        
-        except Exception as e:
-            error_msg = f"Error processing request: {str(e)}"
-            self.logger.error(f"{error_msg}\n{traceback.format_exc()}")
-            yield error_msg
+            with placeholder.container():
+                if st.button("🔄 Riprova con O1-mini"):
+                    yield from self._handle_o1_completion(messages, "o1-mini")
 
-
-    def _process_successful_response(self, response: str, initial_tokens: int,
-                                current_model: str, start_time: float,
-                                placeholder: st.empty):
+    def calculate_cost(self, model: str, input_tokens: int, 
+                      output_tokens: int) -> float:
         """
-        Processa una risposta completata con successo.
-        """
-        response_tokens = TokenCounter.count_tokens(response)
-        total_cost = self.calculate_cost(
-            current_model,
-            initial_tokens,
-            response_tokens
-        )
+        Calcola il costo di una richiesta.
         
-        # Aggiorna metriche di sessione
-        SessionManager.update_token_count(initial_tokens + response_tokens)
-        SessionManager.update_cost(total_cost)
-        
-        # Aggiorna metriche interne
-        self._update_metrics(
-            initial_tokens=initial_tokens,
-            response_tokens=response_tokens,
-            total_cost=total_cost,
-            start_time=start_time
-        )
-        
-        # Log delle metriche in modalità debug
-        if st.session_state.get('debug_mode', False):
-            self._log_debug_metrics(
-                initial_tokens=initial_tokens,
-                response_tokens=response_tokens,
-                total_cost=total_cost,
-                latency=(time.time() - start_time),
-                response=response
-            )
-
-    def _update_metrics(self, input_tokens: int, output_tokens: int, model: str):
-        """
-        Aggiorna le metriche dopo una richiesta completata.
-        """
-        total_tokens = input_tokens + output_tokens
-        cost = self.calculate_cost(model, input_tokens, output_tokens)
-        
-        # Update session metrics in a way that triggers Streamlit's reactivity
-        if 'token_count' not in st.session_state:
-            st.session_state.token_count = 0
-        if 'cost' not in st.session_state:
-            st.session_state.cost = 0.0
-        
-        # Force session state update to trigger rerender
-        st.session_state.token_count += total_tokens
-        st.session_state.cost += cost
-        
-        # Update internal metrics
-        self._metrics['total_tokens'] += total_tokens
-        self._metrics['total_cost'] += cost
-        self._metrics['successful_requests'] += 1     
-
-    def _handle_request_error(self, error: Exception, current_model: str,
-                            analysis_type: str, initial_tokens: int,
-                            prompt: str, file_content: Optional[str],
-                            context: Optional[str], placeholder: st.empty):
-        """
-        Gestisce gli errori durante la richiesta.
-        """
-        error_msg = f"Si è verificato un errore: {str(error)}"
-        self._metrics['failed_requests'] += 1
-        self._metrics['errors'].append({
-            'model': current_model,
-            'error': str(error),
-            'timestamp': datetime.now().isoformat(),
-            'context': {
-                'analysis_type': analysis_type,
-                'initial_tokens': initial_tokens
-            }
-        })
-        self.logger.error(f"{error_msg}\n{traceback.format_exc()}")
-        st.error(error_msg)
-        
-        # Gestisci il recovery
-        with placeholder.container():
-            col1, col2 = st.columns(2)
+        Args:
+            model: Nome del modello
+            input_tokens: Numero di token in input
+            output_tokens: Numero di token in output
             
-            if col1.button("🔄 Riprova", key=f"retry_{hash(error_msg)}"):
-                return self.process_request(prompt, analysis_type, file_content, context)
-            
-            if col2.button("⚡ Prova con o1-mini", key=f"fallback_{hash(error_msg)}"):
-                st.session_state.current_model = "o1-mini"
-                return self.process_request(prompt, analysis_type, file_content, context)
-        
-        return error_msg
-
-    def calculate_cost(self, model: str, input_tokens: int, output_tokens: int) -> float:
-        """Calcola il costo di una richiesta."""
+        Returns:
+            float: Costo in USD
+        """
         if model not in self.cost_map:
             return 0.0
             
@@ -540,53 +428,7 @@ class LLMManager:
         output_cost = (output_tokens * costs['output']) / 1000
         
         return round(input_cost + output_cost, 4)
-
-    def get_metrics(self) -> Dict[str, Any]:
-        """
-        Restituisce le metriche correnti del LLMManager.
-        
-        Returns:
-            Dict[str, Any]: Metriche e statistiche
-        """
-        return {
-            'requests': {
-                'total': self._metrics['total_requests'],
-                'successful': self._metrics['successful_requests'],
-                'failed': self._metrics['failed_requests'],
-                'success_rate': (
-                    (self._metrics['successful_requests'] / self._metrics['total_requests'] * 100)
-                    if self._metrics['total_requests'] > 0 else 0
-                )
-            },
-            'tokens': self._metrics['total_tokens'],
-            'cost': self._metrics['total_cost'],
-            'performance': {
-                'average_latency': self._metrics['average_latency'],
-                'rate_limits': {
-                    model: {
-                        'calls_last_minute': self._call_count.get(model, 0),
-                        'last_call': datetime.fromtimestamp(
-                            self._last_call_time.get(model, 0)
-                        ).strftime('%Y-%m-%d %H:%M:%S')
-                    }
-                    for model in self.model_limits.keys()
-                }
-            },
-            'errors': self._metrics['errors'][-10:]  # Ultimi 10 errori
-        }
-
-    def reset_metrics(self):
-        """Resetta tutte le metriche interne."""
-        self._metrics = {
-            'total_requests': 0,
-            'successful_requests': 0,
-            'failed_requests': 0,
-            'total_tokens': 0,
-            'total_cost': 0.0,
-            'average_latency': 0.0,
-            'errors': []
-        }
-        
+    
     def get_model_info(self, model: str) -> Dict[str, Any]:
         """
         Restituisce informazioni dettagliate su un modello.
@@ -610,41 +452,3 @@ class LLMManager:
                 ).strftime('%Y-%m-%d %H:%M:%S')
             }
         }
-
-    async def test_claude(self) -> Tuple[bool, str]:
-        """
-        Test di connessione base con Claude.
-        
-        Returns:
-            Tuple[bool, str]: (successo, messaggio)
-        """
-        try:
-            test_message = {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Ciao, questo è un test di connessione."
-                    }
-                ]
-            }
-            
-            response = await self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=100,
-                messages=[test_message],
-                stream=True
-            )
-            
-            result = ""
-            async for chunk in response:
-                if hasattr(chunk, 'type') and chunk.type == 'content_block_delta':
-                    if hasattr(chunk.delta, 'text'):
-                        result += chunk.delta.text
-            
-            return True, result
-            
-        except Exception as e:
-            error_msg = f"Errore test Claude: {str(e)}"
-            self.logger.error(error_msg)
-            return False, error_msg

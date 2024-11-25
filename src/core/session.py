@@ -4,9 +4,8 @@ Handles global state and caching through Streamlit's session state.
 """
 
 import streamlit as st
-from typing import Dict, Any, Optional, Union, List
+from typing import Dict, Any, Optional
 from datetime import datetime
-from src.utils.helpers import TokenCounter  # Aggiungi questo import
 
 class SessionManager:
     """Gestisce lo stato globale dell'applicazione e il caching."""
@@ -163,55 +162,21 @@ class SessionManager:
         return st.session_state.current_file
     
     @staticmethod
-    def update_token_count(text: Union[str, Dict, List]):
-        """
-        Aggiorna il conteggio dei token utilizzati.
-        
-        Args:
-            text: Testo o struttura dati da analizzare
-        """
-        tokens = TokenCounter.count_tokens(text)
-        st.session_state.token_count = st.session_state.get('token_count', 0) + tokens
-        
-        # Aggiorna anche le statistiche di distribuzione se in debug mode
-        if st.session_state.get('debug_mode', False) and isinstance(text, str):
-            distribution = TokenCounter.get_token_distribution(text)
-            if 'token_distribution' not in st.session_state:
-                st.session_state.token_distribution = distribution
-            else:
-                for key, value in distribution.items():
-                    st.session_state.token_distribution[key] = \
-                        st.session_state.token_distribution.get(key, 0) + value
-    
-    @staticmethod
-    def get_token_stats() -> Dict[str, Any]:
-        """
-        Restituisce statistiche dettagliate sull'uso dei token.
-        
-        Returns:
-            Dict[str, Any]: Statistiche sui token
-        """
-        stats = {
-            'total_tokens': st.session_state.get('token_count', 0),
-            'estimated_cost': st.session_state.get('cost', 0.0),
-        }
-        
-        if st.session_state.get('debug_mode', False):
-            stats['distribution'] = st.session_state.get('token_distribution', {})
-            
-        return stats
+    def update_token_count(tokens: int):
+        """Aggiorna il conteggio dei token utilizzati."""
+        st.session_state.token_count += tokens
     
     @staticmethod
     def update_cost(amount: float):
         """Aggiorna il costo totale delle richieste LLM."""
-        st.session_state.cost = st.session_state.get('cost', 0.0) + amount
+        st.session_state.cost += amount
     
     @staticmethod
     def get_stats() -> Dict[str, Any]:
         """Restituisce le statistiche correnti della sessione."""
         return {
-            'token_count': st.session_state.get('token_count', 0),
-            'cost': st.session_state.get('cost', 0.0),
+            'token_count': st.session_state.token_count,
+            'cost': st.session_state.cost,
             'files_count': len(st.session_state.files),
             'chats_count': len(st.session_state.chats)
         }

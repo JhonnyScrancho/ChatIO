@@ -203,11 +203,14 @@ def render_main_layout():
     clients = init_clients()
     clients['session'].init_session()
     
-    # Title Area (senza metriche duplicate)
-    st.title("👲🏿 Allegro IO")
-    
-    # Unified metrics display
-    StatsDisplay.update_metrics()
+    # Title Area con Stats
+    col1, col2, col3 = st.columns([4, 1, 1])
+    with col1:
+        st.title("👲🏿 Allegro IO")
+    with col2:
+        st.metric("Tokens Used", f"{st.session_state.get('token_count', 0):,}")
+    with col3:
+        st.metric("Cost ($)", f"${st.session_state.get('cost', 0):.3f}")
     
     # Sidebar con File Manager e Model Selector
     with st.sidebar:
@@ -237,25 +240,21 @@ def render_main_layout():
         ChatInterface().process_user_message(prompt)
 
 def main():
-    """Main interface."""
-    # Inizializza sessione
-    SessionManager.init_session()
-    
-    # Titolo
-    st.title("👲🏿 Allegro IO")
-    
-    # Statistiche
-    StatsDisplay.render()
-    st.markdown("---")
-    
-    # Chat interface
-    chat = ChatInterface()
-    chat.render()
-    
-    # Input chat
-    if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
-        chat.process_message(prompt)
-        st.rerun()
+    """Funzione principale dell'applicazione."""
+    load_dotenv()
+    try:
+        # Controlli iniziali
+        check_environment()
+        check_directories()
+        load_custom_css()
+        
+        # Renderizza il layout principale
+        render_main_layout()
+        
+    except Exception as e:
+        st.error(f"❌ Si è verificato un errore: {str(e)}")
+        if os.getenv('DEBUG') == 'True':
+            st.exception(e)
 
 if __name__ == "__main__":
     main()
