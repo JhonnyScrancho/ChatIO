@@ -337,19 +337,53 @@ class ChatInterface:
 
     def render(self):
         """Renderizza l'interfaccia chat."""
+        # CSS personalizzato per il layout della chat
+        st.markdown("""
+            <style>
+                /* Container principale della chat */
+                .chat-container {
+                    display: flex;
+                    flex-direction: column;
+                    height: calc(100vh - 200px);
+                    position: relative;
+                }
+                
+                /* Area messaggi con scroll */
+                .stChatMessageContent {
+                    display: flex;
+                    flex-direction: column;
+                    overflow-y: auto;
+                    padding-bottom: 80px; /* Spazio per l'input */
+                }
+                
+                /* Input bar fissa in fondo */
+                .stChatInputContainer {
+                    position: fixed;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    padding: 1rem 2rem;
+                    background: var(--background-color);
+                    border-top: 1px solid var(--secondary-background-color);
+                    z-index: 999;
+                }
+            </style>
+        """, unsafe_allow_html=True)
+        
         # Renderizza i controlli delle chat
         self.render_chat_controls()
         
-        # Container per i messaggi della chat corrente
-        messages_container = st.container()
+        # Container per i messaggi della chat
+        chat_container = st.container()
         
-        current_chat = st.session_state.chats[st.session_state.current_chat]
-        with messages_container:
+        # Area messaggi
+        with chat_container:
+            current_chat = st.session_state.chats[st.session_state.current_chat]
             for message in current_chat['messages']:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
-
-        # Input della chat
+        
+        # Chat input (sarà posizionato in fondo)
         if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
             self.process_user_message(prompt)
 
