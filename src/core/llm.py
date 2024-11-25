@@ -256,19 +256,29 @@ class LLMManager:
             self._enforce_rate_limit("claude-3-5-sonnet-20241022")
             
             try:
+                # Ensure correct message format for Claude
                 message = self.anthropic_client.messages.create(
                     model="claude-3-5-sonnet-20241022",
-                    max_tokens=4096,
-                    temperature=0.7,
+                    max_tokens=1000,
+                    temperature=0,  # Using 0 for more deterministic responses
                     system=prompt_data.get("system"),
-                    messages=prompt_data["messages"],
-                    stream=True
+                    messages=[{
+                        "role": msg["role"],
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": msg["content"] if isinstance(msg["content"], str) else msg["content"][0]["text"]
+                            }
+                        ]
+                    } for msg in prompt_data["messages"]]
                 )
                 
-                for chunk in message:
-                    if chunk.delta.text:
-                        yield chunk.delta.text
-                        
+                # Handle the response correctly - content is a list of TextBlock objects
+                if message.content:
+                    for block in message.content:
+                        if hasattr(block, 'text'):
+                            yield block.text
+                
             except Exception as e:
                 if "not_found_error" in str(e):
                     st.warning("Claude API issue - falling back to O1")
@@ -277,9 +287,10 @@ class LLMManager:
                     if prompt_data.get("system"):
                         o1_messages.append({"role": "system", "content": prompt_data["system"]})
                     for msg in prompt_data["messages"]:
+                        text_content = msg["content"][0]["text"] if isinstance(msg["content"], list) else msg["content"]
                         o1_messages.append({
                             "role": msg["role"],
-                            "content": msg["content"][0]["text"]
+                            "content": text_content
                         })
                     yield from self._handle_o1_completion(o1_messages, "o1-preview")
                 else:
@@ -289,7 +300,7 @@ class LLMManager:
             error_msg = f"Errore Claude: {str(e)}"
             st.error(error_msg)
             yield error_msg
-    
+            
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
                        file_content: Optional[str] = None, 
                        context: Optional[str] = None) -> Generator[str, None, None]:
