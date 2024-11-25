@@ -331,6 +331,8 @@ class ChatInterface:
                     'created_at': datetime.now().isoformat()
                 }
                 st.session_state.current_chat = new_chat_name
+            if st.button("✏️", help="Rinomina chat"):
+                st.session_state.renaming = True    
         
         with col3:
             if st.button("✏️", help="Rinomina chat"):
