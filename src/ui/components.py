@@ -93,7 +93,7 @@ class FileExplorer:
             <style>
                 /* File Explorer specifico */
             [data-testid="stSidebar"] .stButton > button {
-                width: 100%;
+                width: auto;
                 text-align: left !important;
                 padding: 2px 8px !important;
                 background: none !important;
