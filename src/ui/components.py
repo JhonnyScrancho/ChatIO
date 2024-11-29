@@ -24,13 +24,6 @@ class ForumAnalysisInterface:
             return
         
         st.markdown("### 📊 Forum Data Analysis")
-
-        # Debug info
-        st.write("Forum analysis state:", {
-            "is_forum_json": st.session_state.get('is_forum_json', False),
-            "forum_keyword": st.session_state.get('forum_keyword', None),
-            "analysis_mode": st.session_state.get('forum_analysis_mode', False)
-        })
         
         # Toggle per attivare/disattivare l'analisi
         col1, col2 = st.columns([3, 1])
@@ -293,14 +286,6 @@ class FileExplorer:
             }
         </style>
         """, unsafe_allow_html=True)
-
-        # Debug info section
-        st.write("### Debug Info")
-        st.write("Current session state:", {
-            "is_forum_json": st.session_state.get('is_forum_json', False),
-            "forum_analysis_mode": st.session_state.get('forum_analysis_mode', False),
-            "forum_keyword": st.session_state.get('forum_keyword', None)
-        })
 
         uploaded_files = st.file_uploader(
             label=" ",
