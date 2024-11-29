@@ -2,6 +2,7 @@
 UI components for Allegro IO Code Assistant.
 """
 
+from collections import defaultdict
 import streamlit as st
 from datetime import datetime
 import json
@@ -22,31 +23,18 @@ class ForumAnalysisInterface:
         """Renderizza l'interfaccia di analisi forum."""
         if not st.session_state.get('is_forum_json', False):
             return
-        
-        st.markdown("### 📊 Forum Data Analysis")
-        
-        # Toggle per attivare/disattivare l'analisi
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.markdown(f"**Forum Data Analysis** - Keyword: `{st.session_state.get('forum_keyword', '')}`")
-        with col2:
-            forum_analysis = st.toggle('Activate Analysis', 
-                                    key='forum_analysis_mode',
-                                    help='Enable specialized forum data analysis')
-        
-        if forum_analysis:
-            self._render_active_analysis()
-    
-    def _render_active_analysis(self):
-        """Renderizza l'interfaccia di analisi quando attiva."""
+            
         analyzer = st.session_state.data_analyzer
         
-        # Tab per diverse visualizzazioni
+        # Mostra info sul dataset
+        st.write(f"**Dataset**: {st.session_state.get('forum_keyword', '')} forum data")
+        
+        # Tabs per le diverse analisi
         tab1, tab2, tab3, tab4 = st.tabs([
-            "📈 Timeline Analysis", 
-            "👥 User Interactions",
-            "🔑 Keywords Analysis",
-            "😊 Sentiment Analysis"
+            "📈 Timeline", 
+            "👥 Users",
+            "🔑 Keywords",
+            "😊 Sentiment"
         ])
         
         with tab1:
@@ -54,71 +42,104 @@ class ForumAnalysisInterface:
         
         with tab2:
             self._render_user_analysis()
-        
+            
         with tab3:
             self._render_keyword_analysis()
-        
+            
         with tab4:
             self._render_sentiment_analysis()
         
-        # Query interface
-        st.markdown("### 🔍 Query Data")
+        # Query section con più spazio per i risultati
+        st.markdown("---")
+        st.markdown("### 🔍 Data Query")
         query = st.text_input("Ask a question about the forum data...")
         if query:
-            results = analyzer.query_forum_data(query)
+            with st.spinner("Analyzing..."):
+                results = analyzer.query_forum_data(query)
             self._display_query_results(results)
     
     def _render_timeline_analysis(self):
-        """Renderizza l'analisi temporale."""
+        """Renderizza l'analisi temporale con più dettagli."""
         analyzer = st.session_state.data_analyzer
         if analyzer.forum_data:
             timeline = analyzer.forum_data['mental_map']['chronological_order']
             
-            st.markdown("#### 📅 Discussion Timeline")
+            # Metriche principali
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Posts", len(timeline))
+            with col2:
+                st.metric("Time Span", self._calculate_timespan(timeline))
+            with col3:
+                st.metric("Active Days", self._calculate_active_days(timeline))
             
-            # Create timeline visualization
-            for post in timeline[:5]:  # Show first 5 posts
+            # Timeline interattiva
+            st.markdown("#### 📅 Post Timeline")
+            for post in timeline[:10]:  # Mostra i primi 10 post
                 with st.expander(f"🕒 {post['time']} - {post['author']}", expanded=False):
-                    st.write(post['content_preview'] + "...")
-                    st.caption(f"Sentiment: {post['sentiment']}")
+                    st.write(post['content_preview'])
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.caption(f"Sentiment: {post['sentiment']:.2f}")
+                    with col2:
+                        st.caption(f"Author: {post['author']}")
     
     def _render_user_analysis(self):
-        """Renderizza l'analisi degli utenti."""
+        """Renderizza l'analisi degli utenti con grafici."""
         analyzer = st.session_state.data_analyzer
         if analyzer.forum_data:
-            users = analyzer.forum_data['mental_map']['key_users']
+            interactions = analyzer.forum_data['mental_map']['user_interactions']
             
-            st.markdown("#### 👥 Key Participants")
+            # Metriche utenti
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total Users", len(analyzer.forum_data['mental_map']['key_users']))
+            with col2:
+                st.metric("Active Users", len([u for u in interactions.values() if len(u) > 0]))
             
-            # Create user activity visualization
-            for user in users[:5]:  # Show top 5 users
-                st.markdown(f"- {user}")
+            # Top users chart
+            st.markdown("#### 👥 Most Active Users")
+            top_users = self._find_most_active_users(interactions)
+            
+            # Usa un grafico a barre di Streamlit
+            user_names = [user[0] for user in top_users[:10]]
+            user_posts = [user[1] for user in top_users[:10]]
+            st.bar_chart(dict(zip(user_names, user_posts)))
     
     def _render_keyword_analysis(self):
-        """Renderizza l'analisi delle keywords."""
+        """Renderizza l'analisi delle keywords con word cloud."""
         analyzer = st.session_state.data_analyzer
         if analyzer.forum_data:
             keywords = analyzer.forum_data['mental_map']['keyword_clusters']
             
-            st.markdown("#### 🔑 Top Keywords")
+            # Metriche keywords
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Unique Keywords", len(keywords))
+            with col2:
+                st.metric("Total Mentions", sum(keywords.values()))
             
-            # Create keyword cloud visualization
-            for keyword, count in sorted(keywords.items(), key=lambda x: x[1], reverse=True)[:10]:
-                st.markdown(f"- {keyword}: {count} occurrences")
+            # Keywords chart
+            st.markdown("#### 🔑 Top Keywords")
+            top_keywords = dict(sorted(
+                keywords.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:15])
+            
+            st.bar_chart(top_keywords)
     
     def _render_sentiment_analysis(self):
-        """Renderizza l'analisi del sentiment."""
+        """Renderizza l'analisi del sentiment con trend."""
         analyzer = st.session_state.data_analyzer
         if analyzer.forum_data:
             sentiment_data = analyzer.forum_data['mental_map']['sentiment_timeline']
             
-            st.markdown("#### 😊 Sentiment Overview")
-            
-            # Calculate average sentiment
+            # Calcolo metriche sentiment
             sentiments = [s['sentiment'] for s in sentiment_data]
             avg_sentiment = sum(sentiments) / len(sentiments) if sentiments else 0
             
-            # Display sentiment metrics
+            # Metriche principali
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Average Sentiment", f"{avg_sentiment:.2f}")
@@ -126,46 +147,81 @@ class ForumAnalysisInterface:
                 st.metric("Highest", f"{max(sentiments):.2f}")
             with col3:
                 st.metric("Lowest", f"{min(sentiments):.2f}")
+            
+            # Trend chart
+            st.markdown("#### 😊 Sentiment Trend")
+            sentiment_df = pd.DataFrame({
+                'time': [s['time'] for s in sentiment_data],
+                'sentiment': sentiments
+            })
+            st.line_chart(sentiment_df.set_index('time'))
     
-    def _display_query_results(self, results: Dict[str, Any]):
-        """
-        Visualizza i risultati di una query.
-        
-        Args:
-            results: Risultati della query
-        """
+    def _display_query_results(self, results):
+        """Visualizza i risultati della query in modo più organizzato."""
         if "error" in results:
             st.error(results["error"])
             return
-            
-        # Display timeline results
+        
+        st.markdown("#### 📊 Query Results")
+        
+        # Timeline results
         if "timeline" in results:
-            st.markdown("#### 📅 Timeline Analysis")
-            timeline = results["timeline"]
-            st.write(f"Discussion duration: {timeline['total_duration']}")
+            with st.expander("📅 Timeline Analysis", expanded=True):
+                st.write(f"Discussion duration: {results['timeline']['total_duration']}")
+                st.write("First post:", results['timeline']['first_post'])
+                st.write("Last post:", results['timeline']['last_post'])
         
-        # Display sentiment results
+        # Sentiment results
         if "sentiment" in results:
-            st.markdown("#### 😊 Sentiment Analysis")
-            sentiment = results["sentiment"]
-            st.write(f"Average sentiment: {sentiment['average']:.2f}")
-            st.write(f"Trend: {sentiment['trend']}")
+            with st.expander("😊 Sentiment Analysis", expanded=True):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Average Sentiment", f"{results['sentiment']['average']:.2f}")
+                with col2:
+                    st.metric("Trend", results['sentiment']['trend'])
         
-        # Display user results
+        # User results
         if "users" in results:
-            st.markdown("#### 👥 User Analysis")
-            users = results["users"]
-            st.write("Most active users:")
-            for user, count in users['most_active']:
-                st.write(f"- {user}: {count} interactions")
+            with st.expander("👥 User Analysis", expanded=True):
+                st.write("Most active users:")
+                for user, count in results['users']['most_active']:
+                    st.write(f"- {user}: {count} interactions")
         
-        # Display keyword results
+        # Keyword results
         if "keywords" in results:
-            st.markdown("#### 🔑 Keyword Analysis")
-            keywords = results["keywords"]
-            st.write("Top keywords:")
-            for keyword, count in keywords['top_keywords'].items():
-                st.write(f"- {keyword}: {count} occurrences")
+            with st.expander("🔑 Keyword Analysis", expanded=True):
+                st.write("Top keywords:")
+                st.bar_chart(results['keywords']['top_keywords'])
+    
+    @staticmethod
+    def _calculate_timespan(timeline):
+        """Calcola il periodo temporale totale della discussione."""
+        if not timeline:
+            return "N/A"
+        start = datetime.fromisoformat(timeline[0]['time'].replace('Z', '+00:00'))
+        end = datetime.fromisoformat(timeline[-1]['time'].replace('Z', '+00:00'))
+        days = (end - start).days
+        return f"{days} days"
+    
+    @staticmethod
+    def _calculate_active_days(timeline):
+        """Calcola il numero di giorni con attività."""
+        if not timeline:
+            return 0
+        unique_days = set(
+            datetime.fromisoformat(post['time'].replace('Z', '+00:00')).date()
+            for post in timeline
+        )
+        return len(unique_days)
+    
+    @staticmethod
+    def _find_most_active_users(interactions):
+        """Trova gli utenti più attivi basandosi sulle interazioni."""
+        user_activity = defaultdict(int)
+        for user, interactions_list in interactions.items():
+            user_activity[user] = len(interactions_list)
+        
+        return sorted(user_activity.items(), key=lambda x: x[1], reverse=True)
 
 class FileExplorer:
     """Component per l'esplorazione e l'upload dei file."""
