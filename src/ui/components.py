@@ -41,9 +41,6 @@ class ForumAnalysisInterface:
         """Renderizza l'interfaccia di analisi quando attiva."""
         analyzer = st.session_state.data_analyzer
         
-        # Mostra stato dell'analisi
-        st.info(analyzer.get_forum_analysis_status())
-        
         # Tab per diverse visualizzazioni
         tab1, tab2, tab3, tab4 = st.tabs([
             "📈 Timeline Analysis", 
@@ -339,10 +336,8 @@ class FileExplorer:
                             try:
                                 data = json.loads(content)
                                 if isinstance(data, list) and len(data) > 0:
-                                    st.write("JSON structure:", list(data[0].keys()))
                                     # Check if it's a forum JSON
                                     if all(field in data[0] for field in ['url', 'title', 'posts']):
-                                        st.write("Valid forum data structure detected!")
                                         st.session_state.is_forum_json = True
                                         st.session_state.forum_keyword = file.name.replace('_scraped_data.json', '')
                                         st.session_state.forum_analysis_mode = True
