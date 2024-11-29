@@ -245,13 +245,6 @@ def main():
     init_app_config()
     SessionManager.init_session()
     
-    # Configurazione pagina
-    st.set_page_config(
-        page_title="Allegro IO Code Assistant",
-        page_icon="🤖",
-        layout="wide"
-    )
-    
     # Sidebar
     with st.sidebar:
         st.title("🤖 Allegro IO")
