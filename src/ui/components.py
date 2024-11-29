@@ -296,13 +296,11 @@ class FileExplorer:
         )
 
         if uploaded_files:
-            st.write("Files being processed:", [f.name for f in uploaded_files])
             new_files = []
             for file in uploaded_files:
                 try:
                     # Gestione file ZIP
                     if file.name.endswith('.zip'):
-                        st.write(f"Processing ZIP file: {file.name}")
                         import zipfile
                         import io
                         
@@ -320,9 +318,7 @@ class FileExplorer:
                                         'name': zip_file
                                     }
                                     new_files.append(zip_file)
-                                    st.write(f"Extracted from ZIP: {zip_file}")
                                 except Exception as e:
-                                    st.write(f"Error extracting {zip_file}: {str(e)}")
                                     continue
                     else:
                         if file.name in st.session_state.uploaded_files:
@@ -376,7 +372,6 @@ class FileExplorer:
 
         # Render forum analysis interface if applicable
         if st.session_state.get('is_forum_json', False):
-            st.write("Initializing forum analysis interface...")
             forum_analysis = ForumAnalysisInterface()
             forum_analysis.render()
 
