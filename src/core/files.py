@@ -36,61 +36,90 @@ class FileManager:
             st.session_state.is_forum_json = False
         if 'forum_keyword' not in st.session_state:
             st.session_state.forum_keyword = None
+            
+        # Debug container
+        if 'debug_container' not in st.session_state:
+            st.session_state.debug_container = st.empty()
+    
+    def _log_debug(self, message: str):
+        """Log debug message to Streamlit."""
+        with st.session_state.debug_container.container():
+            st.info(f"🔍 Debug: {message}")
     
     def _is_forum_json(self, filename: str, content: str) -> Tuple[bool, Optional[str]]:
-        """
-        Verifica se il file JSON è un file di dati di forum.
+        """Verifica se il file JSON è un file di dati di forum."""
+        self._log_debug(f"Checking if {filename} is a forum JSON file")
         
-        Args:
-            filename: Nome del file
-            content: Contenuto del file
-            
-        Returns:
-            Tuple[bool, Optional[str]]: (è_forum_json, keyword)
-        """
         if not filename.endswith('_scraped_data.json'):
+            self._log_debug(f"File {filename} does not match the required name pattern")
             return False, None
             
         try:
             data = json.loads(content)
+            self._log_debug(f"Successfully parsed JSON from {filename}")
+            
             if isinstance(data, list) and len(data) > 0:
                 first_item = data[0]
-                # Verifica i campi necessari
-                required_fields = ['url', 'title', 'posts']
+                required_fields = ['url', 'title', 'posts', 'metadata']
+                
+                # Log structure
+                self._log_debug(f"First item fields: {list(first_item.keys())}")
+                
                 if all(field in first_item for field in required_fields):
                     keyword = filename.replace('_scraped_data.json', '')
-                    st.session_state.is_forum_json = True
+                    self._log_debug(f"Found valid forum JSON with keyword: {keyword}")
                     return True, keyword
-        except json.JSONDecodeError:
-            pass
-        
+                else:
+                    self._log_debug("Missing required fields in JSON structure")
+            else:
+                self._log_debug("JSON is not a list or is empty")
+        except json.JSONDecodeError as e:
+            self._log_debug(f"Failed to parse JSON: {str(e)}")
+            
         return False, None
     
     def process_file(self, uploaded_file) -> Optional[Dict]:
         """Processa un file caricato."""
+        self._log_debug(f"Processing file: {uploaded_file.name}")
+        
         result = self._process_file_cached(uploaded_file)
         
         if result:
             if uploaded_file.name.endswith('.json'):
+                self._log_debug("Detected JSON file, checking for forum data")
+                
+                # Mostra struttura JSON
+                try:
+                    data = json.loads(result['content'])
+                    if isinstance(data, list) and len(data) > 0:
+                        self._log_debug(f"JSON structure: {list(data[0].keys())}")
+                except:
+                    self._log_debug("Failed to analyze JSON structure")
+                
                 # Verifica se è un JSON di forum
-                st.write(f"Processing JSON file: {uploaded_file.name}")
                 is_forum, keyword = self._is_forum_json(uploaded_file.name, result['content'])
                 if is_forum:
-                    st.session_state.forum_analysis_mode = False  # Default disattivato
+                    self._log_debug(f"✅ Valid forum data detected with keyword: {keyword}")
+                    st.session_state.forum_analysis_mode = True
                     st.session_state.is_forum_json = True
                     st.session_state.forum_keyword = keyword
                     result['is_forum_json'] = True
                     result['forum_keyword'] = keyword
-                else:
-                    # Analisi JSON standard
+                    
+                    # Inizializza analisi
                     if 'data_analyzer' not in st.session_state:
+                        self._log_debug("Initializing DataAnalysisManager")
                         st.session_state.data_analyzer = DataAnalysisManager()
-                    analysis = st.session_state.data_analyzer.initialize_analysis(
+                    
+                    analysis = st.session_state.data_analyzer.initialize_forum_analysis(
                         result['content'], 
-                        uploaded_file.name
+                        keyword
                     )
                     if analysis:
+                        self._log_debug("Forum analysis initialized successfully")
                         result['analysis'] = analysis
+                else:
+                    self._log_debug("❌ Not a valid forum JSON file")
         
         return result
     
