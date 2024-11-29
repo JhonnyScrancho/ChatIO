@@ -293,20 +293,30 @@ class FileExplorer:
         </style>
         """, unsafe_allow_html=True)
 
+        # Debug info section
+        st.write("### Debug Info")
+        st.write("Current session state:", {
+            "is_forum_json": st.session_state.get('is_forum_json', False),
+            "forum_analysis_mode": st.session_state.get('forum_analysis_mode', False),
+            "forum_keyword": st.session_state.get('forum_keyword', None)
+        })
+
         uploaded_files = st.file_uploader(
-        label=" ",
-        type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
-        accept_multiple_files=True,
-        key="file_uploader",
-        label_visibility="collapsed"
-    )
+            label=" ",
+            type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
+            accept_multiple_files=True,
+            key="file_uploader",
+            label_visibility="collapsed"
+        )
 
         if uploaded_files:
+            st.write("Files being processed:", [f.name for f in uploaded_files])
             new_files = []
             for file in uploaded_files:
                 try:
                     # Gestione file ZIP
                     if file.name.endswith('.zip'):
+                        st.write(f"Processing ZIP file: {file.name}")
                         import zipfile
                         import io
                         
@@ -324,7 +334,9 @@ class FileExplorer:
                                         'name': zip_file
                                     }
                                     new_files.append(zip_file)
-                                except Exception:
+                                    st.write(f"Extracted from ZIP: {zip_file}")
+                                except Exception as e:
+                                    st.write(f"Error extracting {zip_file}: {str(e)}")
                                     continue
                     else:
                         if file.name in st.session_state.uploaded_files:
@@ -337,6 +349,24 @@ class FileExplorer:
                             'name': file.name
                         }
                         new_files.append(file.name)
+                        st.write(f"Processed file: {file.name}")
+
+                        # Special handling for JSON files
+                        if file.name.endswith('.json'):
+                            st.write(f"Analyzing JSON file: {file.name}")
+                            try:
+                                data = json.loads(content)
+                                if isinstance(data, list) and len(data) > 0:
+                                    st.write("JSON structure:", list(data[0].keys()))
+                                    # Check if it's a forum JSON
+                                    if all(field in data[0] for field in ['url', 'title', 'posts']):
+                                        st.write("Valid forum data structure detected!")
+                                        st.session_state.is_forum_json = True
+                                        st.session_state.forum_keyword = file.name.replace('_scraped_data.json', '')
+                                        st.session_state.forum_analysis_mode = True
+                            except json.JSONDecodeError as e:
+                                st.write(f"Error parsing JSON: {str(e)}")
+
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {str(e)}")
 
@@ -358,7 +388,9 @@ class FileExplorer:
             tree = self._create_file_tree(st.session_state.uploaded_files)
             self._render_tree_node("", tree, "")
 
+        # Render forum analysis interface if applicable
         if st.session_state.get('is_forum_json', False):
+            st.write("Initializing forum analysis interface...")
             forum_analysis = ForumAnalysisInterface()
             forum_analysis.render()
 
