@@ -32,6 +32,93 @@ class SessionManager:
             st.session_state.cost = 0.0
             st.session_state.last_error = None
             st.session_state.debug_mode = False
+            
+            # Forum analysis specific state
+            st.session_state.forum_analysis_mode = False
+            st.session_state.is_forum_json = False
+            st.session_state.forum_keyword = None
+            st.session_state.forum_analysis_state = {
+                'active': False,
+                'current_analysis': None,
+                'analysis_history': [],
+                'last_query': None
+            }
+    
+    @staticmethod
+    def start_forum_analysis(keyword: str):
+        """
+        Attiva l'analisi forum.
+        
+        Args:
+            keyword: Parola chiave estratta dal nome file
+        """
+        if 'forum_analysis_state' not in st.session_state:
+            st.session_state.forum_analysis_state = {}
+            
+        st.session_state.forum_analysis_state = {
+            'active': True,
+            'start_time': datetime.now().isoformat(),
+            'keyword': keyword,
+            'current_analysis': None,
+            'analysis_history': [],
+            'last_query': None
+        }
+        
+        st.session_state.forum_analysis_mode = True
+    
+    @staticmethod
+    def stop_forum_analysis():
+        """Disattiva l'analisi forum."""
+        if 'forum_analysis_state' in st.session_state:
+            # Salva l'analisi corrente nella storia
+            if st.session_state.forum_analysis_state.get('current_analysis'):
+                st.session_state.forum_analysis_state['analysis_history'].append({
+                    'analysis': st.session_state.forum_analysis_state['current_analysis'],
+                    'end_time': datetime.now().isoformat()
+                })
+            
+            st.session_state.forum_analysis_state['active'] = False
+            st.session_state.forum_analysis_state['current_analysis'] = None
+        
+        st.session_state.forum_analysis_mode = False
+    
+    @staticmethod
+    def update_forum_analysis(analysis_data: Dict[str, Any]):
+        """
+        Aggiorna i dati dell'analisi forum corrente.
+        
+        Args:
+            analysis_data: Nuovi dati dell'analisi
+        """
+        if 'forum_analysis_state' in st.session_state:
+            st.session_state.forum_analysis_state['current_analysis'] = analysis_data
+            st.session_state.forum_analysis_state['last_update'] = datetime.now().isoformat()
+    
+    @staticmethod
+    def get_forum_analysis_state() -> Dict[str, Any]:
+        """
+        Recupera lo stato corrente dell'analisi forum.
+        
+        Returns:
+            Dict[str, Any]: Stato corrente dell'analisi
+        """
+        return st.session_state.get('forum_analysis_state', {})
+    
+    @staticmethod
+    def add_forum_query(query: str, results: Dict[str, Any]):
+        """
+        Registra una query e i suoi risultati.
+        
+        Args:
+            query: Query eseguita
+            results: Risultati della query
+        """
+        if 'forum_analysis_state' in st.session_state:
+            st.session_state.forum_analysis_state['last_query'] = {
+                'query': query,
+                'results': results,
+                'timestamp': datetime.now().isoformat()
+            }
     
     @staticmethod
     def get_current_model() -> str:
@@ -152,16 +239,6 @@ class SessionManager:
         return st.session_state.files
     
     @staticmethod
-    def set_current_file(file_name: str):
-        """Imposta il file correntemente selezionato."""
-        st.session_state.current_file = file_name
-    
-    @staticmethod
-    def get_current_file() -> Optional[str]:
-        """Restituisce il nome del file correntemente selezionato."""
-        return st.session_state.current_file
-    
-    @staticmethod
     def update_token_count(tokens: int):
         """Aggiorna il conteggio dei token utilizzati."""
         st.session_state.token_count += tokens
@@ -174,12 +251,24 @@ class SessionManager:
     @staticmethod
     def get_stats() -> Dict[str, Any]:
         """Restituisce le statistiche correnti della sessione."""
-        return {
+        stats = {
             'token_count': st.session_state.token_count,
             'cost': st.session_state.cost,
             'files_count': len(st.session_state.files),
             'chats_count': len(st.session_state.chats)
         }
+        
+        # Aggiungi statistiche dell'analisi forum se attiva
+        if st.session_state.get('forum_analysis_mode', False):
+            forum_stats = SessionManager.get_forum_analysis_state()
+            if forum_stats:
+                stats['forum_analysis'] = {
+                    'keyword': forum_stats.get('keyword'),
+                    'active_since': forum_stats.get('start_time'),
+                    'queries_count': len(forum_stats.get('analysis_history', []))
+                }
+        
+        return stats
     
     @staticmethod
     def set_error(error: str):
