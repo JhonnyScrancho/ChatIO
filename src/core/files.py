@@ -52,15 +52,14 @@ class FileManager:
             return False, None
             
         try:
-            # Verifica la struttura del JSON
             data = json.loads(content)
             if isinstance(data, list) and len(data) > 0:
                 first_item = data[0]
-                # Verifica la presenza dei campi necessari
-                required_fields = ['url', 'title', 'posts', 'metadata']
+                # Verifica i campi necessari
+                required_fields = ['url', 'title', 'posts']
                 if all(field in first_item for field in required_fields):
-                    # Estrai la keyword dal nome del file
                     keyword = filename.replace('_scraped_data.json', '')
+                    st.session_state.is_forum_json = True
                     return True, keyword
         except json.JSONDecodeError:
             pass
@@ -74,6 +73,7 @@ class FileManager:
         if result:
             if uploaded_file.name.endswith('.json'):
                 # Verifica se è un JSON di forum
+                st.write(f"Processing JSON file: {uploaded_file.name}")
                 is_forum, keyword = self._is_forum_json(uploaded_file.name, result['content'])
                 if is_forum:
                     st.session_state.forum_analysis_mode = False  # Default disattivato

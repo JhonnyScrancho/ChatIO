@@ -23,6 +23,13 @@ class ForumAnalysisInterface:
             return
         
         st.markdown("### 📊 Forum Data Analysis")
+
+        # Debug info
+        st.write("Forum analysis state:", {
+            "is_forum_json": st.session_state.get('is_forum_json', False),
+            "forum_keyword": st.session_state.get('forum_keyword', None),
+            "analysis_mode": st.session_state.get('forum_analysis_mode', False)
+        })
         
         # Toggle per attivare/disattivare l'analisi
         col1, col2 = st.columns([3, 1])
