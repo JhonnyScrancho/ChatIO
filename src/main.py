@@ -24,6 +24,7 @@ from src.core.session import SessionManager
 from src.core.llm import LLMManager
 from src.core.files import FileManager
 from src.ui.components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay, ForumAnalysisInterface
+from src.utils.config import init_app_config
 
 def load_custom_css():
     """Carica stili CSS personalizzati."""
@@ -240,21 +241,51 @@ def render_main_layout():
         ChatInterface().process_user_message(prompt)
 
 def main():
-    """Funzione principale dell'applicazione."""
-    load_dotenv()
-    try:
-        # Controlli iniziali
-        check_environment()
-        check_directories()
-        load_custom_css()
+    # Inizializza configurazione e sessione
+    init_app_config()
+    SessionManager.init_session()
+    
+    # Configurazione pagina
+    st.set_page_config(
+        page_title="Allegro IO Code Assistant",
+        page_icon="🤖",
+        layout="wide"
+    )
+    
+    # Sidebar
+    with st.sidebar:
+        st.title("🤖 Allegro IO")
         
-        # Renderizza il layout principale
-        render_main_layout()
+        # File Explorer nella sidebar
+        file_explorer = FileExplorer()
+        file_explorer.render()
         
-    except Exception as e:
-        st.error(f"❌ Si è verificato un errore: {str(e)}")
-        if os.getenv('DEBUG') == 'True':
-            st.exception(e)
+        # Model Selector nella sidebar
+        model_selector = ModelSelector()
+        model_selector.render()
+        
+        # Stats Display nella sidebar
+        stats_display = StatsDisplay()
+        stats_display.render()
+    
+    # Main content area
+    if st.session_state.get('is_forum_json', False):
+        # Se c'è un file forum JSON, mostra l'interfaccia forum
+        forum_interface = ForumAnalysisInterface()
+        forum_interface.render()
+    else:
+        # Altrimenti mostra l'interfaccia normale
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            # Chat Interface
+            chat_interface = ChatInterface()
+            chat_interface.render()
+        
+        with col2:
+            # Code Viewer
+            code_viewer = CodeViewer()
+            code_viewer.render()
 
 if __name__ == "__main__":
     main()
