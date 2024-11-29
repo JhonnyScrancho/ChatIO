@@ -23,7 +23,7 @@ sys.path.append(str(root_path))
 from src.core.session import SessionManager
 from src.core.llm import LLMManager
 from src.core.files import FileManager
-from src.ui.components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay
+from src.ui.components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay, ForumAnalysisInterface
 
 def load_custom_css():
     """Carica stili CSS personalizzati."""
