@@ -12,6 +12,8 @@ from pygments import highlight
 from pygments.lexers import get_lexer_for_filename, TextLexer
 from pygments.formatters import HtmlFormatter
 import mimetypes
+import json
+from datetime import datetime
 
 class FileManager:
     """Gestisce l'upload, il processing e il caching dei file."""
@@ -28,23 +30,67 @@ class FileManager:
     def __init__(self):
         """Inizializza il FileManager."""
         self.current_path = None
+        if 'forum_analysis_mode' not in st.session_state:
+            st.session_state.forum_analysis_mode = False
+        if 'is_forum_json' not in st.session_state:
+            st.session_state.is_forum_json = False
+        if 'forum_keyword' not in st.session_state:
+            st.session_state.forum_keyword = None
+    
+    def _is_forum_json(self, filename: str, content: str) -> Tuple[bool, Optional[str]]:
+        """
+        Verifica se il file JSON è un file di dati di forum.
+        
+        Args:
+            filename: Nome del file
+            content: Contenuto del file
+            
+        Returns:
+            Tuple[bool, Optional[str]]: (è_forum_json, keyword)
+        """
+        if not filename.endswith('_scraped_data.json'):
+            return False, None
+            
+        try:
+            # Verifica la struttura del JSON
+            data = json.loads(content)
+            if isinstance(data, list) and len(data) > 0:
+                first_item = data[0]
+                # Verifica la presenza dei campi necessari
+                required_fields = ['url', 'title', 'posts', 'metadata']
+                if all(field in first_item for field in required_fields):
+                    # Estrai la keyword dal nome del file
+                    keyword = filename.replace('_scraped_data.json', '')
+                    return True, keyword
+        except json.JSONDecodeError:
+            pass
+        
+        return False, None
     
     def process_file(self, uploaded_file) -> Optional[Dict]:
         """Processa un file caricato."""
         result = self._process_file_cached(uploaded_file)
         
         if result:
-            # Verifica se il file è un formato dati supportato
-            if uploaded_file.name.endswith(('.json', '.csv', '.pdf')):
-                st.session_state.analysis_mode = True
-                if 'data_analyzer' not in st.session_state:
-                    st.session_state.data_analyzer = DataAnalysisManager()
-                analysis = st.session_state.data_analyzer.initialize_analysis(
-                    result['content'], 
-                    uploaded_file.name
-                )
-                if analysis:
-                    result['analysis'] = analysis
+            if uploaded_file.name.endswith('.json'):
+                # Verifica se è un JSON di forum
+                is_forum, keyword = self._is_forum_json(uploaded_file.name, result['content'])
+                if is_forum:
+                    st.session_state.forum_analysis_mode = False  # Default disattivato
+                    st.session_state.is_forum_json = True
+                    st.session_state.forum_keyword = keyword
+                    result['is_forum_json'] = True
+                    result['forum_keyword'] = keyword
+                else:
+                    # Analisi JSON standard
+                    if 'data_analyzer' not in st.session_state:
+                        st.session_state.data_analyzer = DataAnalysisManager()
+                    analysis = st.session_state.data_analyzer.initialize_analysis(
+                        result['content'], 
+                        uploaded_file.name
+                    )
+                    if analysis:
+                        result['analysis'] = analysis
         
         return result
     
@@ -76,7 +122,8 @@ class FileManager:
                 'language': language,
                 'size': len(content),
                 'name': uploaded_file.name,
-                'highlighted': highlighted
+                'highlighted': highlighted,
+                'upload_time': datetime.now().isoformat()
             }
             
         except Exception as e:
@@ -117,7 +164,7 @@ class FileManager:
                     continue
                     
                 try:
-                    content = zip_ref.read(file_info.filename).decode('utf-8')
+                    content = zip_ref.read(file_info.filename).decode('utf-8', errors='ignore')
                     try:
                         lexer = get_lexer_for_filename(file_info.filename)
                         language = lexer.name.lower()

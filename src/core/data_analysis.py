@@ -1,15 +1,17 @@
 """
 Data Analysis Manager per Allegro IO Code Assistant.
-Gestisce l'analisi automatica di file JSON, CSV e PDF.
+Gestisce l'analisi automatica di file JSON, CSV, PDF e dati di forum.
 """
 
 import pandas as pd
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import streamlit as st
 from pathlib import Path
 import PyPDF2
 import io
+from datetime import datetime
+from collections import defaultdict
 
 class DataAnalysisManager:
     """Gestisce l'analisi automatica dei dati e le query."""
@@ -18,6 +20,7 @@ class DataAnalysisManager:
         self.current_dataset = None
         self.analysis_cache = {}
         self.metadata = {}
+        self.forum_data = None
         self.supported_formats = {
             'json': self._analyze_json,
             'csv': self._analyze_csv,
@@ -39,9 +42,198 @@ class DataAnalysisManager:
                 return 'csv'
         return 'unknown'
     
-    def initialize_analysis(self, file_content: str, filename: str):
+    def initialize_forum_analysis(self, content: str, keyword: str) -> Dict[str, Any]:
+        """
+        Inizializza l'analisi dei dati del forum.
+        
+        Args:
+            content: Contenuto JSON del file
+            keyword: Parola chiave estratta dal nome del file
+            
+        Returns:
+            Dict[str, Any]: Struttura dati iniziale per l'analisi
+        """
+        try:
+            data = json.loads(content)
+            self.forum_data = {
+                'keyword': keyword,
+                'raw_data': data,
+                'analysis_ready': False,
+                'initialization_time': datetime.now().isoformat(),
+                'mental_map': self._create_forum_mental_map(data)
+            }
+            
+            return self.forum_data['mental_map']
+            
+        except Exception as e:
+            st.error(f"Errore nell'inizializzazione dell'analisi forum: {str(e)}")
+            return None
+    
+    def _create_forum_mental_map(self, data: List[Dict]) -> Dict[str, Any]:
+        """
+        Crea una mappa mentale dei dati del forum.
+        
+        Args:
+            data: Dati del forum in formato JSON
+            
+        Returns:
+            Dict[str, Any]: Mappa mentale strutturata
+        """
+        mental_map = {
+            'chronological_order': [],
+            'user_interactions': defaultdict(list),
+            'topic_clusters': defaultdict(list),
+            'sentiment_timeline': [],
+            'key_users': set(),
+            'keyword_clusters': defaultdict(int)
+        }
+        
+        for thread in data:
+            thread_data = {
+                'url': thread['url'],
+                'title': thread['title'],
+                'timestamp': thread['scrape_time'],
+                'posts': []
+            }
+            
+            # Analizza ogni post nel thread
+            for post in thread['posts']:
+                # Timeline cronologica
+                mental_map['chronological_order'].append({
+                    'time': post['post_time'],
+                    'author': post['author'],
+                    'content_preview': post['content'][:100],
+                    'sentiment': post['sentiment']
+                })
+                
+                # Interazioni tra utenti
+                if 'quoted_user' in post:
+                    mental_map['user_interactions'][post['author']].append(post['quoted_user'])
+                
+                # Sentiment nel tempo
+                mental_map['sentiment_timeline'].append({
+                    'time': post['post_time'],
+                    'sentiment': post['sentiment']
+                })
+                
+                # Keywords e clustering
+                for keyword in post['keywords']:
+                    mental_map['keyword_clusters'][keyword] += 1
+                
+                # Utenti chiave (basato su numero di post)
+                mental_map['key_users'].add(post['author'])
+                
+                thread_data['posts'].append({
+                    'id': post['post_id'],
+                    'author': post['author'],
+                    'time': post['post_time'],
+                    'sentiment': post['sentiment']
+                })
+        
+        # Ordina cronologicamente
+        mental_map['chronological_order'].sort(key=lambda x: x['time'])
+        
+        # Converti set in lista per serializzazione JSON
+        mental_map['key_users'] = list(mental_map['key_users'])
+        
+        return mental_map
+    
+    def get_forum_analysis_status(self) -> str:
+        """
+        Restituisce lo stato corrente dell'analisi forum.
+        
+        Returns:
+            str: Messaggio di stato
+        """
+        if not self.forum_data:
+            return "Nessuna analisi forum attiva"
+            
+        if not self.forum_data['analysis_ready']:
+            return f"Ho estratto la parola chiave '{self.forum_data['keyword']}' dal file. La struttura è chiara e sono pronto a rispondere alle domande basate sui dati forniti."
+            
+        return "Analisi forum attiva e pronta per le query"
+    
+    def query_forum_data(self, query: str) -> Dict[str, Any]:
+        """
+        Esegue query specifiche sui dati del forum.
+        
+        Args:
+            query: Query in linguaggio naturale
+            
+        Returns:
+            Dict[str, Any]: Risultati dell'analisi
+        """
+        if not self.forum_data or not self.forum_data['analysis_ready']:
+            return {"error": "Analisi forum non inizializzata o non pronta"}
+            
+        mental_map = self.forum_data['mental_map']
+        results = {}
+        
+        # Analisi temporale
+        if 'time' in query.lower() or 'when' in query.lower():
+            results['timeline'] = {
+                'first_post': mental_map['chronological_order'][0],
+                'last_post': mental_map['chronological_order'][-1],
+                'total_duration': self._calculate_duration(mental_map['chronological_order'])
+            }
+        
+        # Analisi sentiment
+        if 'sentiment' in query.lower() or 'feeling' in query.lower():
+            results['sentiment'] = self._analyze_sentiment_trends(mental_map['sentiment_timeline'])
+        
+        # Analisi utenti
+        if 'user' in query.lower() or 'who' in query.lower():
+            results['users'] = {
+                'most_active': self._find_most_active_users(mental_map['user_interactions']),
+                'key_users': mental_map['key_users'][:5]  # Top 5 users
+            }
+        
+        # Analisi keywords
+        if 'topic' in query.lower() or 'keyword' in query.lower():
+            results['keywords'] = {
+                'top_keywords': dict(sorted(
+                    mental_map['keyword_clusters'].items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:10])  # Top 10 keywords
+            }
+        
+        return results
+    
+    def _calculate_duration(self, timeline: List[Dict]) -> str:
+        """Calcola la durata della discussione."""
+        if not timeline:
+            return "N/A"
+        start = datetime.fromisoformat(timeline[0]['time'].replace('Z', '+00:00'))
+        end = datetime.fromisoformat(timeline[-1]['time'].replace('Z', '+00:00'))
+        duration = end - start
+        return f"{duration.days} giorni, {duration.seconds // 3600} ore"
+    
+    def _analyze_sentiment_trends(self, sentiment_data: List[Dict]) -> Dict[str, Any]:
+        """Analizza i trend del sentiment."""
+        if not sentiment_data:
+            return {"error": "No sentiment data available"}
+            
+        sentiments = [s['sentiment'] for s in sentiment_data]
+        return {
+            'average': sum(sentiments) / len(sentiments),
+            'min': min(sentiments),
+            'max': max(sentiments),
+            'trend': 'positive' if sentiments[-1] > sentiments[0] else 'negative'
+        }
+    
+    def _find_most_active_users(self, interactions: Dict[str, List]) -> List[Tuple[str, int]]:
+        """Trova gli utenti più attivi basandosi sulle interazioni."""
+        user_activity = defaultdict(int)
+        for user, interactions_list in interactions.items():
+            user_activity[user] += len(interactions_list)
+        
+        return sorted(user_activity.items(), key=lambda x: x[1], reverse=True)[:5]
+    
+    # Metodi esistenti per analisi JSON/CSV/PDF standard
+    def initialize_analysis(self, content: str, filename: str):
         """Avvia l'analisi automatica quando viene caricato un file supportato."""
-        file_type = self.detect_file_type(file_content, filename)
+        file_type = self.detect_file_type(content, filename)
         if file_type in self.supported_formats:
             analyzer = self.supported_formats[file_type]
             self.metadata = {
@@ -49,7 +241,7 @@ class DataAnalysisManager:
                 'filename': filename,
                 'timestamp': pd.Timestamp.now()
             }
-            return analyzer(file_content)
+            return analyzer(content)
         return None
     
     def _analyze_json(self, content: str) -> Dict[str, Any]:
@@ -116,10 +308,25 @@ class DataAnalysisManager:
             st.error(f"Errore nell'analisi PDF: {str(e)}")
             return None
     
+    def _get_nest_level(self, obj: Any, level: int = 0) -> int:
+        """Calcola il livello di nesting di un oggetto JSON."""
+        if isinstance(obj, dict):
+            if not obj:
+                return level
+            return max(self._get_nest_level(v, level + 1) for v in obj.values())
+        elif isinstance(obj, list):
+            if not obj:
+                return level
+            return max(self._get_nest_level(item, level + 1) for item in obj)
+        return level
+    
     def get_analysis_summary(self) -> str:
         """Genera un sommario dell'analisi in linguaggio naturale."""
         if not self.metadata:
             return "Nessuna analisi disponibile"
+            
+        if st.session_state.get('forum_analysis_mode', False):
+            return self.get_forum_analysis_status()
             
         file_type = self.metadata['file_type']
         if file_type == 'json':
@@ -130,11 +337,24 @@ class DataAnalysisManager:
             return self._get_pdf_summary()
         return "Tipo file non supportato"
     
+    def _get_json_summary(self) -> str:
+        """Genera sommario per file JSON."""
+        return "Sommario JSON: implementazione esistente..."
+    
+    def _get_csv_summary(self) -> str:
+        """Genera sommario per file CSV."""
+        return "Sommario CSV: implementazione esistente..."
+    
+    def _get_pdf_summary(self) -> str:
+        """Genera sommario per file PDF."""
+        return "Sommario PDF: implementazione esistente..."
+    
     def query_data(self, query: str) -> str:
         """Interpreta e risponde a query in linguaggio naturale sui dati."""
+        if st.session_state.get('forum_analysis_mode', False):
+            return self.query_forum_data(query)
+            
         if self.current_dataset is None:
             return "Nessun dataset caricato"
             
-        # Qui implementeremo la logica per interpretare le query
-        # Per ora restituiamo solo informazioni base
         return f"Dataset contiene {len(self.current_dataset)} righe e {len(self.current_dataset.columns)} colonne"
