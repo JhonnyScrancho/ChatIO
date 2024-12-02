@@ -227,7 +227,6 @@ class ChatInterface:
     """Componente per l'interfaccia chat."""
     
     def __init__(self):
-        def __init__(self):
         self.session = SessionManager()
         self.llm = LLMManager()
         if 'data_analyzer' not in st.session_state:
