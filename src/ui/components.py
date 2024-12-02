@@ -27,6 +27,11 @@ class FileExplorer:
             st.session_state.json_analysis_mode = False
         if 'initial_analysis_sent' not in st.session_state:
             st.session_state.initial_analysis_sent = False
+        # Aggiungiamo queste inizializzazioni
+        if 'json_structure' not in st.session_state:
+            st.session_state.json_structure = None
+        if 'json_type' not in st.session_state:
+            st.session_state.json_type = None
 
 
 
@@ -222,6 +227,7 @@ class ChatInterface:
     """Componente per l'interfaccia chat."""
     
     def __init__(self):
+        def __init__(self):
         self.session = SessionManager()
         self.llm = LLMManager()
         if 'data_analyzer' not in st.session_state:
@@ -238,7 +244,12 @@ class ChatInterface:
             }
             st.session_state.current_chat = 'Chat principale'
         if 'json_analysis_states' not in st.session_state:
-            st.session_state.json_analysis_states = {}    
+            st.session_state.json_analysis_states = {}
+        # Aggiungiamo queste inizializzazioni
+        if 'json_structure' not in st.session_state:
+            st.session_state.json_structure = None
+        if 'json_type' not in st.session_state:
+            st.session_state.json_type = None
 
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
