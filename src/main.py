@@ -197,31 +197,23 @@ def render_main_layout():
                 z-index: 999 !important;
             }
 
-            /* Code Viewer styling */
-            .codeviewer-container {
-                border-left: 1px solid var(--secondary-background-color);
-                height: calc(100vh - 80px);
-                overflow-y: auto;
-                padding-left: 1rem;
+            /* Adjust margins and padding */
+            .element-container {
+                margin: 0 !important;
+                padding: 0 !important;
             }
 
-            /* Artifact styling */
-            .artifact-container {
-                margin: 1rem 0;
-                padding: 1rem;
-                border-radius: 0.5rem;
-                border: 1px solid var(--secondary-background-color);
-                background-color: var(--background-color);
+            /* Reduce spacing between elements */
+            .stMarkdown {
+                margin-bottom: 0.5rem !important;
             }
 
-            /* Chat container adjustments */
-            .chat-container {
-                height: calc(100vh - 150px);
-                overflow-y: auto;
-                padding-right: 1rem;
+            /* Chat message container */
+            .stChatMessage {
+                margin-bottom: 1rem !important;
             }
 
-            /* Ensure code blocks are properly formatted */
+            /* Code block styling */
             pre code {
                 white-space: pre !important;
             }
@@ -229,7 +221,9 @@ def render_main_layout():
     """, unsafe_allow_html=True)
     
     # Setup iniziale della sessione
-    clients = init_clients()
+    if 'clients' not in st.session_state:
+        st.session_state.clients = init_clients()
+    clients = st.session_state.clients
     clients['session'].init_session()
     
     # Title Area
@@ -240,55 +234,89 @@ def render_main_layout():
         if st.session_state.get('debug_mode', False):
             if st.button("📊", help="Show Stats"):
                 st.session_state.show_stats = not st.session_state.get('show_stats', False)
+                
+    # Mostra stats se richiesto
+    if st.session_state.get('show_stats', False):
+        with st.expander("📊 Statistics", expanded=True):
+            StatsDisplay().render()
     
     # Sidebar con File Manager e Model Selector
     with st.sidebar:
         st.markdown("### 🤖 Model Settings")
-        ModelSelector().render()
+        model_selector = ModelSelector()
+        model_selector.render()
+        
         st.markdown("---")
+        
         st.markdown("### 📁 File Manager")
-        FileExplorer().render()
+        file_explorer = FileExplorer()
+        file_explorer.render()
+        
+        # Mostra info aggiuntive in debug mode
+        if st.session_state.get('debug_mode', False):
+            st.markdown("---")
+            st.markdown("### 🔧 Debug Info")
+            st.json({
+                'current_model': st.session_state.get('current_model', 'none'),
+                'file_count': len(st.session_state.get('uploaded_files', {})),
+                'chat_count': len(st.session_state.get('chats', {}))
+            })
     
-    # Container principale diviso in chat e codeviewer
-    chat_container, viewer_container = st.columns([3, 2])
+    # Main Content Area con Chat e Code Viewer
+    chat_col, viewer_col = st.columns([3, 2])
     
-    # Chat Area
-    with chat_container:
-        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+    # Chat Interface
+    with chat_col:
         st.markdown("### 💬 Chat")
         chat_interface = ChatInterface()
         chat_interface.render()
-        st.markdown('</div>', unsafe_allow_html=True)
     
-    # Code Viewer Area
-    with viewer_container:
-        st.markdown('<div class="codeviewer-container">', unsafe_allow_html=True)
+    # Code Viewer
+    with viewer_col:
         st.markdown("### 📝 Code Viewer")
         code_viewer = CodeViewer()
         code_viewer.render()
-        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Mostra i controlli del code viewer se c'è un artifact
+        if st.session_state.get('current_artifact'):
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 Refresh"):
+                    st.experimental_rerun()
+            with col2:
+                if st.button("❌ Clear"):
+                    code_viewer.clear_history()
+                    st.session_state.current_artifact = None
+                    st.experimental_rerun()
     
     # Chat input fisso in fondo
     if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
-        # Gestione preliminare del prompt
+        # Validazione input
         if prompt.strip():
-            # Aggiungi il messaggio alla chat
-            clients['session'].add_message_to_current_chat({
-                "role": "user",
-                "content": prompt
-            })
-            
-            # Processa il messaggio con gestione degli artifact
-            chat_interface.handle_user_input(prompt)
-            
-            # Forza il refresh del CodeViewer se necessario
-            if st.session_state.get('current_artifact'):
-                code_viewer.render_artifact(st.session_state.current_artifact)
-
-    # Gestione degli stati e aggiornamento UI
-    if st.session_state.get('show_stats', False):
-        with st.expander("📊 Statistics", expanded=True):
-            StatsDisplay().render()
+            # Gestione dello stato di processing
+            if not st.session_state.get('processing', False):
+                st.session_state.processing = True
+                try:
+                    # Aggiungi il messaggio alla chat
+                    clients['session'].add_message_to_current_chat({
+                        "role": "user",
+                        "content": prompt
+                    })
+                    
+                    # Processa il messaggio
+                    chat_interface.handle_user_input(prompt)
+                    
+                finally:
+                    st.session_state.processing = False
+    
+    # Gestione errori globale
+    error = st.session_state.get('last_error')
+    if error:
+        st.error(f"❌ Si è verificato un errore: {error}")
+        if st.button("Clear Error"):
+            st.session_state.last_error = None
+            st.experimental_rerun()
 
 def main():
     """Funzione principale dell'applicazione."""
