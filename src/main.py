@@ -196,34 +196,11 @@ def render_main_layout():
                 border-top: 1px solid var(--secondary-background-color) !important;
                 z-index: 999 !important;
             }
-
-            /* Adjust margins and padding */
-            .element-container {
-                margin: 0 !important;
-                padding: 0 !important;
-            }
-
-            /* Reduce spacing between elements */
-            .stMarkdown {
-                margin-bottom: 0.5rem !important;
-            }
-
-            /* Chat message container */
-            .stChatMessage {
-                margin-bottom: 1rem !important;
-            }
-
-            /* Code block styling */
-            pre code {
-                white-space: pre !important;
-            }
         </style>
     """, unsafe_allow_html=True)
     
     # Setup iniziale della sessione
-    if 'clients' not in st.session_state:
-        st.session_state.clients = init_clients()
-    clients = st.session_state.clients
+    clients = init_clients()
     clients['session'].init_session()
     
     # Title Area
@@ -234,89 +211,33 @@ def render_main_layout():
         if st.session_state.get('debug_mode', False):
             if st.button("📊", help="Show Stats"):
                 st.session_state.show_stats = not st.session_state.get('show_stats', False)
-                
-    # Mostra stats se richiesto
-    if st.session_state.get('show_stats', False):
-        with st.expander("📊 Statistics", expanded=True):
-            StatsDisplay().render()
     
     # Sidebar con File Manager e Model Selector
     with st.sidebar:
         st.markdown("### 🤖 Model Settings")
-        model_selector = ModelSelector()
-        model_selector.render()
-        
+        ModelSelector().render()
         st.markdown("---")
-        
         st.markdown("### 📁 File Manager")
-        file_explorer = FileExplorer()
-        file_explorer.render()
-        
-        # Mostra info aggiuntive in debug mode
-        if st.session_state.get('debug_mode', False):
-            st.markdown("---")
-            st.markdown("### 🔧 Debug Info")
-            st.json({
-                'current_model': st.session_state.get('current_model', 'none'),
-                'file_count': len(st.session_state.get('uploaded_files', {})),
-                'chat_count': len(st.session_state.get('chats', {}))
-            })
+        FileExplorer().render()
     
     # Main Content Area con Chat e Code Viewer
-    chat_col, viewer_col = st.columns([3, 2])
+    col1, col2 = st.columns([3, 2])
     
-    # Chat Interface
-    with chat_col:
+    with col1:
         st.markdown("### 💬 Chat")
-        chat_interface = ChatInterface()
-        chat_interface.render()
+        ChatInterface().render()
     
-    # Code Viewer
-    with viewer_col:
+    with col2:
         st.markdown("### 📝 Code Viewer")
-        code_viewer = CodeViewer()
-        code_viewer.render()
-        
-        # Mostra i controlli del code viewer se c'è un artifact
-        if st.session_state.get('current_artifact'):
-            st.markdown("---")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔄 Refresh"):
-                    st.experimental_rerun()
-            with col2:
-                if st.button("❌ Clear"):
-                    code_viewer.clear_history()
-                    st.session_state.current_artifact = None
-                    st.experimental_rerun()
+        CodeViewer().render()
     
     # Chat input fisso in fondo
     if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
-        # Validazione input
-        if prompt.strip():
-            # Gestione dello stato di processing
-            if not st.session_state.get('processing', False):
-                st.session_state.processing = True
-                try:
-                    # Aggiungi il messaggio alla chat
-                    clients['session'].add_message_to_current_chat({
-                        "role": "user",
-                        "content": prompt
-                    })
-                    
-                    # Processa il messaggio
-                    chat_interface.handle_user_input(prompt)
-                    
-                finally:
-                    st.session_state.processing = False
-    
-    # Gestione errori globale
-    error = st.session_state.get('last_error')
-    if error:
-        st.error(f"❌ Si è verificato un errore: {error}")
-        if st.button("Clear Error"):
-            st.session_state.last_error = None
-            st.experimental_rerun()
+        clients['session'].add_message_to_current_chat({
+            "role": "user",
+            "content": prompt
+        })
+        ChatInterface().process_user_message(prompt)
 
 def main():
     """Funzione principale dell'applicazione."""
