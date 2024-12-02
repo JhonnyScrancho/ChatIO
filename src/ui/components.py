@@ -247,6 +247,11 @@ class ChatInterface:
             st.session_state.json_structure = None
         if 'json_type' not in st.session_state:
             st.session_state.json_type = None
+        if 'processing' not in st.session_state:
+            st.session_state.processing = False
+        
+        # Setup logging
+        self.logger = logging.getLogger(__name__)    
 
 
     def _process_response(self, prompt: str) -> str:
@@ -419,7 +424,7 @@ class ChatInterface:
     
     def handle_user_input(self, prompt: str):
         """
-        Gestisce l'input dell'utente con supporto per analisi JSON e gestione errori.
+        Gestisce l'input dell'utente con supporto per artifact e streaming.
         
         Args:
             prompt: Messaggio dell'utente
@@ -444,12 +449,6 @@ class ChatInterface:
                     "role": "user",
                     "content": prompt
                 })
-            
-            # Aggiungi messaggio utente alla chat
-            self.session.add_message_to_current_chat({
-                "role": "user",
-                "content": prompt
-            })
             
             response_container = st.empty()
             artifact_container = st.empty()
@@ -501,6 +500,13 @@ class ChatInterface:
                             response
                         )
                         
+                        # Aggiorna cronologia chat
+                        if not is_duplicate:
+                            self.session.add_message_to_current_chat({
+                                "role": "assistant",
+                                "content": response
+                            })
+                        
                         # Completa
                         progress_bar.progress(100)
                         time.sleep(0.5)  # Breve pausa per mostrare completamento
@@ -509,6 +515,7 @@ class ChatInterface:
                         # Modalità chat normale
                         response = ""
                         context = self._prepare_chat_context()
+                        has_new_content = False
                         
                         for chunk in self.llm.process_request(
                             prompt=prompt,
@@ -516,46 +523,62 @@ class ChatInterface:
                             analysis_type=None
                         ):
                             if chunk:
+                                has_new_content = True
                                 # Verifica se il chunk è un artifact
-                                if isinstance(chunk, dict) and 'type' in chunk:
-                                    # È un artifact, passalo al CodeViewer
+                                if isinstance(chunk, dict) and 'type' in chunk and 'content' in chunk:
+                                    # È un artifact, renderizzalo nel container dedicato
                                     with artifact_container:
                                         self.code_viewer.render_artifact(chunk)
+                                        
+                                    # Aggiungi riferimento all'artifact nella risposta
+                                    artifact_ref = f"\n[Artifact: {chunk.get('title', 'Code')}]\n"
+                                    response += artifact_ref
+                                    
+                                    # Aggiorna display
+                                    with response_container:
+                                        with st.chat_message("assistant"):
+                                            st.markdown(response)
                                 else:
                                     # È testo normale, aggiungilo alla risposta
                                     response += chunk
                                     with response_container:
                                         with st.chat_message("assistant"):
                                             st.markdown(response)
-                    
-                        # Aggiungi risposta alla chat solo se c'è testo
-                        if response.strip():
+                        
+                        # Aggiungi la risposta alla chat solo se c'è nuovo contenuto
+                        if has_new_content and not is_duplicate:
                             self.session.add_message_to_current_chat({
                                 "role": "assistant",
                                 "content": response
                             })
                             
+                            # Aggiorna timestamp ultimo messaggio
+                            st.session_state.last_message_time = datetime.now().timestamp()
+                    
             except Exception as e:
-                st.error(f"Errore nell'elaborazione della richiesta: {str(e)}")
+                self.logger.error(f"Error processing user input: {str(e)}", exc_info=True)
+                error_msg = f"❌ Si è verificato un errore: {str(e)}"
                 with response_container:
                     with st.chat_message("assistant"):
-                        error_msg = ("❌ Mi dispiace, ho incontrato un errore nell'analisi. "
-                                "Puoi riprovare o riformulare la domanda?")
-                        st.markdown(error_msg)
-                        # Aggiungi messaggio di errore alla chat
-                        self.session.add_message_to_current_chat({
-                            "role": "assistant",
-                            "content": error_msg
-                        })
-                # Log error
-                logging.error(f"Error processing user input: {str(e)}", exc_info=True)
-                    
+                        st.error(error_msg)
+                        
+                        if not is_duplicate:
+                            self.session.add_message_to_current_chat({
+                                "role": "assistant",
+                                "content": error_msg
+                            })
+                            
             finally:
                 st.session_state.processing = False
                 if progress_bar:
                     progress_bar.empty()
                 if progress_container:
                     progress_container.empty()
+
+                # Pulisci container temporanei se non c'è stato contenuto
+                if response == "":
+                    response_container.empty()
+                    artifact_container.empty()
 
     def _prepare_chat_context(self) -> str:
         """Prepara il contesto per la chat."""
