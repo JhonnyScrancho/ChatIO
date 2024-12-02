@@ -14,28 +14,305 @@ from src.core.data_analysis import DataAnalysisManager
 from typing import Dict, Any, Optional
 
 class FileExplorer:
-    """Component per l'esplorazione e l'upload dei file."""
-    
     def __init__(self):
         self.session = SessionManager()
         self.file_manager = FileManager()
-        self.json_enabled = False
         self.data_analyzer = DataAnalysisManager()
         if 'uploaded_files' not in st.session_state:
             st.session_state.uploaded_files = {}
         if 'file_messages_sent' not in st.session_state:
             st.session_state.file_messages_sent = set()
-        if 'json_analysis_mode' not in st.session_state:
-            st.session_state.json_analysis_mode = False
-        if 'initial_analysis_sent' not in st.session_state:
-            st.session_state.initial_analysis_sent = False
-        # Aggiungiamo queste inizializzazioni
-        if 'json_structure' not in st.session_state:
-            st.session_state.json_structure = None
-        if 'json_type' not in st.session_state:
-            st.session_state.json_type = None
 
+    def render(self):
+        """Renderizza il componente FileExplorer completo."""
+        st.markdown("""
+            <style>
+            [data-testid="stSidebar"] .stButton > button {
+                width: auto;
+                text-align: left !important;
+                padding: 2px 8px !important;
+                background: none !important;
+                border: none !important;
+                font-family: monospace !important;
+                font-size: 0.9em !important;
+                white-space: pre !important;
+                line-height: 1.5 !important;
+                color: var(--text-color) !important;
+            }
+            
+            [data-testid="stSidebar"] .stButton > button:hover {
+                background-color: var(--primary-color-light) !important;
+                color: var(--primary-color) !important;
+            }
+            
+            .file-tree-container {
+                margin-top: 1rem;
+                border-left: 1px solid rgba(49, 51, 63, 0.2);
+                padding-left: 0.5rem;
+            }
+            
+            .file-actions {
+                display: flex;
+                gap: 0.5rem;
+                margin-top: 0.5rem;
+            }
+            </style>
+        """, unsafe_allow_html=True)
 
+        # Upload Section
+        uploaded_files = st.file_uploader(
+            label="Upload Files",
+            type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
+            accept_multiple_files=True,
+            key="file_uploader"
+        )
+
+        # Process uploaded files
+        if uploaded_files:
+            new_files = []
+            for file in uploaded_files:
+                try:
+                    if file.name.endswith('.zip'):
+                        zip_files = self.file_manager.process_zip(file)
+                        for zip_name, zip_content in zip_files.items():
+                            if zip_name not in st.session_state.uploaded_files:
+                                st.session_state.uploaded_files[zip_name] = zip_content
+                                new_files.append(zip_name)
+                    else:
+                        if file.name not in st.session_state.uploaded_files:
+                            file_info = self.process_uploaded_file(file)
+                            if file_info:
+                                st.session_state.uploaded_files[file.name] = file_info
+                                new_files.append(file.name)
+                                
+                                # JSON specific handling
+                                if file.name.endswith('.json'):
+                                    self._handle_json_upload(file.name, file_info)
+                except Exception as e:
+                    st.error(f"Error processing {file.name}: {str(e)}")
+
+            if new_files:
+                self._notify_new_files(new_files)
+
+        # File Tree Section
+        if st.session_state.uploaded_files:
+            st.markdown("### 🌲 Files")
+            
+            # File statistics
+            total_files = len(st.session_state.uploaded_files)
+            total_size = sum(file_info.get('size', 0) for file_info in st.session_state.uploaded_files.values())
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"**Total Files:** {total_files}")
+            with col2:
+                st.markdown(f"**Total Size:** {self._format_size(total_size)}")
+
+            # JSON Analysis Mode Toggle
+            has_json = any(f.endswith('.json') for f in st.session_state.uploaded_files)
+            if has_json:
+                with st.expander("📊 JSON Analysis Settings", expanded=True):
+                    json_analysis = st.toggle(
+                        'Enable JSON Analysis',
+                        value=st.session_state.get('json_analysis_mode', False),
+                        key='json_analysis_toggle'
+                    )
+                    if json_analysis != st.session_state.get('json_analysis_mode', False):
+                        self._handle_json_analysis_toggle(json_analysis)
+                    
+                    if json_analysis:
+                        st.markdown(f"**Current JSON Type:** {st.session_state.get('json_type', 'unknown')}")
+                        if st.session_state.get('json_structure'):
+                            with st.expander("Show JSON Structure"):
+                                st.json(st.session_state.json_structure)
+
+            # Render File Tree
+            with st.container():
+                st.markdown("#### 📂 File Tree")
+                tree = self._create_file_tree(st.session_state.uploaded_files)
+                self._render_tree_node("", tree)
+
+            # File Actions
+            with st.container():
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🗑️ Clear All Files"):
+                        self._clear_all_files()
+                with col2:
+                    if st.button("📥 Download All"):
+                        self._download_files()
+
+    
+    def process_uploaded_file(self, file) -> Optional[Dict]:
+        """Processa un singolo file caricato."""
+        try:
+            content = file.read()
+            if isinstance(content, bytes):
+                content = content.decode('utf-8')
+
+            file_info = {
+                'content': content,
+                'language': file.name.split('.')[-1],
+                'name': file.name,
+                'size': len(content),
+                'type': 'regular'
+            }
+
+            # Gestione speciale per JSON
+            if file.name.endswith('.json'):
+                try:
+                    json_data = json.loads(content)
+                    analysis = self.file_manager._analyze_json_structure(content, file.name)
+                    if analysis.get('is_analyzable', False):
+                        file_info.update({
+                            'type': 'json',
+                            'json_analysis': analysis,
+                            'json_data': json_data
+                        })
+                        # Aggiorna lo stato JSON globale
+                        st.session_state.json_structure = analysis.get('structure', {})
+                        st.session_state.json_type = analysis.get('type', 'unknown')
+                except json.JSONDecodeError as e:
+                    st.error(f"Invalid JSON in file {file.name}: {str(e)}")
+                    return None
+
+            return file_info
+        except Exception as e:
+            st.error(f"Error processing {file.name}: {str(e)}")
+            return None
+
+    def _handle_json_analysis_toggle(self, enabled: bool):
+        """Gestisce il toggle dell'analisi JSON."""
+        if enabled != st.session_state.get('json_analysis_mode', False):
+            st.session_state.json_analysis_mode = enabled
+            if enabled:
+                # Verifica che ci sia un JSON valido da analizzare
+                has_valid_json = any(
+                    f_info.get('type') == 'json' and f_info.get('json_analysis')
+                    for f_info in st.session_state.uploaded_files.values()
+                )
+                if not has_valid_json:
+                    st.warning("No valid JSON files found for analysis.")
+                    st.session_state.json_analysis_mode = False
+                    return
+
+                # Reset dello stato di analisi
+                st.session_state.initial_analysis_sent = False
+                
+                # Notifica l'utente
+                st.success("JSON analysis mode enabled! You can now ask questions about your JSON data.")
+            else:
+                # Pulisci la cache di analisi quando si disabilita
+                if 'analysis_cache' in st.session_state:
+                    st.session_state.analysis_cache = {}
+                st.info("JSON analysis mode disabled.")
+    
+    
+    
+    def _handle_json_upload(self, filename: str, file_info: dict):
+        """Gestisce l'upload di un file JSON."""
+        if file_info.get('type') == 'json' and file_info.get('json_analysis'):
+            st.session_state.json_structure = file_info['json_analysis'].get('structure')
+            st.session_state.json_type = file_info['json_analysis'].get('type')
+            
+            # Mostra notifica di successo
+            st.success(f"JSON file '{filename}' analyzed successfully!")
+
+    def _render_tree_node(self, path: str, node: dict, level: int = 0):
+        """Renderizza un nodo dell'albero dei file con stile migliorato."""
+        for name, content in sorted(node.items()):
+            full_path = f"{path}/{name}" if path else name
+            indent = "    " * level
+            
+            if isinstance(content, dict) and 'content' not in content:
+                # Directory
+                st.markdown(f"{indent}📁 **{name}/**")
+                self._render_tree_node(full_path, content, level + 1)
+            else:
+                # File
+                icon = self._get_file_icon(name)
+                col1, col2 = st.columns([6, 1])
+                with col1:
+                    if st.button(
+                        f"{indent}{icon} {name}",
+                        key=f"file_{full_path}",
+                        help="Click to view/edit file"
+                    ):
+                        self._select_file(full_path, content)
+                with col2:
+                    if st.button(
+                        "🗑️",
+                        key=f"delete_{full_path}",
+                        help="Delete file"
+                    ):
+                        self._delete_file(full_path)
+
+    def _select_file(self, filepath: str, file_info: dict):
+        """Gestisce la selezione di un file."""
+        st.session_state.selected_file = filepath
+        st.session_state.current_file = filepath
+        
+        # Mostra preview del file
+        with st.expander(f"Preview: {filepath}", expanded=True):
+            if file_info.get('type') == 'json':
+                st.json(file_info.get('json_data', {}))
+            else:
+                st.code(file_info.get('content', ''), language=file_info.get('language', 'text'))
+
+    def _delete_file(self, filepath: str):
+        """Elimina un file."""
+        if filepath in st.session_state.uploaded_files:
+            del st.session_state.uploaded_files[filepath]
+            
+            # Reset JSON analysis if needed
+            if filepath.endswith('.json'):
+                has_other_json = any(
+                    f.endswith('.json') 
+                    for f in st.session_state.uploaded_files
+                )
+                if not has_other_json:
+                    st.session_state.json_analysis_mode = False
+                    st.session_state.json_structure = None
+                    st.session_state.json_type = None
+            
+            st.success(f"File '{filepath}' deleted successfully!")
+            st.experimental_rerun()
+
+    def _clear_all_files(self):
+        """Pulisce tutti i file."""
+        st.session_state.uploaded_files = {}
+        st.session_state.json_analysis_mode = False
+        st.session_state.json_structure = None
+        st.session_state.json_type = None
+        st.session_state.file_messages_sent = set()
+        st.success("All files cleared successfully!")
+        st.experimental_rerun()
+
+    def _download_files(self):
+        """Prepara il download di tutti i file."""
+        import io
+        import zipfile
+        
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w') as zip_file:
+            for filename, file_info in st.session_state.uploaded_files.items():
+                content = file_info.get('content', '').encode('utf-8')
+                zip_file.writestr(filename, content)
+        
+        st.download_button(
+            label="📥 Download Files",
+            data=buffer.getvalue(),
+            file_name="files.zip",
+            mime="application/zip"
+        )
+
+    def _format_size(self, size_bytes: int) -> str:
+        """Formatta la dimensione in bytes in formato leggibile."""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size_bytes < 1024:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024
+        return f"{size_bytes:.1f} GB"
 
     def _get_file_icon(self, filename: str) -> str:
         """Restituisce l'icona appropriata per il tipo di file."""
@@ -57,169 +334,70 @@ class FileExplorer:
         }
         return icons.get(ext, '📄')
 
-    def _create_file_tree(self, files: Dict[str, Any]) -> Dict[str, Any]:
-        """Crea una struttura ad albero dai file caricati."""
-        tree = {}
-        for path, content in files.items():
-            current = tree
-            parts = path.split('/')
+    def _notify_new_files(self, new_files: List[str]):
+        """Notifica l'aggiunta di nuovi file."""
+        if new_files and hasattr(st.session_state, 'current_chat'):
+            files_message = "📂 New files uploaded:\n"
+            for filename in new_files:
+                icon = self._get_file_icon(filename)
+                files_message += f"- {icon} {filename}\n"
             
-            for part in parts[:-1]:
+            message_hash = hash(files_message)
+            if message_hash not in st.session_state.file_messages_sent:
+                st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                    "role": "system",
+                    "content": files_message
+                })
+                st.session_state.file_messages_sent.add(message_hash)
+
+    def _create_file_tree(self, files: Dict[str, Dict]) -> Dict[str, Any]:
+        """
+        Crea una struttura ad albero dai file caricati.
+        
+        Args:
+            files: Dizionario dei file processati
+            
+        Returns:
+            Dict[str, Any]: Struttura ad albero dei file
+        """
+        tree = {}
+        for filepath, content in files.items():
+            current = tree
+            parts = filepath.split('/')
+            
+            # Gestisce ogni parte del path
+            for i, part in enumerate(parts[:-1]):
                 if part not in current:
                     current[part] = {}
                 current = current[part]
             
-            current[parts[-1]] = {'content': content, 'full_path': path}
-            
-        return tree
-
-    def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = ""):
-        """Renderizza un nodo dell'albero dei file con stile pipe."""
-        items = list(sorted(node.items()))
-        for i, (name, content) in enumerate(items):
-            is_last = i == len(items) - 1
-            
-            if isinstance(content, dict) and 'content' not in content:
-                st.markdown(f"{prefix}{'└── ' if is_last else '├── '}📁 **{name}/**", unsafe_allow_html=True)
-                new_prefix = prefix + ("    " if is_last else "│   ")
-                self._render_tree_node(f"{path}/{name}", content, new_prefix)
-            else:
-                icon = self._get_file_icon(name)
-                full_path = content['full_path']
-                file_button = f"{prefix}{'└── ' if is_last else '├── '}{icon} {name}"
-                
-                if st.button(file_button, key=f"file_{full_path}", use_container_width=True):
-                    st.session_state.selected_file = full_path
-                    st.session_state.current_file = full_path
-
-    def _process_json_file(self, content: str, filename: str) -> bool:
-        """Processa un file JSON e determina se è analizzabile."""
-        try:
-            data = json.loads(content)
-            if isinstance(data, list) and len(data) > 0:
-                # Check for standard data structure
-                if all(field in data[0] for field in ['url', 'title', 'posts']):
-                    return True
-                # Add other JSON structure checks here
-                return True
-            return True
-        except json.JSONDecodeError:
-            return False
-
-    def render(self):
-        """Renderizza il componente."""
-        st.markdown("""
-            <style>
-            [data-testid="stSidebar"] .stButton > button {
-                width: auto;
-                text-align: left !important;
-                padding: 2px 8px !important;
-                background: none !important;
-                border: none !important;
-                font-family: monospace !important;
-                font-size: 0.9em !important;
-                white-space: pre !important;
-                line-height: 1.5 !important;
-                color: var(--text-color) !important;
+            # Aggiunge il file all'ultimo livello
+            current[parts[-1]] = {
+                'content': content.get('content', ''),
+                'language': content.get('language', 'text'),
+                'size': content.get('size', 0),
+                'type': content.get('type', 'regular'),
+                'full_path': filepath
             }
             
-            [data-testid="stSidebar"] .stButton > button:hover {
-                background-color: var(--primary-color-light) !important;
-                color: var(--primary-color) !important;
-            }
-            
-            [data-testid="stSidebar"] .element-container:has(button[kind="secondary"]) {
-                margin: 0 !important;
-                padding: 0 !important;
-            }
-            
-            [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-                font-family: monospace !important;
-                font-size: 0.9em !important;
-                white-space: pre !important;
-                line-height: 1.5 !important;
-                margin: 0 !important;
-            }
-            </style>
-        """, unsafe_allow_html=True)
+            # Gestione speciale per JSON
+            if content.get('type') == 'json':
+                current[parts[-1]].update({
+                    'json_analysis': content.get('json_analysis', {}),
+                    'json_data': content.get('json_data', {})
+                })
 
-        uploaded_files = st.file_uploader(
-            label=" ",
-            type=['py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'md', 'txt', 'json', 'yml', 'yaml', 'zip'],
-            accept_multiple_files=True,
-            key="file_uploader",
-            label_visibility="collapsed"
-        )
+        # Ordina il tree
+        def sort_tree(node):
+            if isinstance(node, dict):
+                # Se è una directory (non ha 'content')
+                if 'content' not in node:
+                    return {k: sort_tree(v) for k, v in sorted(node.items())}
+                return node
+            return node
 
-        if uploaded_files:
-            new_files = []
-            for file in uploaded_files:
-                try:
-                    if file.name.endswith('.zip'):
-                        import zipfile
-                        import io
-                        
-                        zip_content = zipfile.ZipFile(io.BytesIO(file.read()))
-                        for zip_file in zip_content.namelist():
-                            if not zip_file.startswith('__') and not zip_file.startswith('.'):
-                                try:
-                                    if zip_file in st.session_state.uploaded_files:
-                                        continue
-                                        
-                                    content = zip_content.read(zip_file).decode('utf-8', errors='ignore')
-                                    st.session_state.uploaded_files[zip_file] = {
-                                        'content': content,
-                                        'language': zip_file.split('.')[-1],
-                                        'name': zip_file
-                                    }
-                                    new_files.append(zip_file)
-                                except Exception:
-                                    continue
-                    else:
-                        if file.name in st.session_state.uploaded_files:
-                            continue
-                            
-                        content = file.read().decode('utf-8')
-                        st.session_state.uploaded_files[file.name] = {
-                            'content': content,
-                            'language': file.name.split('.')[-1],
-                            'name': file.name
-                        }
-                        new_files.append(file.name)
-
-                        if file.name.endswith('.json'):
-                            try:
-                                # Analizziamo il file JSON
-                                analysis = self.file_manager._analyze_json_structure(content, file.name)
-                                if analysis.get('is_analyzable', False):
-                                    st.session_state.json_structure = analysis.get('structure', {})
-                                    st.session_state.json_type = analysis.get('type', 'unknown')
-                                    # Reset dello stato di analisi
-                                    st.session_state.json_analysis_mode = False
-                                    st.session_state.initial_analysis_sent = False
-                            except Exception as e:
-                                st.error(f"Error analyzing JSON file {file.name}: {str(e)}")
-
-                except Exception as e:
-                    st.error(f"Error processing {file.name}: {str(e)}")      
-
-            if new_files and 'chats' in st.session_state and st.session_state.current_chat in st.session_state.chats:
-                files_message = "📂 New files uploaded:\n"
-                for filename in new_files:
-                    files_message += f"- {self._get_file_icon(filename)} {filename}\n"
-                
-                message_hash = hash(files_message)
-                if message_hash not in st.session_state.file_messages_sent:
-                    st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                        "role": "system",
-                        "content": files_message
-                    })
-                    st.session_state.file_messages_sent.add(message_hash)
-
-        if st.session_state.uploaded_files:
-            st.markdown("### 🌲 Files Tree")
-            tree = self._create_file_tree(st.session_state.uploaded_files)
-            self._render_tree_node("", tree, "")
+        return sort_tree(tree)            
+    
 
 class ChatInterface:
     """Componente per l'interfaccia chat."""
@@ -249,9 +427,11 @@ class ChatInterface:
             st.session_state.json_type = None
         if 'processing' not in st.session_state:
             st.session_state.processing = False
-        
+        if 'message_ids' not in st.session_state:     # Aggiungi qui
+            st.session_state.message_ids = set()
+            
         # Setup logging
-        self.logger = logging.getLogger(__name__)    
+        self.logger = logging.getLogger(__name__) 
 
 
     def _process_response(self, prompt: str) -> str:
@@ -281,52 +461,6 @@ class ChatInterface:
             st.error(error_msg)
             return error_msg
 
-    def process_user_message(self, prompt: str):
-        """Processa un nuovo messaggio utente."""
-        if not prompt.strip():
-            return
-
-        self.session.add_message_to_current_chat({
-            "role": "user",
-            "content": prompt
-        })
-
-        response_container = st.empty()
-        
-        try:
-            with st.spinner("Processing..."):
-                if st.session_state.get('json_analysis_mode', False):
-                    analyzer = st.session_state.data_analyzer
-                    response = analyzer.query_data(prompt)
-                    with response_container:
-                        with st.chat_message("assistant"):
-                            st.markdown(response)
-                else:
-                    response = ""
-                    for chunk in self.llm.process_request(prompt=prompt):
-                        if chunk:
-                            response += chunk
-                            with response_container:
-                                with st.chat_message("assistant"):
-                                    st.markdown(response)
-
-                if response.strip():
-                    self.session.add_message_to_current_chat({
-                        "role": "assistant",
-                        "content": response
-                    })
-                    
-        except Exception as e:
-            st.error(f"Error occurred: {str(e)}")
-            with response_container:
-                with st.chat_message("assistant"):
-                    error_msg = ("❌ Mi dispiace, ho incontrato un errore nell'analisi. "
-                              "Puoi riprovare o riformulare la domanda?")
-                    st.markdown(error_msg)
-                    self.session.add_message_to_current_chat({
-                        "role": "assistant",
-                        "content": error_msg
-                    })
 
     def _handle_chat_change(self, new_chat: str):
         """Gestisce il cambio di chat preservando lo stato dell'analisi."""
@@ -371,8 +505,11 @@ class ChatInterface:
         st.session_state.initial_analysis_sent = False
         st.session_state.current_chat = new_chat_name
     
+    
     def render(self):
-        """Renderizza l'interfaccia chat con supporto analisi migliorato."""
+        """Renderizza l'interfaccia chat."""
+        # Rimuovi il vecchio process_user_message dato che ora usiamo handle_user_input
+        
         # Gestione JSON Analysis Toggle
         has_json = any(f.endswith('.json') for f in st.session_state.uploaded_files)
         
@@ -398,15 +535,56 @@ class ChatInterface:
         artifact_container = st.container()
         
         with messages_container:
-            for message in self.session.get_messages_from_current_chat():
-                # Usa "👲🏿" come role per i messaggi dell'assistente
-                role = "👲🏿" if message["role"] == "assistant" else "user"
-                with st.chat_message(role):
-                    st.markdown(message["content"])
+            messages = self.session.get_messages_from_current_chat()
+            # Previeni duplicati usando ID messaggio
+            displayed_ids = set()
+            
+            for message in messages:
+                msg_id = message.get('id', hash(message['content']))
+                if msg_id not in displayed_ids:
+                    role = "👲🏿" if message["role"] == "assistant" else "user"
+                    with st.chat_message(role):
+                        st.markdown(message["content"])
+                    displayed_ids.add(msg_id)
 
+        # Chat input
+        if prompt := st.chat_input("Ask me anything..."):
+            if not st.session_state.get('processing', False):
+                self.handle_user_input(prompt)
+        
         with artifact_container:
-            # Renderizza il CodeViewer
-            self.code_viewer.render()            
+            self.code_viewer.render()
+
+    def _update_session_state(self):
+        """Aggiorna e pulisci lo stato della sessione."""
+        # Rimuovi messaggi duplicati
+        if 'chats' in st.session_state:
+            current_chat = st.session_state.chats.get(st.session_state.current_chat, {})
+            messages = current_chat.get('messages', [])
+            
+            # Usa set per tracciare messaggi unici
+            unique_messages = []
+            seen_contents = set()
+            
+            for msg in messages:
+                msg_content = msg['content']
+                if msg_content not in seen_contents:
+                    unique_messages.append(msg)
+                    seen_contents.add(msg_content)
+            
+            current_chat['messages'] = unique_messages
+
+    def cleanup_old_states(self):
+        """Pulisce stati vecchi o non necessari."""
+        # Rimuovi vecchie chiavi di stato non più necessarie
+        if 'old_message_processor' in st.session_state:
+            del st.session_state.old_message_processor
+        
+        # Limita la dimensione della cache
+        if 'analysis_cache' in st.session_state:
+            cache_items = list(st.session_state.analysis_cache.items())
+            if len(cache_items) > 100:  # mantieni solo ultimi 100 risultati
+                st.session_state.analysis_cache = dict(cache_items[-100:])           
 
     def handle_analysis_mode_change(self, enabled: bool):
         """Gestisce il cambio di modalità analisi."""
@@ -423,174 +601,216 @@ class ChatInterface:
                     st.session_state.initial_analysis_sent = True
     
     def handle_user_input(self, prompt: str):
-        """
-        Gestisce l'input dell'utente con supporto per artifact e streaming.
-        Previene duplicazioni e gestisce correttamente lo stato.
-        
-        Args:
-            prompt: Messaggio dell'utente
-        """
+        """Gestisce l'input dell'utente con prevenzione duplicati."""
         if not prompt.strip():
             return
 
-        # Previene elaborazioni multiple dello stesso input
-        if hasattr(st.session_state, 'last_processed_prompt'):
-            if st.session_state.last_processed_prompt == prompt:
-                return
-        st.session_state.last_processed_prompt = prompt
-
-        # Controllo dello stato di processing
-        if not hasattr(st.session_state, 'processing'):
-            st.session_state.processing = False
-        
-        if st.session_state.processing:
+        # Genera un ID univoco per il messaggio
+        message_id = hashlib.md5(f"{prompt}:{time.time()}".encode()).hexdigest()
+        if message_id in st.session_state.message_ids:
             return
-
-        # Containers per output
-        response_container = st.empty()
-        artifact_container = st.empty()
-        progress_container = None
-        progress_bar = None
-        status_container = None
+        st.session_state.message_ids.add(message_id)
 
         try:
             st.session_state.processing = True
-            
-            # Aggiungi il messaggio utente solo se non è un duplicato
-            current_messages = self.session.get_messages_from_current_chat()
-            is_duplicate = any(
-                msg["role"] == "user" and 
-                msg["content"] == prompt 
-                for msg in current_messages[-3:]  # Controlla gli ultimi 3 messaggi
-            )
-            
-            if not is_duplicate:
-                self.session.add_message_to_current_chat({
-                    "role": "user",
-                    "content": prompt
-                })
+            response_container = st.empty()
+            artifact_container = st.empty()
 
-            with st.spinner("Elaborazione in corso..."):
-                if st.session_state.get('json_analysis_mode', False):
-                    # Progress per analisi JSON
-                    progress_bar = st.progress(0)
-                    progress_container = st.empty()
-                    progress_bar.progress(25)
-                    progress_container.text("Analisi della query in corso...")
-                    
-                    # Gestione analisi JSON
-                    analyzer = st.session_state.data_analyzer
-                    
-                    # Usa cache per prevenire duplicazioni
-                    cache_key = f"{st.session_state.current_chat}:{prompt}"
-                    
-                    progress_bar.progress(50)
-                    progress_container.text("Elaborazione dati...")
-                    
-                    if cache_key in st.session_state.analysis_cache:
-                        response = st.session_state.analysis_cache[cache_key]
-                    else:
-                        response = analyzer.query_data(prompt)
-                        st.session_state.analysis_cache[cache_key] = response
-                    
-                    progress_bar.progress(75)
-                    progress_container.text("Formattazione risposta...")
-                    
-                    # Mostra risposta
-                    with response_container:
-                        with st.chat_message("assistant"):
-                            st.markdown(response)
-                    
-                    # Aggiorna cronologia solo se non è un duplicato
-                    if not is_duplicate:
-                        self.session.add_message_to_current_chat({
-                            "role": "assistant",
-                            "content": response
-                        })
-                        
-                    # Registra analisi
-                    self.session.add_analysis_result(
-                        st.session_state.current_chat,
-                        prompt,
-                        response
-                    )
-                    
-                    progress_bar.progress(100)
-                    time.sleep(0.5)
-                    
+            # Aggiungi messaggio utente
+            self.session.add_message_to_current_chat({
+                "role": "user",
+                "content": prompt,
+                "id": message_id
+            })
+
+            if st.session_state.get('json_analysis_mode', False):
+                # Determina se usare analisi strutturata o LLM
+                if self._is_structured_query(prompt):
+                    response = self._handle_structured_analysis(prompt, response_container)
                 else:
-                    # Modalità chat normale
-                    response = ""
-                    context = self._prepare_chat_context()
-                    has_new_content = False
-                    word_count = 0
-                    tokens_generated = 0
-                    status_container = st.empty()
-                    
-                    for chunk in self.llm.process_request(
-                        prompt=prompt,
-                        context=context
-                    ):
-                        if chunk:
-                            has_new_content = True
-                            
-                            # Aggiorna contatori
-                            word_count += len(chunk.split())
-                            tokens_generated += len(chunk) // 4
-                            
-                            if tokens_generated % 50 == 0:
-                                with status_container:
-                                    st.text(f"Generati {word_count} parole, {tokens_generated} tokens...")
-                            
-                            if isinstance(chunk, dict) and 'type' in chunk and 'content' in chunk:
-                                # Gestione artifact
-                                with artifact_container:
-                                    if not hasattr(st.session_state, 'current_artifact'):
-                                        st.session_state.current_artifact = None
-                                    st.session_state.current_artifact = chunk
-                                    self.code_viewer.render_artifact(chunk)
-                                response += f"\n[Artifact: {chunk.get('title', 'Code')}]\n"
-                            else:
-                                # Testo normale
-                                response += chunk
-                            
-                            # Aggiorna display
-                            with response_container:
-                                with st.chat_message("assistant"):
-                                    st.markdown(response)
-                    
-                    # Aggiorna chat history solo se c'è nuovo contenuto e non è duplicato
-                    if has_new_content and not is_duplicate:
-                        self.session.add_message_to_current_chat({
-                            "role": "assistant",
-                            "content": response
-                        })
-                        st.session_state.last_message_time = datetime.now().timestamp()
+                    response = self._handle_llm_query(prompt, response_container)
+            else:
+                response = self._handle_normal_chat(prompt, response_container, artifact_container)
+
+            # Aggiungi risposta alla chat solo se non è vuota e non è un duplicato
+            if response.strip():
+                response_id = f"response_{message_id}"
+                if response_id not in st.session_state.message_ids:
+                    self.session.add_message_to_current_chat({
+                        "role": "assistant",
+                        "content": response,
+                        "id": response_id
+                    })
+                    st.session_state.message_ids.add(response_id)
 
         except Exception as e:
-            self.logger.error(f"Error processing user input: {str(e)}", exc_info=True)
-            error_msg = f"❌ Si è verificato un errore: {str(e)}"
-            with response_container:
-                with st.chat_message("assistant"):
-                    st.error(error_msg)
-                    if not is_duplicate:
-                        self.session.add_message_to_current_chat({
-                            "role": "assistant",
-                            "content": error_msg
-                        })
-                        
+            st.error(f"Error: {str(e)}")
+            self._handle_error(e, response_container)
         finally:
             st.session_state.processing = False
-            # Pulizia containers
-            if progress_bar:
-                progress_bar.empty()
-            if progress_container:
-                progress_container.empty()
-            if status_container:
-                status_container.empty()
-            if not response.strip():
-                response_container.empty()
-                artifact_container.empty()
+            self._cleanup_old_messages()
+
+    def _is_structured_query(self, query: str) -> bool:
+        """Determina se la query richiede analisi strutturata."""
+        # Lista espansa di keywords per analisi strutturata
+        structured_keywords = {
+            'calcola': ['calcola', 'computa', 'determina'],
+            'analizza': ['analizza', 'analisi', 'esamina'],
+            'trova': ['trova', 'cerca', 'identifica', 'pattern'],
+            'statistiche': ['statistiche', 'stats', 'metriche'],
+            'conta': ['conta', 'conteggio', 'numera'],
+            'somma': ['somma', 'totale', 'aggregato'],
+            'media': ['media', 'average', 'mean'],
+            'distribuzione': ['distribuzione', 'distribuisci'],
+            'raggruppa': ['raggruppa', 'group', 'cluster']
+        }
+        
+        query_lower = query.lower()
+        # Controlla tutte le varianti di ogni keyword
+        for keyword_group in structured_keywords.values():
+            if any(keyword in query_lower for keyword in keyword_group):
+                return True
+        return False
+
+    def _handle_structured_analysis(self, query: str, response_container: st.container) -> str:
+        """Gestisce query di analisi strutturata con feedback visivo."""
+        try:
+            with response_container:
+                with st.status("Analyzing data...", expanded=True) as status:
+                    st.write("Preparing analysis...")
+                    analyzer = st.session_state.data_analyzer
+                    
+                    # Fase 1: Preparazione
+                    st.write("Processing query...")
+                    status.update(label="Processing data", state="running")
+                    
+                    # Fase 2: Analisi
+                    result = analyzer.query_data(query)
+                    status.update(label="Analysis complete", state="complete")
+                    
+                    # Cache del risultato
+                    cache_key = f"analysis_{hashlib.md5(query.encode()).hexdigest()}"
+                    st.session_state.analysis_cache[cache_key] = result
+                    
+                    return result
+        except Exception as e:
+            st.error(f"Analysis error: {str(e)}")
+            return f"❌ Error during analysis: {str(e)}"
+
+    def _handle_llm_query(self, query: str, response_container: st.container) -> str:
+        """Gestisce query LLM sul JSON con contesto e streaming."""
+        try:
+            # Prepara il contesto JSON
+            context = self._prepare_json_context()
+            messages = [
+                {"role": "system", "content": "Sei un esperto analista di dati JSON."},
+                {"role": "system", "content": context},
+                {"role": "user", "content": query}
+            ]
+            
+            # Processa la risposta con streaming
+            response = ""
+            with response_container:
+                with st.chat_message("assistant"):
+                    message_placeholder = st.empty()
+                    for chunk in self.llm.process_request(messages=messages):
+                        response += chunk
+                        # Aggiorna il placeholder con il testo accumulato
+                        message_placeholder.markdown(response + "▌")
+                    # Aggiorna una ultima volta senza il cursore
+                    message_placeholder.markdown(response)
+            
+            return response
+            
+        except Exception as e:
+            st.error(f"LLM query error: {str(e)}")
+            return f"❌ Error processing query: {str(e)}"
+
+    def _handle_normal_chat(self, prompt: str, response_container: st.container, 
+                        artifact_container: st.container) -> str:
+        """Gestisce chat normale con supporto artifact e streaming."""
+        try:
+            response = ""
+            has_artifact = False
+            
+            with response_container:
+                with st.chat_message("assistant"):
+                    message_placeholder = st.empty()
+                    
+                    for chunk in self.llm.process_request(prompt=prompt):
+                        if isinstance(chunk, dict) and chunk.get('type') == 'artifact':
+                            # Gestione artifact
+                            with artifact_container:
+                                self.code_viewer.render_artifact(chunk)
+                            response += f"\n[Artifact: {chunk.get('title', 'Code')}]\n"
+                            has_artifact = True
+                        else:
+                            response += chunk
+                            # Aggiorna il placeholder con il testo accumulato
+                            message_placeholder.markdown(response + "▌")
+                    
+                    # Aggiorna una ultima volta senza il cursore
+                    message_placeholder.markdown(response)
+            
+            # Se c'è stato un artifact, aggiungi un separatore
+            if has_artifact:
+                response += "\n---\n"
+            
+            return response
+            
+        except Exception as e:
+            st.error(f"Chat error: {str(e)}")
+            return f"❌ Error in conversation: {str(e)}"
+
+    def _prepare_json_context(self) -> str:
+        """Prepara il contesto completo per l'analisi JSON."""
+        json_type = st.session_state.get('json_type', 'unknown')
+        structure = st.session_state.get('json_structure', {})
+        
+        context = [
+            f"Analyzing JSON data of type: {json_type}",
+            "\nStructure:",
+            f"- Type: {'Array of objects' if structure.get('is_array') else 'Single object'}",
+            f"- Fields: {', '.join(structure.get('sample_keys', structure.get('keys', [])))}",
+            f"\nSample data available: {bool(structure.get('sample_data'))}",
+            "\nYou can provide detailed analysis and insights about this data."
+        ]
+        
+        # Aggiungi informazioni specifiche per tipo
+        if json_type == 'time_series':
+            context.extend([
+                "\nTime series specific context:",
+                "- Data includes temporal information",
+                "- Can analyze trends and patterns over time",
+                "- Can identify seasonality and anomalies"
+            ])
+        elif json_type == 'entity':
+            context.extend([
+                "\nEntity data specific context:",
+                "- Contains entity properties and attributes",
+                "- Can analyze relationships and patterns",
+                "- Can provide property distributions"
+            ])
+        
+        return "\n".join(context)
+
+    def _handle_error(self, error: Exception, container: st.container):
+        """Gestisce gli errori in modo user-friendly."""
+        with container:
+            error_message = f"❌ {str(error)}"
+            st.error(error_message)
+            
+            # Aggiungi il messaggio di errore alla chat
+            self.session.add_message_to_current_chat({
+                "role": "assistant",
+                "content": error_message
+            })
+
+    def _cleanup_old_messages(self):
+        """Pulisce i vecchi ID dei messaggi per gestire la memoria."""
+        # Mantieni solo gli ultimi 1000 ID
+        if len(st.session_state.message_ids) > 1000:
+            st.session_state.message_ids = set(list(st.session_state.message_ids)[-1000:])
 
     def _prepare_chat_context(self) -> str:
         """Prepara il contesto per la chat includendo informazioni su file e JSON."""
@@ -724,57 +944,51 @@ class CodeViewer:
         }
 
     def render_artifact(self, artifact: Dict[str, Any]):
-        """
-        Renderizza un artifact basato sul suo tipo.
-        Gestisce la visualizzazione e lo stato dell'artifact.
-        """
+        """Renderizza un artifact con gestione stato migliorata."""
         try:
             if not artifact or 'type' not in artifact:
                 return
 
-            # Container per l'artifact
-            artifact_container = st.container()
+            # Genera ID univoco per l'artifact
+            artifact_id = artifact.get('identifier', f"artifact_{time.time()}")
             
-            with artifact_container:
-                # Header dell'artifact
-                col1, col2, col3 = st.columns([6,2,2])
+            # Container per l'artifact
+            with st.container():
+                col1, col2 = st.columns([6,1])
                 with col1:
                     st.markdown(f"### {artifact.get('title', 'Code Artifact')}")
                 with col2:
-                    if st.button("📋 Copy", key=f"copy_{artifact.get('identifier', 'code')}"):
-                        st.session_state[f"copied_{artifact.get('identifier', 'code')}"] = True
-                with col3:
-                    if st.button("❌ Close", key=f"close_{artifact.get('identifier', 'code')}"):
-                        st.session_state.current_artifact = None
+                    if st.button("❌", key=f"close_{artifact_id}"):
                         return
 
                 # Rendering basato sul tipo
-                renderer = self.mime_types.get(artifact['type'])
-                if renderer:
-                    renderer(artifact)
-                else:
-                    st.warning(f"Tipo di artifact non supportato: {artifact['type']}")
+                if artifact['type'] == 'application/vnd.ant.code':
+                    with st.expander("Show Code", expanded=True):
+                        st.code(artifact['content'], language=artifact.get('language', 'python'))
+                elif artifact['type'] == 'text/html':
+                    st.components.v1.html(artifact['content'], height=400)
+                elif artifact['type'] == 'image/svg+xml':
+                    st.markdown(artifact['content'], unsafe_allow_html=True)
+                elif artifact['type'] == 'application/vnd.ant.mermaid':
+                    st.mermaid(artifact['content'])
 
-                # Aggiungi alla storia se non presente
-                if artifact not in st.session_state.artifact_history:
-                    if len(st.session_state.artifact_history) >= 10:
-                        st.session_state.artifact_history.pop(0)
-                    st.session_state.artifact_history.append(artifact)
-
-                # Aggiorna metadata
-                identifier = artifact.get('identifier')
-                if identifier:
-                    if identifier not in st.session_state.artifact_metadata:
-                        st.session_state.artifact_metadata[identifier] = {
-                            'created_at': datetime.now().isoformat(),
-                            'times_viewed': 0
-                        }
-                    st.session_state.artifact_metadata[identifier]['times_viewed'] += 1
-                    st.session_state.artifact_metadata[identifier]['last_viewed'] = datetime.now().isoformat()
+                # Salva l'artifact nella storia
+                self._save_to_history(artifact)
 
         except Exception as e:
-            self.logger.error(f"Error rendering artifact: {str(e)}")
-            st.error(f"Errore nel rendering dell'artifact: {str(e)}")
+            st.error(f"Error rendering artifact: {str(e)}")
+
+    def _save_to_history(self, artifact: Dict[str, Any]):
+        """Salva l'artifact nella storia con gestione duplicati."""
+        if 'artifact_history' not in st.session_state:
+            st.session_state.artifact_history = []
+
+        # Previeni duplicati
+        artifact_id = artifact.get('identifier')
+        if not any(a.get('identifier') == artifact_id for a in st.session_state.artifact_history):
+            if len(st.session_state.artifact_history) >= 10:
+                st.session_state.artifact_history.pop(0)
+            st.session_state.artifact_history.append(artifact)        
 
     def _render_code_artifact(self, artifact: Dict[str, Any]):
         """Renderizza un artifact di codice."""
