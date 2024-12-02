@@ -201,16 +201,7 @@ class FileExplorer:
                                 st.error(f"Error analyzing JSON file {file.name}: {str(e)}")
 
                 except Exception as e:
-                    st.error(f"Error processing {file.name}: {str(e)}")
-
-            if any(f.endswith('.json') for f in st.session_state.uploaded_files):
-                col1, col2 = st.columns([3,1])
-                with col1:
-                    st.markdown("**📊 JSON Analysis Mode**")
-                with col2:
-                    json_analysis = st.toggle('Enable Analysis', 
-                                        key='file_explorer_json_analysis_mode',
-                                        help='Enable JSON data analysis')        
+                    st.error(f"Error processing {file.name}: {str(e)}")      
 
             if new_files and 'chats' in st.session_state and st.session_state.current_chat in st.session_state.chats:
                 files_message = "📂 New files uploaded:\n"
