@@ -434,6 +434,7 @@ class ChatInterface:
             })
             
             response_container = st.empty()
+            artifact_container = st.empty()
             progress_bar = None
             progress_container = None
             
@@ -497,18 +498,25 @@ class ChatInterface:
                             analysis_type=None
                         ):
                             if chunk:
-                                response += chunk
-                                with response_container:
-                                    with st.chat_message("assistant"):
-                                        st.markdown(response)
+                                # Verifica se il chunk è un artifact
+                                if isinstance(chunk, dict) and 'type' in chunk and 'content' in chunk:
+                                    # È un artifact, renderizzalo nel container dedicato
+                                    with artifact_container:
+                                        self.code_viewer.render_artifact(chunk)
+                                else:
+                                    # È testo normale, aggiungilo alla risposta
+                                    response += chunk
+                                    with response_container:
+                                        with st.chat_message("assistant"):
+                                            st.markdown(response)
                     
-                    # Aggiungi risposta alla chat
-                    if response.strip():
-                        self.session.add_message_to_current_chat({
-                            "role": "assistant",
-                            "content": response
-                        })
-                        
+                        # Aggiungi risposta alla chat solo se c'è testo
+                        if response.strip():
+                            self.session.add_message_to_current_chat({
+                                "role": "assistant",
+                                "content": response
+                            })
+                            
             except Exception as e:
                 st.error(f"Errore nell'elaborazione della richiesta: {str(e)}")
                 with response_container:
@@ -523,7 +531,7 @@ class ChatInterface:
                         })
                 # Log error
                 logging.error(f"Error processing user input: {str(e)}", exc_info=True)
-                
+                    
             finally:
                 st.session_state.processing = False
                 if progress_bar:
