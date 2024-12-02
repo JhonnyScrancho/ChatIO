@@ -426,6 +426,21 @@ class ChatInterface:
             
         if not st.session_state.processing and prompt:
             st.session_state.processing = True
+
+            # Verifica se il messaggio è già presente nella chat corrente
+            current_messages = self.session.get_messages_from_current_chat()
+            is_duplicate = any(
+                msg["role"] == "user" and 
+                msg["content"] == prompt 
+                for msg in current_messages[-2:]  # Controlla solo gli ultimi 2 messaggi
+            )
+            
+            # Aggiungi il messaggio solo se non è un duplicato
+            if not is_duplicate:
+                self.session.add_message_to_current_chat({
+                    "role": "user",
+                    "content": prompt
+                })
             
             # Aggiungi messaggio utente alla chat
             self.session.add_message_to_current_chat({
