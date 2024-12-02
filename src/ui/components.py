@@ -227,6 +227,7 @@ class ChatInterface:
     def __init__(self):
         self.session = SessionManager()
         self.llm = LLMManager()
+        self.code_viewer = CodeViewer()
         if 'data_analyzer' not in st.session_state:
             st.session_state.data_analyzer = DataAnalysisManager()
         if 'chats' not in st.session_state:
@@ -389,10 +390,15 @@ class ChatInterface:
         
         # Render chat messages
         messages_container = st.container()
+        artifact_container = st.container()
         with messages_container:
             for message in self.session.get_messages_from_current_chat():
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
+
+        with artifact_container:
+            # Renderizza il CodeViewer
+            self.code_viewer.render()            
 
     def handle_analysis_mode_change(self, enabled: bool):
         """Gestisce il cambio di modalità analisi."""
@@ -610,19 +616,292 @@ class ChatInterface:
                 st.session_state.current_chat = list(st.session_state.chats.keys())[0]
 
 class CodeViewer:
-    """Componente per la visualizzazione del codice."""
+    """Componente per la visualizzazione degli artifact di codice."""
     
     def __init__(self):
-        self.session = SessionManager()
+        """Inizializza il CodeViewer."""
+        # Inizializzazione dello stato
+        if 'current_artifact' not in st.session_state:
+            st.session_state.current_artifact = None
+        if 'artifact_history' not in st.session_state:
+            st.session_state.artifact_history = []
+        if 'artifact_metadata' not in st.session_state:
+            st.session_state.artifact_metadata = {}
+        
+        # Setup logging
+        self.logger = logging.getLogger(__name__)
+        
+        # Mappatura dei tipi MIME
+        self.mime_types = {
+            'application/vnd.ant.code': self._render_code_artifact,
+            'text/html': self._render_code_artifact,
+            'application/vnd.ant.react': self._render_code_artifact,
+            'application/vnd.ant.mermaid': self._render_mermaid_artifact,
+            'image/svg+xml': self._render_svg_artifact
+        }
+
+    def _get_language_label(self, mime_type: str, specified_lang: Optional[str] = None) -> str:
+        """
+        Converte il MIME type nel nome del linguaggio per syntax highlighting.
+        
+        Args:
+            mime_type: MIME type dell'artifact
+            specified_lang: Linguaggio specificato esplicitamente
+            
+        Returns:
+            str: Nome del linguaggio per syntax highlighting
+        """
+        try:
+            mime_to_lang = {
+                'application/vnd.ant.code': lambda lang: lang or 'text',
+                'text/html': 'html',
+                'application/vnd.ant.react': 'jsx',
+                'image/svg+xml': 'xml',
+                'application/vnd.ant.mermaid': 'mermaid'
+            }
+            
+            if mime_type in mime_to_lang:
+                if callable(mime_to_lang[mime_type]):
+                    return mime_to_lang[mime_type](specified_lang)
+                return mime_to_lang[mime_type]
+            return 'text'
+            
+        except Exception as e:
+            self.logger.error(f"Error determining language: {str(e)}")
+            return 'text'
+
+    def _create_copy_button(self, code: str, key: str):
+        """
+        Crea un pulsante per copiare il codice.
+        
+        Args:
+            code: Codice da copiare
+            key: Chiave unica per il bottone
+        """
+        try:
+            col1, col2 = st.columns([1, 15])
+            with col1:
+                if st.button("📋", key=f"copy_{key}", help="Copy to clipboard"):
+                    st.session_state[f"copied_{key}"] = True
+                    st.session_state.clipboard = code
+            with col2:
+                if st.session_state.get(f"copied_{key}", False):
+                    st.success("Copied to clipboard!")
+                    # Reset dopo 2 secondi
+                    st.session_state[f"copied_{key}"] = False
+                    
+        except Exception as e:
+            self.logger.error(f"Error creating copy button: {str(e)}")
+            st.error("Unable to create copy button")
+
+    def _syntax_highlight(self, code: str, language: str) -> str:
+        """
+        Applica syntax highlighting al codice.
+        
+        Args:
+            code: Codice da evidenziare
+            language: Linguaggio del codice
+            
+        Returns:
+            str: Codice HTML con syntax highlighting
+        """
+        try:
+            lexer = get_lexer_by_name(language, stripall=True)
+        except Exception:
+            lexer = TextLexer()
+            
+        formatter = HtmlFormatter(
+            style='monokai',
+            linenos=True,
+            cssclass='source'
+        )
+        
+        return highlight(code, lexer, formatter)
+
+    def _render_code_artifact(self, artifact: Dict[str, Any]):
+        """
+        Renderizza un artifact di codice.
+        
+        Args:
+            artifact: Dizionario contenente i dettagli dell'artifact
+        """
+        try:
+            st.markdown(f"### {artifact.get('title', 'Code Artifact')}")
+            
+            # Determina il linguaggio
+            language = self._get_language_label(
+                artifact['type'],
+                artifact.get('language')
+            )
+            
+            # Aggiungi pulsante copia
+            self._create_copy_button(
+                artifact['content'],
+                artifact.get('identifier', 'code')
+            )
+            
+            # Renderizza il codice
+            st.code(artifact['content'], language=language)
+            
+            # Preview per React e HTML
+            if artifact['type'] in ['application/vnd.ant.react', 'text/html']:
+                if st.button("👁️ Preview Output", key=f"preview_{artifact.get('identifier', 'preview')}"):
+                    with st.expander("Preview", expanded=True):
+                        st.components.v1.html(artifact['content'], height=400)
+            
+            # Metadati
+            with st.expander("Artifact Metadata"):
+                st.json({
+                    'type': artifact['type'],
+                    'language': language,
+                    'created_at': st.session_state.artifact_metadata.get(
+                        artifact.get('identifier', ''),
+                        {'created_at': datetime.now().isoformat()}
+                    )['created_at']
+                })
+                
+        except Exception as e:
+            self.logger.error(f"Error rendering code artifact: {str(e)}")
+            st.error("Error rendering code artifact")
+
+    def _render_mermaid_artifact(self, artifact: Dict[str, Any]):
+        """
+        Renderizza un artifact Mermaid.
+        
+        Args:
+            artifact: Dizionario contenente i dettagli dell'artifact
+        """
+        try:
+            st.markdown(f"### {artifact.get('title', 'Diagram')}")
+            st.mermaid(artifact['content'])
+            
+            # Aggiungi pulsante copia per il codice Mermaid
+            self._create_copy_button(
+                artifact['content'],
+                artifact.get('identifier', 'mermaid')
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error rendering Mermaid artifact: {str(e)}")
+            st.error("Error rendering Mermaid diagram")
+
+    def _render_svg_artifact(self, artifact: Dict[str, Any]):
+        """
+        Renderizza un artifact SVG.
+        
+        Args:
+            artifact: Dizionario contenente i dettagli dell'artifact
+        """
+        try:
+            st.markdown(f"### {artifact.get('title', 'SVG Image')}")
+            
+            # Renderizza SVG
+            st.image(artifact['content'])
+            
+            # Aggiungi pulsante copia per il codice SVG
+            self._create_copy_button(
+                artifact['content'],
+                artifact.get('identifier', 'svg')
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error rendering SVG artifact: {str(e)}")
+            st.error("Error rendering SVG image")
+
+    def _update_artifact_history(self, artifact: Dict[str, Any]):
+        """
+        Aggiorna la storia degli artifact.
+        
+        Args:
+            artifact: Artifact da aggiungere alla storia
+        """
+        try:
+            # Aggiorna metadata
+            identifier = artifact.get('identifier')
+            if identifier:
+                if identifier not in st.session_state.artifact_metadata:
+                    st.session_state.artifact_metadata[identifier] = {
+                        'created_at': datetime.now().isoformat(),
+                        'times_viewed': 0
+                    }
+                st.session_state.artifact_metadata[identifier]['times_viewed'] += 1
+            
+            # Aggiungi alla storia se è nuovo
+            if artifact not in st.session_state.artifact_history:
+                st.session_state.artifact_history.append(artifact)
+                # Mantieni solo gli ultimi 10 artifact
+                if len(st.session_state.artifact_history) > 10:
+                    st.session_state.artifact_history.pop(0)
+                    
+        except Exception as e:
+            self.logger.error(f"Error updating artifact history: {str(e)}")
+
+    def render_artifact(self, artifact: Dict[str, Any]):
+        """
+        Renderizza un artifact basato sul suo tipo.
+        
+        Args:
+            artifact: Dizionario contenente i dettagli dell'artifact
+        """
+        try:
+            if not artifact:
+                return
+            
+            # Valida l'artifact
+            required_fields = ['type', 'content']
+            if not all(field in artifact for field in required_fields):
+                raise ValueError(f"Artifact missing required fields: {required_fields}")
+            
+            # Aggiorna stato corrente
+            st.session_state.current_artifact = artifact
+            self._update_artifact_history(artifact)
+            
+            # Renderizza usando il renderer appropriato
+            renderer = self.mime_types.get(artifact['type'])
+            if renderer:
+                renderer(artifact)
+            else:
+                st.warning(f"Unsupported artifact type: {artifact['type']}")
+                
+        except Exception as e:
+            self.logger.error(f"Error rendering artifact: {str(e)}")
+            st.error(f"Error rendering artifact: {str(e)}")
 
     def render(self):
-        """Renderizza il componente."""
-        selected_file = st.session_state.get('selected_file')
-        if selected_file and (file_info := st.session_state.uploaded_files.get(selected_file)):
-            st.markdown(f"**{file_info['name']}** ({file_info['language']})")
-            st.code(file_info['content'], language=file_info['language'])
-        else:
-            st.info("Select a file from the sidebar to view its content")
+        """Renderizza il componente CodeViewer."""
+        try:
+            # Mostra l'artifact corrente se presente
+            if st.session_state.current_artifact:
+                self.render_artifact(st.session_state.current_artifact)
+            
+            # Storia degli artifact
+            if st.session_state.artifact_history:
+                with st.expander("Previous Artifacts"):
+                    for idx, artifact in enumerate(reversed(st.session_state.artifact_history[-5:])):
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            if st.button(
+                                f"📄 {artifact.get('title', f'Artifact {len(st.session_state.artifact_history) - idx}')}",
+                                key=f"history_{idx}"
+                            ):
+                                st.session_state.current_artifact = artifact
+                                st.experimental_rerun()
+                        with col2:
+                            meta = st.session_state.artifact_metadata.get(
+                                artifact.get('identifier', ''),
+                                {}
+                            )
+                            st.text(f"Views: {meta.get('times_viewed', 0)}")
+                            
+        except Exception as e:
+            self.logger.error(f"Error in main render: {str(e)}")
+            st.error("Error rendering code viewer")
+
+    def clear_history(self):
+        """Pulisce la storia degli artifact."""
+        st.session_state.artifact_history = []
+        st.session_state.artifact_metadata = {}
+        st.session_state.current_artifact = None
 
 class ModelSelector:
     """Componente per la selezione del modello LLM."""
