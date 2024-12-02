@@ -218,7 +218,7 @@ Fornisci risposte in stile conversazionale, evidenziando insights rilevanti.
                 model=model,
                 messages=messages,
                 stream=True,
-                max_completion_tokens=self.model_limits[model]['max_tokens']
+                max_completion_tokens=self.model_limits[model]['max_tokens']  # Modificato qui
             )
             
             for chunk in completion:
