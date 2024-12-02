@@ -229,16 +229,34 @@ Puoi chiedermi:
     def _analyze_statistics(self, data: Any) -> Dict[str, Any]:
         """Calcola statistiche di base."""
         try:
-            df = pd.DataFrame(data)
-            numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns
-            return {
-                'summary': df[numeric_cols].describe().to_dict(),
-                'missing_values': df.isnull().sum().to_dict(),
-                'unique_counts': df.nunique().to_dict()
+            # Estraiamo tutti i post
+            all_posts = []
+            for thread in data:
+                all_posts.extend(thread['posts'])
+            
+            df = pd.DataFrame(all_posts)
+            
+            stats = {
+                'total_threads': len(data),
+                'total_posts': len(all_posts),
+                'unique_authors': len(df['author'].unique()),
+                'sentiment_stats': {
+                    'mean': df['sentiment'].mean(),
+                    'min': df['sentiment'].min(),
+                    'max': df['sentiment'].max()
+                },
+                'content_length_stats': df['metadata'].apply(lambda x: x['content_length']).describe().to_dict(),
+                'posts_per_author': df['author'].value_counts().to_dict(),
+                'timeline': {
+                    'first_post': df['post_time'].min(),
+                    'last_post': df['post_time'].max()
+                }
             }
-        except:
-            pass
-        return {'error': 'Dati non supportati per analisi statistiche'}
+            
+            return stats
+            
+        except Exception as e:
+            return {'error': f'Errore analisi statistiche: {str(e)}'}
 
     def _count_analysis(self, data: Any) -> Dict[str, Any]:
         """Esegue analisi di conteggio."""
