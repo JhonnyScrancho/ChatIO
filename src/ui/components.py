@@ -11,7 +11,7 @@ from src.core.session import SessionManager
 from src.core.files import FileManager
 from src.core.llm import LLMManager
 from src.core.data_analysis import DataAnalysisManager
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 
 class FileExplorer:
     def __init__(self):
