@@ -587,13 +587,33 @@ class ChatInterface:
         # Aggiungi contesto dei file
         if hasattr(st.session_state, 'uploaded_files'):
             for filename, file_info in st.session_state.uploaded_files.items():
-                context.append(f"File: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n")
+                # Gestione speciale per file JSON
+                if filename.endswith('.json'):
+                    context.append(f"\nJSON File: {filename}\nContent:\n```json\n{file_info['content']}\n```\n")
+                else:
+                    context.append(f"File: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n")
         
-        # Aggiungi contesto JSON se in modalità analisi
-        if st.session_state.get('json_analysis_mode', False):
+        # Aggiungi contesto JSON se disponibile, anche se non in modalità analisi
+        if st.session_state.get('json_structure'):
             json_structure = st.session_state.get('json_structure', {})
             json_type = st.session_state.get('json_type', 'unknown')
-            context.append(f"\nJSON Analysis Context:\nType: {json_type}\nStructure: {json_structure}")
+            context.append(f"\nJSON Structure:\nType: {json_type}\nStructure: {json_structure}")
+        
+        # Aggiungi contesto delle chat precedenti per mantenere coerenza
+        current_messages = self.session.get_messages_from_current_chat()
+        recent_context = []
+        for msg in current_messages[-5:]:  # ultimi 5 messaggi
+            if msg["role"] == "user" and msg["content"].strip().startswith('{'):
+                try:
+                    # Prova a vedere se è JSON valido
+                    import json
+                    json.loads(msg["content"])
+                    recent_context.append(f"\nJSON Input from user:\n```json\n{msg['content']}\n```\n")
+                except:
+                    pass
+        
+        if recent_context:
+            context.extend(recent_context)
         
         return "\n".join(context)
 
