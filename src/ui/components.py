@@ -217,7 +217,7 @@ class FileExplorer:
                     st.session_state.file_messages_sent.add(message_hash)
 
         if st.session_state.uploaded_files:
-            st.markdown("### 📁 Files Tree")
+            st.markdown("### 🌲 Files Tree")
             tree = self._create_file_tree(st.session_state.uploaded_files)
             self._render_tree_node("", tree, "")
 
