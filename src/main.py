@@ -196,6 +196,35 @@ def render_main_layout():
                 border-top: 1px solid var(--secondary-background-color) !important;
                 z-index: 999 !important;
             }
+
+            /* Code Viewer styling */
+            .codeviewer-container {
+                border-left: 1px solid var(--secondary-background-color);
+                height: calc(100vh - 80px);
+                overflow-y: auto;
+                padding-left: 1rem;
+            }
+
+            /* Artifact styling */
+            .artifact-container {
+                margin: 1rem 0;
+                padding: 1rem;
+                border-radius: 0.5rem;
+                border: 1px solid var(--secondary-background-color);
+                background-color: var(--background-color);
+            }
+
+            /* Chat container adjustments */
+            .chat-container {
+                height: calc(100vh - 150px);
+                overflow-y: auto;
+                padding-right: 1rem;
+            }
+
+            /* Ensure code blocks are properly formatted */
+            pre code {
+                white-space: pre !important;
+            }
         </style>
     """, unsafe_allow_html=True)
     
@@ -220,24 +249,46 @@ def render_main_layout():
         st.markdown("### 📁 File Manager")
         FileExplorer().render()
     
-    # Main Content Area con Chat e Code Viewer
-    col1, col2 = st.columns([3, 2])
+    # Container principale diviso in chat e codeviewer
+    chat_container, viewer_container = st.columns([3, 2])
     
-    with col1:
+    # Chat Area
+    with chat_container:
+        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
         st.markdown("### 💬 Chat")
-        ChatInterface().render()
+        chat_interface = ChatInterface()
+        chat_interface.render()
+        st.markdown('</div>', unsafe_allow_html=True)
     
-    with col2:
+    # Code Viewer Area
+    with viewer_container:
+        st.markdown('<div class="codeviewer-container">', unsafe_allow_html=True)
         st.markdown("### 📝 Code Viewer")
-        CodeViewer().render()
+        code_viewer = CodeViewer()
+        code_viewer.render()
+        st.markdown('</div>', unsafe_allow_html=True)
     
     # Chat input fisso in fondo
     if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
-        clients['session'].add_message_to_current_chat({
-            "role": "user",
-            "content": prompt
-        })
-        ChatInterface().process_user_message(prompt)
+        # Gestione preliminare del prompt
+        if prompt.strip():
+            # Aggiungi il messaggio alla chat
+            clients['session'].add_message_to_current_chat({
+                "role": "user",
+                "content": prompt
+            })
+            
+            # Processa il messaggio con gestione degli artifact
+            chat_interface.handle_user_input(prompt)
+            
+            # Forza il refresh del CodeViewer se necessario
+            if st.session_state.get('current_artifact'):
+                code_viewer.render_artifact(st.session_state.current_artifact)
+
+    # Gestione degli stati e aggiornamento UI
+    if st.session_state.get('show_stats', False):
+        with st.expander("📊 Statistics", expanded=True):
+            StatsDisplay().render()
 
 def main():
     """Funzione principale dell'applicazione."""
