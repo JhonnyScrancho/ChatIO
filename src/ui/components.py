@@ -251,11 +251,11 @@ class ChatInterface:
             st.session_state.current_chat = 'Chat principale'
         if 'json_analysis_states' not in st.session_state:
             st.session_state.json_analysis_states = {}
-        # Aggiungiamo queste inizializzazioni
         if 'json_structure' not in st.session_state:
             st.session_state.json_structure = None
         if 'json_type' not in st.session_state:
             st.session_state.json_type = None
+
 
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
@@ -289,34 +289,47 @@ class ChatInterface:
         if not prompt.strip():
             return
 
-        st.session_state.chats[st.session_state.current_chat]['messages'].append({
+        self.session.add_message_to_current_chat({
             "role": "user",
             "content": prompt
         })
 
         response_container = st.empty()
         
-        response = ""
-        with st.spinner("Processing..."):
-            if st.session_state.get('json_analysis_mode', False):
-                analyzer = st.session_state.data_analyzer
-                response = analyzer.query_data(prompt)
-                with response_container:
-                    with st.chat_message("assistant"):
-                        st.markdown(response)
-            else:
-                for chunk in self.llm.process_request(prompt=prompt):
-                    if chunk:
-                        response += chunk
-                        with response_container:
-                            with st.chat_message("assistant"):
-                                st.markdown(response)
+        try:
+            with st.spinner("Processing..."):
+                if st.session_state.get('json_analysis_mode', False):
+                    analyzer = st.session_state.data_analyzer
+                    response = analyzer.query_data(prompt)
+                    with response_container:
+                        with st.chat_message("assistant"):
+                            st.markdown(response)
+                else:
+                    response = ""
+                    for chunk in self.llm.process_request(prompt=prompt):
+                        if chunk:
+                            response += chunk
+                            with response_container:
+                                with st.chat_message("assistant"):
+                                    st.markdown(response)
 
-        if response.strip():
-            st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                "role": "assistant",
-                "content": response
-            })
+                if response.strip():
+                    self.session.add_message_to_current_chat({
+                        "role": "assistant",
+                        "content": response
+                    })
+                    
+        except Exception as e:
+            st.error(f"Error occurred: {str(e)}")
+            with response_container:
+                with st.chat_message("assistant"):
+                    error_msg = ("❌ Mi dispiace, ho incontrato un errore nell'analisi. "
+                              "Puoi riprovare o riformulare la domanda?")
+                    st.markdown(error_msg)
+                    self.session.add_message_to_current_chat({
+                        "role": "assistant",
+                        "content": error_msg
+                    })
 
     def _handle_chat_change(self, new_chat: str):
         """Gestisce il cambio di chat preservando lo stato dell'analisi."""
@@ -389,10 +402,6 @@ class ChatInterface:
             for message in self.session.get_messages_from_current_chat():
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
-        
-        # Chat input
-        if prompt := st.chat_input("Scrivi un messaggio..."):
-            self.handle_user_input(prompt)
 
     def handle_analysis_mode_change(self, enabled: bool):
         """Gestisce il cambio di modalità analisi."""
@@ -524,23 +533,23 @@ class ChatInterface:
                     progress_bar.empty()
                 if progress_container:
                     progress_container.empty()
-                    
-        def _prepare_chat_context(self) -> str:
-            """Prepara il contesto per la chat."""
-            context = []
-            
-            # Aggiungi contesto dei file
-            if hasattr(st.session_state, 'uploaded_files'):
-                for filename, file_info in st.session_state.uploaded_files.items():
-                    context.append(f"File: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n")
-            
-            # Aggiungi contesto JSON se in modalità analisi
-            if st.session_state.get('json_analysis_mode', False):
-                json_structure = st.session_state.get('json_structure', {})
-                json_type = st.session_state.get('json_type', 'unknown')
-                context.append(f"\nJSON Analysis Context:\nType: {json_type}\nStructure: {json_structure}")
-            
-            return "\n".join(context)
+
+    def _prepare_chat_context(self) -> str:
+        """Prepara il contesto per la chat."""
+        context = []
+        
+        # Aggiungi contesto dei file
+        if hasattr(st.session_state, 'uploaded_files'):
+            for filename, file_info in st.session_state.uploaded_files.items():
+                context.append(f"File: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n")
+        
+        # Aggiungi contesto JSON se in modalità analisi
+        if st.session_state.get('json_analysis_mode', False):
+            json_structure = st.session_state.get('json_structure', {})
+            json_type = st.session_state.get('json_type', 'unknown')
+            context.append(f"\nJSON Analysis Context:\nType: {json_type}\nStructure: {json_structure}")
+        
+        return "\n".join(context)
 
     def render_analysis_status(self):
         """Renderizza informazioni sullo stato dell'analisi."""
