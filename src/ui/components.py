@@ -187,11 +187,16 @@ class FileExplorer:
 
                         if file.name.endswith('.json'):
                             try:
-                                if self._process_json_file(content, file.name):
+                                # Analizziamo il file JSON
+                                analysis = self.file_manager._analyze_json_structure(content, file.name)
+                                if analysis.get('is_analyzable', False):
+                                    st.session_state.json_structure = analysis.get('structure', {})
+                                    st.session_state.json_type = analysis.get('type', 'unknown')
+                                    # Reset dello stato di analisi
                                     st.session_state.json_analysis_mode = False
                                     st.session_state.initial_analysis_sent = False
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                st.error(f"Error analyzing JSON file {file.name}: {str(e)}")
 
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {str(e)}")
