@@ -197,7 +197,7 @@ class FileExplorer:
                     st.markdown("**📊 JSON Analysis Mode**")
                 with col2:
                     json_analysis = st.toggle('Enable Analysis', 
-                                        key='json_analysis_mode',
+                                        key='file_explorer_json_analysis_mode',
                                         help='Enable JSON data analysis')        
 
             if new_files and 'chats' in st.session_state and st.session_state.current_chat in st.session_state.chats:
@@ -360,7 +360,7 @@ class ChatInterface:
                 with col2:
                     json_analysis = st.toggle(
                         'Attiva Analisi',
-                        key='json_analysis_mode',
+                        key='chat_json_analysis_mode',
                         help='Abilita analisi dati JSON nella chat'
                     )
                     if json_analysis != st.session_state.get('json_analysis_mode', False):
