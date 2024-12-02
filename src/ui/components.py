@@ -425,195 +425,211 @@ class ChatInterface:
     def handle_user_input(self, prompt: str):
         """
         Gestisce l'input dell'utente con supporto per artifact e streaming.
+        Previene duplicazioni e gestisce correttamente lo stato.
         
         Args:
             prompt: Messaggio dell'utente
         """
+        if not prompt.strip():
+            return
+
+        # Previene elaborazioni multiple dello stesso input
+        if hasattr(st.session_state, 'last_processed_prompt'):
+            if st.session_state.last_processed_prompt == prompt:
+                return
+        st.session_state.last_processed_prompt = prompt
+
+        # Controllo dello stato di processing
         if not hasattr(st.session_state, 'processing'):
             st.session_state.processing = False
-            
-        if not st.session_state.processing and prompt:
-            st.session_state.processing = True
+        
+        if st.session_state.processing:
+            return
 
-            # Verifica se il messaggio è già presente nella chat corrente
+        # Containers per output
+        response_container = st.empty()
+        artifact_container = st.empty()
+        progress_container = None
+        progress_bar = None
+        status_container = None
+
+        try:
+            st.session_state.processing = True
+            
+            # Aggiungi il messaggio utente solo se non è un duplicato
             current_messages = self.session.get_messages_from_current_chat()
             is_duplicate = any(
                 msg["role"] == "user" and 
                 msg["content"] == prompt 
-                for msg in current_messages[-2:]  # Controlla solo gli ultimi 2 messaggi
+                for msg in current_messages[-3:]  # Controlla gli ultimi 3 messaggi
             )
             
-            # Aggiungi il messaggio solo se non è un duplicato
             if not is_duplicate:
                 self.session.add_message_to_current_chat({
                     "role": "user",
                     "content": prompt
                 })
-            
-            response_container = st.empty()
-            artifact_container = st.empty()
-            progress_bar = None
-            progress_container = None
-            
-            try:
-                with st.spinner("Elaborazione in corso..."):
-                    if st.session_state.get('json_analysis_mode', False):
-                        # Progress bar per analisi
-                        progress_bar = st.progress(0)
-                        progress_container = st.empty()
-                        
-                        # Prepara analisi
-                        analyzer = st.session_state.data_analyzer
-                        
-                        # Aggiorna stato progresso
-                        progress_bar.progress(25)
-                        progress_container.text("Analisi della query in corso...")
-                        
-                        # Valida e processa query
-                        cleaned_prompt = prompt.strip()
-                        if not cleaned_prompt:
-                            raise ValueError("Query vuota")
-                        
-                        # Esegui analisi con gestione cache
-                        cache_key = f"{st.session_state.current_chat}:{cleaned_prompt}"
-                        if cache_key in st.session_state.analysis_cache:
-                            response = st.session_state.analysis_cache[cache_key]
-                        else:
-                            progress_bar.progress(50)
-                            progress_container.text("Elaborazione dati...")
-                            response = analyzer.query_data(cleaned_prompt)
-                            st.session_state.analysis_cache[cache_key] = response
-                        
-                        # Aggiorna progresso
-                        progress_bar.progress(75)
-                        progress_container.text("Formattazione risposta...")
-                        
-                        # Mostra risposta
-                        with response_container:
-                            with st.chat_message("assistant"):
-                                st.markdown(response)
-                        
-                        # Registra nella cronologia
-                        self.session.add_analysis_result(
-                            st.session_state.current_chat,
-                            cleaned_prompt,
-                            response
-                        )
-                        
-                        # Aggiorna cronologia chat
-                        if not is_duplicate:
-                            self.session.add_message_to_current_chat({
-                                "role": "assistant",
-                                "content": response
-                            })
-                        
-                        # Completa
-                        progress_bar.progress(100)
-                        time.sleep(0.5)  # Breve pausa per mostrare completamento
-                        
-                    else:
-                        # Modalità chat normale
-                        response = ""
-                        context = self._prepare_chat_context()
-                        has_new_content = False
-                        
-                        for chunk in self.llm.process_request(
-                            prompt=prompt,
-                            context=context,
-                            analysis_type=None
-                        ):
-                            if chunk:
-                                has_new_content = True
-                                # Verifica se il chunk è un artifact
-                                if isinstance(chunk, dict) and 'type' in chunk and 'content' in chunk:
-                                    # È un artifact, renderizzalo nel container dedicato
-                                    with artifact_container:
-                                        self.code_viewer.render_artifact(chunk)
-                                        
-                                    # Aggiungi riferimento all'artifact nella risposta
-                                    artifact_ref = f"\n[Artifact: {chunk.get('title', 'Code')}]\n"
-                                    response += artifact_ref
-                                    
-                                    # Aggiorna display
-                                    with response_container:
-                                        with st.chat_message("assistant"):
-                                            st.markdown(response)
-                                else:
-                                    # È testo normale, aggiungilo alla risposta
-                                    response += chunk
-                                    with response_container:
-                                        with st.chat_message("assistant"):
-                                            st.markdown(response)
-                        
-                        # Aggiungi la risposta alla chat solo se c'è nuovo contenuto
-                        if has_new_content and not is_duplicate:
-                            self.session.add_message_to_current_chat({
-                                "role": "assistant",
-                                "content": response
-                            })
-                            
-                            # Aggiorna timestamp ultimo messaggio
-                            st.session_state.last_message_time = datetime.now().timestamp()
-                    
-            except Exception as e:
-                self.logger.error(f"Error processing user input: {str(e)}", exc_info=True)
-                error_msg = f"❌ Si è verificato un errore: {str(e)}"
-                with response_container:
-                    with st.chat_message("assistant"):
-                        st.error(error_msg)
-                        
-                        if not is_duplicate:
-                            self.session.add_message_to_current_chat({
-                                "role": "assistant",
-                                "content": error_msg
-                            })
-                            
-            finally:
-                st.session_state.processing = False
-                if progress_bar:
-                    progress_bar.empty()
-                if progress_container:
-                    progress_container.empty()
 
-                # Pulisci container temporanei se non c'è stato contenuto
-                if response == "":
-                    response_container.empty()
-                    artifact_container.empty()
+            with st.spinner("Elaborazione in corso..."):
+                if st.session_state.get('json_analysis_mode', False):
+                    # Progress per analisi JSON
+                    progress_bar = st.progress(0)
+                    progress_container = st.empty()
+                    progress_bar.progress(25)
+                    progress_container.text("Analisi della query in corso...")
+                    
+                    # Gestione analisi JSON
+                    analyzer = st.session_state.data_analyzer
+                    
+                    # Usa cache per prevenire duplicazioni
+                    cache_key = f"{st.session_state.current_chat}:{prompt}"
+                    
+                    progress_bar.progress(50)
+                    progress_container.text("Elaborazione dati...")
+                    
+                    if cache_key in st.session_state.analysis_cache:
+                        response = st.session_state.analysis_cache[cache_key]
+                    else:
+                        response = analyzer.query_data(prompt)
+                        st.session_state.analysis_cache[cache_key] = response
+                    
+                    progress_bar.progress(75)
+                    progress_container.text("Formattazione risposta...")
+                    
+                    # Mostra risposta
+                    with response_container:
+                        with st.chat_message("assistant"):
+                            st.markdown(response)
+                    
+                    # Aggiorna cronologia solo se non è un duplicato
+                    if not is_duplicate:
+                        self.session.add_message_to_current_chat({
+                            "role": "assistant",
+                            "content": response
+                        })
+                        
+                    # Registra analisi
+                    self.session.add_analysis_result(
+                        st.session_state.current_chat,
+                        prompt,
+                        response
+                    )
+                    
+                    progress_bar.progress(100)
+                    time.sleep(0.5)
+                    
+                else:
+                    # Modalità chat normale
+                    response = ""
+                    context = self._prepare_chat_context()
+                    has_new_content = False
+                    word_count = 0
+                    tokens_generated = 0
+                    status_container = st.empty()
+                    
+                    for chunk in self.llm.process_request(
+                        prompt=prompt,
+                        context=context
+                    ):
+                        if chunk:
+                            has_new_content = True
+                            
+                            # Aggiorna contatori
+                            word_count += len(chunk.split())
+                            tokens_generated += len(chunk) // 4
+                            
+                            if tokens_generated % 50 == 0:
+                                with status_container:
+                                    st.text(f"Generati {word_count} parole, {tokens_generated} tokens...")
+                            
+                            if isinstance(chunk, dict) and 'type' in chunk and 'content' in chunk:
+                                # Gestione artifact
+                                with artifact_container:
+                                    if not hasattr(st.session_state, 'current_artifact'):
+                                        st.session_state.current_artifact = None
+                                    st.session_state.current_artifact = chunk
+                                    self.code_viewer.render_artifact(chunk)
+                                response += f"\n[Artifact: {chunk.get('title', 'Code')}]\n"
+                            else:
+                                # Testo normale
+                                response += chunk
+                            
+                            # Aggiorna display
+                            with response_container:
+                                with st.chat_message("assistant"):
+                                    st.markdown(response)
+                    
+                    # Aggiorna chat history solo se c'è nuovo contenuto e non è duplicato
+                    if has_new_content and not is_duplicate:
+                        self.session.add_message_to_current_chat({
+                            "role": "assistant",
+                            "content": response
+                        })
+                        st.session_state.last_message_time = datetime.now().timestamp()
+
+        except Exception as e:
+            self.logger.error(f"Error processing user input: {str(e)}", exc_info=True)
+            error_msg = f"❌ Si è verificato un errore: {str(e)}"
+            with response_container:
+                with st.chat_message("assistant"):
+                    st.error(error_msg)
+                    if not is_duplicate:
+                        self.session.add_message_to_current_chat({
+                            "role": "assistant",
+                            "content": error_msg
+                        })
+                        
+        finally:
+            st.session_state.processing = False
+            # Pulizia containers
+            if progress_bar:
+                progress_bar.empty()
+            if progress_container:
+                progress_container.empty()
+            if status_container:
+                status_container.empty()
+            if not response.strip():
+                response_container.empty()
+                artifact_container.empty()
 
     def _prepare_chat_context(self) -> str:
-        """Prepara il contesto per la chat."""
+        """Prepara il contesto per la chat includendo informazioni su file e JSON."""
         context = []
         
         # Aggiungi contesto dei file
         if hasattr(st.session_state, 'uploaded_files'):
             for filename, file_info in st.session_state.uploaded_files.items():
-                # Gestione speciale per file JSON
-                if filename.endswith('.json'):
-                    context.append(f"\nJSON File: {filename}\nContent:\n```json\n{file_info['content']}\n```\n")
+                if file_info['type'] == 'json':
+                    # Gestione speciale per JSON
+                    context.append(f"\nJSON File: {filename}")
+                    if 'json_analysis' in file_info:
+                        context.append(f"Type: {file_info['json_analysis']['type']}")
+                        context.append(f"Structure: {file_info['json_analysis']['structure']}")
                 else:
-                    context.append(f"File: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n")
+                    # Altri file
+                    context.append(f"\nFile: {filename}")
+                    context.append(f"Type: {file_info.get('language', 'text')}")
+                    context.append(f"Content:\n```{file_info.get('language', '')}\n{file_info['content']}\n```\n")
         
-        # Aggiungi contesto JSON se disponibile, anche se non in modalità analisi
-        if st.session_state.get('json_structure'):
+        # Aggiungi contesto JSON se in modalità analisi
+        if st.session_state.get('json_analysis_mode', False):
             json_structure = st.session_state.get('json_structure', {})
             json_type = st.session_state.get('json_type', 'unknown')
-            context.append(f"\nJSON Structure:\nType: {json_type}\nStructure: {json_structure}")
+            context.append(f"\nActive JSON Analysis Mode:")
+            context.append(f"Type: {json_type}")
+            context.append(f"Structure: {json_structure}")
         
-        # Aggiungi contesto delle chat precedenti per mantenere coerenza
+        # Aggiungi contesto delle chat recenti
         current_messages = self.session.get_messages_from_current_chat()
         recent_context = []
         for msg in current_messages[-5:]:  # ultimi 5 messaggi
-            if msg["role"] == "user" and msg["content"].strip().startswith('{'):
-                try:
-                    # Prova a vedere se è JSON valido
-                    import json
-                    json.loads(msg["content"])
-                    recent_context.append(f"\nJSON Input from user:\n```json\n{msg['content']}\n```\n")
-                except:
-                    pass
+            if msg["role"] == "user" and msg["content"].strip():
+                recent_context.append(f"Previous user query: {msg['content']}")
+            elif msg["role"] == "assistant" and msg["content"].strip():
+                recent_context.append(f"Previous response: {msg['content'][:100]}...")
         
         if recent_context:
-            context.extend(recent_context)
+            context.extend(["\nRecent Conversation Context:", *recent_context])
         
         return "\n".join(context)
 
@@ -689,18 +705,16 @@ class CodeViewer:
     
     def __init__(self):
         """Inizializza il CodeViewer."""
-        # Inizializzazione dello stato - mantenuto dal tuo codice originale
         if 'current_artifact' not in st.session_state:
             st.session_state.current_artifact = None
         if 'artifact_history' not in st.session_state:
             st.session_state.artifact_history = []
         if 'artifact_metadata' not in st.session_state:
             st.session_state.artifact_metadata = {}
-        
-        # Setup logging - mantenuto dal tuo codice originale
+            
         self.logger = logging.getLogger(__name__)
         
-        # Mappatura dei tipi MIME - estesa con i nuovi renderer
+        # Mappatura dei tipi MIME per i renderer
         self.mime_types = {
             'application/vnd.ant.code': self._render_code_artifact,
             'text/html': self._render_html_artifact,
@@ -709,80 +723,71 @@ class CodeViewer:
             'image/svg+xml': self._render_svg_artifact
         }
 
-    def _get_language_label(self, mime_type: str, specified_lang: Optional[str] = None) -> str:
+    def render_artifact(self, artifact: Dict[str, Any]):
         """
-        Converte il MIME type nel nome del linguaggio per syntax highlighting.
-        
-        Args:
-            mime_type: MIME type dell'artifact
-            specified_lang: Linguaggio specificato esplicitamente
-            
-        Returns:
-            str: Nome del linguaggio per syntax highlighting
+        Renderizza un artifact basato sul suo tipo.
+        Gestisce la visualizzazione e lo stato dell'artifact.
         """
         try:
-            mime_to_lang = {
-                'application/vnd.ant.code': lambda lang: lang or 'text',
-                'text/html': 'html',
-                'application/vnd.ant.react': 'jsx',
-                'image/svg+xml': 'xml',
-                'application/vnd.ant.mermaid': 'mermaid'
-            }
-            
-            if mime_type in mime_to_lang:
-                if callable(mime_to_lang[mime_type]):
-                    return mime_to_lang[mime_type](specified_lang)
-                return mime_to_lang[mime_type]
-            return 'text'
-            
-        except Exception as e:
-            self.logger.error(f"Error determining language: {str(e)}")
-            return 'text'
+            if not artifact or 'type' not in artifact:
+                return
 
-    def _create_copy_button(self, code: str, key: str):
-        """Crea un pulsante per copiare il codice."""
-        try:
-            col1, col2 = st.columns([1, 15])
-            with col1:
-                if st.button("📋", key=f"copy_{key}", help="Copy to clipboard"):
-                    st.session_state[f"copied_{key}"] = True
-                    st.session_state.clipboard = code
-            with col2:
-                if st.session_state.get(f"copied_{key}", False):
-                    st.success("Copied to clipboard!")
-                    time.sleep(1)
-                    st.session_state[f"copied_{key}"] = False
-                    
+            # Container per l'artifact
+            artifact_container = st.container()
+            
+            with artifact_container:
+                # Header dell'artifact
+                col1, col2, col3 = st.columns([6,2,2])
+                with col1:
+                    st.markdown(f"### {artifact.get('title', 'Code Artifact')}")
+                with col2:
+                    if st.button("📋 Copy", key=f"copy_{artifact.get('identifier', 'code')}"):
+                        st.session_state[f"copied_{artifact.get('identifier', 'code')}"] = True
+                with col3:
+                    if st.button("❌ Close", key=f"close_{artifact.get('identifier', 'code')}"):
+                        st.session_state.current_artifact = None
+                        return
+
+                # Rendering basato sul tipo
+                renderer = self.mime_types.get(artifact['type'])
+                if renderer:
+                    renderer(artifact)
+                else:
+                    st.warning(f"Tipo di artifact non supportato: {artifact['type']}")
+
+                # Aggiungi alla storia se non presente
+                if artifact not in st.session_state.artifact_history:
+                    if len(st.session_state.artifact_history) >= 10:
+                        st.session_state.artifact_history.pop(0)
+                    st.session_state.artifact_history.append(artifact)
+
+                # Aggiorna metadata
+                identifier = artifact.get('identifier')
+                if identifier:
+                    if identifier not in st.session_state.artifact_metadata:
+                        st.session_state.artifact_metadata[identifier] = {
+                            'created_at': datetime.now().isoformat(),
+                            'times_viewed': 0
+                        }
+                    st.session_state.artifact_metadata[identifier]['times_viewed'] += 1
+                    st.session_state.artifact_metadata[identifier]['last_viewed'] = datetime.now().isoformat()
+
         except Exception as e:
-            self.logger.error(f"Error creating copy button: {str(e)}")
-            st.error("Unable to create copy button")
+            self.logger.error(f"Error rendering artifact: {str(e)}")
+            st.error(f"Errore nel rendering dell'artifact: {str(e)}")
 
     def _render_code_artifact(self, artifact: Dict[str, Any]):
         """Renderizza un artifact di codice."""
         try:
-            st.markdown(f"### {artifact.get('title', 'Code')}")
-            
             # Determina il linguaggio
-            language = self._get_language_label(
-                artifact['type'],
-                artifact.get('language')
-            )
+            language = artifact.get('language', 'text')
             
-            # Container per codice e pulsante copia
-            code_container = st.container()
-            
-            with code_container:
-                # Aggiungi pulsante copia
-                self._create_copy_button(
-                    artifact['content'],
-                    artifact.get('identifier', 'code')
-                )
-                
-                # Renderizza il codice
+            # Container per il codice
+            with st.expander("Show Code", expanded=True):
                 st.code(artifact['content'], language=language)
                 
-            # Metadati
-            with st.expander("Artifact Metadata"):
+            # Metadata
+            with st.expander("Metadata"):
                 st.json({
                     'type': artifact['type'],
                     'language': language,
@@ -799,15 +804,9 @@ class CodeViewer:
     def _render_html_artifact(self, artifact: Dict[str, Any]):
         """Renderizza un artifact HTML."""
         try:
-            st.markdown(f"### {artifact.get('title', 'HTML Preview')}")
-            
             # Mostra il codice sorgente
-            with st.expander("View Source"):
+            with st.expander("View Source", expanded=False):
                 st.code(artifact['content'], language='html')
-                self._create_copy_button(
-                    artifact['content'],
-                    artifact.get('identifier', 'html')
-                )
             
             # Renderizza HTML
             st.components.v1.html(artifact['content'], height=400)
@@ -819,17 +818,11 @@ class CodeViewer:
     def _render_react_artifact(self, artifact: Dict[str, Any]):
         """Renderizza un artifact React."""
         try:
-            st.markdown(f"### {artifact.get('title', 'React Component')}")
-            
             # Mostra il codice sorgente
-            with st.expander("View Source"):
+            with st.expander("View Source", expanded=False):
                 st.code(artifact['content'], language='jsx')
-                self._create_copy_button(
-                    artifact['content'],
-                    artifact.get('identifier', 'react')
-                )
             
-            # Opzione per visualizzare il componente
+            # Preview del componente
             if st.toggle("Show Preview", key=f"preview_{artifact.get('identifier', 'react')}"):
                 st.write("Component Preview:")
                 st.components.v1.html(
@@ -849,14 +842,7 @@ class CodeViewer:
     def _render_mermaid_artifact(self, artifact: Dict[str, Any]):
         """Renderizza un artifact Mermaid."""
         try:
-            st.markdown(f"### {artifact.get('title', 'Diagram')}")
             st.mermaid(artifact['content'])
-            
-            # Aggiungi pulsante copia per il codice Mermaid
-            self._create_copy_button(
-                artifact['content'],
-                artifact.get('identifier', 'mermaid')
-            )
             
         except Exception as e:
             self.logger.error(f"Error rendering Mermaid artifact: {str(e)}")
@@ -865,64 +851,31 @@ class CodeViewer:
     def _render_svg_artifact(self, artifact: Dict[str, Any]):
         """Renderizza un artifact SVG."""
         try:
-            st.markdown(f"### {artifact.get('title', 'SVG Image')}")
             st.markdown(artifact['content'], unsafe_allow_html=True)
-            
-            # Aggiungi pulsante copia per il codice SVG
-            self._create_copy_button(
-                artifact['content'],
-                artifact.get('identifier', 'svg')
-            )
             
         except Exception as e:
             self.logger.error(f"Error rendering SVG artifact: {str(e)}")
             st.error("Error rendering SVG image")
 
-    def _update_artifact_history(self, artifact: Dict[str, Any]):
-        """Aggiorna la storia degli artifact."""
-        try:
-            # Aggiorna metadata
-            identifier = artifact.get('identifier')
-            if identifier:
-                if identifier not in st.session_state.artifact_metadata:
-                    st.session_state.artifact_metadata[identifier] = {
-                        'created_at': datetime.now().isoformat(),
-                        'times_viewed': 0
-                    }
-                st.session_state.artifact_metadata[identifier]['times_viewed'] += 1
-            
-            # Aggiungi alla storia se è nuovo
-            if artifact not in st.session_state.artifact_history:
-                st.session_state.artifact_history.append(artifact)
-                # Mantieni solo gli ultimi 10 artifact
-                if len(st.session_state.artifact_history) > 10:
-                    st.session_state.artifact_history.pop(0)
-                    
-        except Exception as e:
-            self.logger.error(f"Error updating artifact history: {str(e)}")
-
-    def render_artifact(self, artifact: Dict[str, Any]):
-        """Renderizza un artifact basato sul suo tipo."""
-        try:
-            if not artifact or 'type' not in artifact:
-                return
-
-            # Salva l'artifact corrente
-            st.session_state.current_artifact = artifact
-            
-            # Aggiorna la storia
-            self._update_artifact_history(artifact)
-
-            # Trova il renderer appropriato e renderizza
-            renderer = self.mime_types.get(artifact['type'])
-            if renderer:
-                renderer(artifact)
-            else:
-                st.warning(f"Unsupported artifact type: {artifact['type']}")
-
-        except Exception as e:
-            self.logger.error(f"Error rendering artifact: {str(e)}")
-            st.error(f"Error rendering artifact: {str(e)}")
+    def render_history(self):
+        """Renderizza la storia degli artifact."""
+        if st.session_state.artifact_history:
+            with st.expander("Previous Artifacts"):
+                for idx, artifact in enumerate(reversed(st.session_state.artifact_history[-5:])):
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        if st.button(
+                            f"📄 {artifact.get('title', f'Artifact {len(st.session_state.artifact_history) - idx}')}",
+                            key=f"history_{idx}"
+                        ):
+                            st.session_state.current_artifact = artifact
+                            st.experimental_rerun()
+                    with col2:
+                        meta = st.session_state.artifact_metadata.get(
+                            artifact.get('identifier', ''),
+                            {}
+                        )
+                        st.text(f"Views: {meta.get('times_viewed', 0)}")
 
     def render(self):
         """Renderizza il componente CodeViewer."""
@@ -932,24 +885,8 @@ class CodeViewer:
                 self.render_artifact(st.session_state.current_artifact)
             
             # Mostra la storia degli artifact
-            if st.session_state.artifact_history:
-                with st.expander("Previous Artifacts"):
-                    for idx, artifact in enumerate(reversed(st.session_state.artifact_history[-5:])):
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            if st.button(
-                                f"📄 {artifact.get('title', f'Artifact {len(st.session_state.artifact_history) - idx}')}",
-                                key=f"history_{idx}"
-                            ):
-                                st.session_state.current_artifact = artifact
-                                st.experimental_rerun()
-                        with col2:
-                            meta = st.session_state.artifact_metadata.get(
-                                artifact.get('identifier', ''),
-                                {}
-                            )
-                            st.text(f"Views: {meta.get('times_viewed', 0)}")
-                            
+            self.render_history()
+            
         except Exception as e:
             self.logger.error(f"Error in main render: {str(e)}")
             st.error("Error rendering code viewer")
@@ -959,6 +896,209 @@ class CodeViewer:
         st.session_state.artifact_history = []
         st.session_state.artifact_metadata = {}
         st.session_state.current_artifact = None
+
+    def _generate_artifact_key(self, artifact: Dict[str, Any]) -> str:
+        """
+        Genera una chiave univoca per l'artifact.
+        
+        Args:
+            artifact: L'artifact per cui generare la chiave
+            
+        Returns:
+            str: Chiave univoca
+        """
+        components = [
+            artifact.get('type', 'unknown'),
+            artifact.get('identifier', ''),
+            artifact.get('title', ''),
+            str(len(artifact.get('content', '')))
+        ]
+        return hashlib.md5('|'.join(components).encode()).hexdigest()
+
+    def save_artifact(self, artifact: Dict[str, Any]):
+        """
+        Salva un artifact nella session state e aggiorna i metadata.
+        
+        Args:
+            artifact: Artifact da salvare
+        """
+        if not artifact or 'type' not in artifact:
+            return False
+
+        try:
+            # Genera chiave
+            key = self._generate_artifact_key(artifact)
+            
+            # Aggiorna session state
+            if 'saved_artifacts' not in st.session_state:
+                st.session_state.saved_artifacts = {}
+            
+            st.session_state.saved_artifacts[key] = {
+                'artifact': artifact,
+                'saved_at': datetime.now().isoformat(),
+                'times_accessed': 0
+            }
+            
+            # Aggiorna metadata
+            identifier = artifact.get('identifier')
+            if identifier:
+                st.session_state.artifact_metadata[identifier] = {
+                    'key': key,
+                    'created_at': datetime.now().isoformat(),
+                    'times_viewed': 0,
+                    'type': artifact['type']
+                }
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error saving artifact: {str(e)}")
+            return False
+
+    def load_artifact(self, key: str) -> Optional[Dict[str, Any]]:
+        """
+        Carica un artifact salvato.
+        
+        Args:
+            key: Chiave dell'artifact
+            
+        Returns:
+            Optional[Dict[str, Any]]: Artifact se trovato, None altrimenti
+        """
+        try:
+            if 'saved_artifacts' not in st.session_state:
+                return None
+                
+            saved = st.session_state.saved_artifacts.get(key)
+            if not saved:
+                return None
+                
+            # Aggiorna contatori
+            saved['times_accessed'] += 1
+            
+            # Aggiorna metadata
+            artifact = saved['artifact']
+            identifier = artifact.get('identifier')
+            if identifier and identifier in st.session_state.artifact_metadata:
+                st.session_state.artifact_metadata[identifier]['times_viewed'] += 1
+                st.session_state.artifact_metadata[identifier]['last_accessed'] = datetime.now().isoformat()
+                
+            return artifact
+            
+        except Exception as e:
+            self.logger.error(f"Error loading artifact: {str(e)}")
+            return None
+
+    def _update_artifact_view(self, artifact: Dict[str, Any]):
+        """
+        Aggiorna le statistiche di visualizzazione di un artifact.
+        
+        Args:
+            artifact: Artifact visualizzato
+        """
+        try:
+            identifier = artifact.get('identifier')
+            if not identifier:
+                return
+                
+            if identifier not in st.session_state.artifact_metadata:
+                st.session_state.artifact_metadata[identifier] = {
+                    'created_at': datetime.now().isoformat(),
+                    'times_viewed': 0,
+                    'last_viewed': None,
+                    'type': artifact['type']
+                }
+                
+            metadata = st.session_state.artifact_metadata[identifier]
+            metadata['times_viewed'] += 1
+            metadata['last_viewed'] = datetime.now().isoformat()
+            
+            # Aggiorna anche nella storia
+            if artifact in st.session_state.artifact_history:
+                idx = st.session_state.artifact_history.index(artifact)
+                st.session_state.artifact_history[idx] = artifact
+                
+        except Exception as e:
+            self.logger.error(f"Error updating artifact view: {str(e)}")
+
+    def cleanup_old_artifacts(self, max_age_days: int = 7):
+        """
+        Pulisce gli artifact vecchi.
+        
+        Args:
+            max_age_days: Età massima in giorni degli artifact da mantenere
+        """
+        try:
+            if 'saved_artifacts' not in st.session_state:
+                return
+                
+            current_time = datetime.now()
+            keys_to_remove = []
+            
+            for key, saved in st.session_state.saved_artifacts.items():
+                saved_time = datetime.fromisoformat(saved['saved_at'])
+                if (current_time - saved_time).days > max_age_days:
+                    keys_to_remove.append(key)
+                    
+            for key in keys_to_remove:
+                del st.session_state.saved_artifacts[key]
+                
+            # Pulisci anche metadata orfani
+            if st.session_state.artifact_metadata:
+                metadata_to_remove = []
+                for identifier, metadata in st.session_state.artifact_metadata.items():
+                    if 'key' in metadata and metadata['key'] not in st.session_state.saved_artifacts:
+                        metadata_to_remove.append(identifier)
+                        
+                for identifier in metadata_to_remove:
+                    del st.session_state.artifact_metadata[identifier]
+                    
+        except Exception as e:
+            self.logger.error(f"Error cleaning up artifacts: {str(e)}")
+
+    def get_artifact_stats(self) -> Dict[str, Any]:
+        """
+        Restituisce statistiche sugli artifact.
+        
+        Returns:
+            Dict[str, Any]: Statistiche degli artifact
+        """
+        stats = {
+            'total_artifacts': len(st.session_state.get('saved_artifacts', {})),
+            'total_views': sum(
+                meta.get('times_viewed', 0) 
+                for meta in st.session_state.artifact_metadata.values()
+            ),
+            'types_distribution': {},
+            'most_viewed': None,
+            'last_viewed': None
+        }
+        
+        # Calcola distribuzione tipi
+        for meta in st.session_state.artifact_metadata.values():
+            artifact_type = meta.get('type', 'unknown')
+            stats['types_distribution'][artifact_type] = stats['types_distribution'].get(artifact_type, 0) + 1
+        
+        # Trova più visto
+        if st.session_state.artifact_metadata:
+            most_viewed_id = max(
+                st.session_state.artifact_metadata.items(),
+                key=lambda x: x[1].get('times_viewed', 0)
+            )[0]
+            stats['most_viewed'] = {
+                'identifier': most_viewed_id,
+                'views': st.session_state.artifact_metadata[most_viewed_id]['times_viewed']
+            }
+        
+        # Trova ultimo visto
+        last_viewed = None
+        for meta in st.session_state.artifact_metadata.values():
+            if meta.get('last_viewed'):
+                if not last_viewed or meta['last_viewed'] > last_viewed:
+                    last_viewed = meta['last_viewed']
+        stats['last_viewed'] = last_viewed
+        
+        return stats    
 
 class ModelSelector:
     """Componente per la selezione del modello LLM."""

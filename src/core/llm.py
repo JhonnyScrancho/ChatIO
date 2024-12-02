@@ -178,39 +178,78 @@ class LLMManager:
         jitter = random.uniform(-0.25, 0.25) * delay
         return delay + jitter
 
-    def _prepare_json_context(self, json_type: str, structure: Dict) -> str:
-        """Prepara il contesto per l'analisi JSON."""
-        context = f"""
-Stai analizzando un JSON di tipo: {json_type}
-Struttura dei dati:
-- Tipo: {'Array di oggetti' if structure.get('is_array') else 'Oggetto singolo'}
-- Campi principali: {', '.join(structure.get('sample_keys', structure.get('keys', [])))}
-- Dimensione: {structure.get('length', 'N/A')} elementi
-
-Fornisci risposte in stile conversazionale, evidenziando insights rilevanti.
-"""
-        return context
 
     def _handle_json_analysis(self, query: str) -> Generator[str, None, None]:
-        """Gestisce le richieste di analisi JSON."""
+        """
+        Gestisce le richieste di analisi JSON.
+        Supporta sia analisi strutturata che domande aperte.
+        Versione sincrona per Streamlit.
+        
+        Args:
+            query: Query dell'utente
+        """
         try:
             json_type = st.session_state.get('json_type', 'unknown')
             structure = st.session_state.get('json_structure', {})
             
-            context = self._prepare_json_context(json_type, structure)
-            messages = [
-                {"role": "system", "content": self.system_templates['json_analysis']['role']},
-                {"role": "system", "content": context},
-                {"role": "user", "content": query}
-            ]
+            # Analizza la query per determinare il tipo di analisi richiesta
+            analysis_type = self._detect_analysis_type(query)
             
-            return self._handle_claude_completion(messages)
-            
+            if analysis_type == 'structured':
+                # Usa DataAnalysisManager per analisi strutturata
+                analyzer = st.session_state.data_analyzer
+                result = analyzer.query_data(query)
+                yield result
+                
+            else:
+                # Prepara contesto per domanda aperta
+                context = f"""
+                Analizzi un JSON di tipo {json_type}.
+                Struttura dei dati:
+                {json.dumps(structure, indent=2)}
+                
+                Rispondi alla seguente domanda analizzando il JSON:
+                {query}
+                """
+                
+                messages = [
+                    {"role": "system", "content": "Sei un esperto analista di dati JSON."},
+                    {"role": "system", "content": context},
+                    {"role": "user", "content": query}
+                ]
+                
+                # Usa Claude per risposta dettagliata in modo sincrono
+                for chunk in self._handle_claude_completion(messages):
+                    yield chunk
+                    
         except Exception as e:
-            yield f"Mi dispiace, ho incontrato un errore nell'analisi: {str(e)}"
+            yield f"Errore nell'analisi JSON: {str(e)}"
+
+    def _detect_analysis_type(self, query: str) -> str:
+        """
+        Determina se la query richiede analisi strutturata o risposta aperta.
+        
+        Args:
+            query: Query da analizzare
+            
+        Returns:
+            str: 'structured' o 'open'
+        """
+        # Keywords che indicano analisi strutturata
+        structured_keywords = [
+            'calcola', 'analizza', 'trova pattern', 'statistiche',
+            'conta', 'somma', 'media', 'distribuzione', 'raggruppa'
+        ]
+        
+        query_lower = query.lower()
+        for keyword in structured_keywords:
+            if keyword in query_lower:
+                return 'structured'
+        
+        return 'open'
 
     def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
-        """Gestisce le chiamate ai modelli o1."""
+        """Gestisce le chiamate ai modelli o1 in modo sincrono."""
         try:
             self._enforce_rate_limit(model)
             
@@ -218,7 +257,7 @@ Fornisci risposte in stile conversazionale, evidenziando insights rilevanti.
                 model=model,
                 messages=messages,
                 stream=True,
-                max_completion_tokens=self.model_limits[model]['max_tokens']  # Modificato qui
+                max_tokens=self.model_limits[model]['max_tokens']
             )
             
             for chunk in completion:
@@ -231,7 +270,7 @@ Fornisci risposte in stile conversazionale, evidenziando insights rilevanti.
             yield error_msg
 
     def _handle_gpt4_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
-        """Gestisce le chiamate ai modelli GPT-4."""
+        """Gestisce le chiamate ai modelli GPT-4 in modo sincrono."""
         try:
             self._enforce_rate_limit(model)
             
@@ -240,7 +279,8 @@ Fornisci risposte in stile conversazionale, evidenziando insights rilevanti.
             
             if estimated_tokens > self.model_limits[model]['max_tokens']:
                 st.warning(f"Contenuto troppo lungo per {model}, passaggio a Claude...")
-                return self._handle_claude_completion_with_user_control(messages, st.empty())
+                yield from self._handle_claude_completion_with_user_control(messages, st.empty())
+                return
             
             completion = self.openai_client.chat.completions.create(
                 model=model,
@@ -268,7 +308,7 @@ Fornisci risposte in stile conversazionale, evidenziando insights rilevanti.
                 yield error_msg
 
     def _handle_claude_completion(self, messages: List[Dict]) -> Generator[str, None, None]:
-        """Gestisce le chiamate base a Claude."""
+        """Gestisce le chiamate base a Claude in modo sincrono."""
         self._enforce_rate_limit("claude-3-5-sonnet-20241022")
         
         claude_messages = []
@@ -300,7 +340,7 @@ Fornisci risposte in stile conversazionale, evidenziando insights rilevanti.
                         yield chunk.delta.text
 
     def _handle_claude_completion_with_user_control(self, messages: List[Dict], 
-                                                  placeholder: st.empty) -> Generator[str, None, None]:
+                                                placeholder: st.empty) -> Generator[str, None, None]:
         """Gestisce le chiamate a Claude con retry controllato dall'utente."""
         for attempt in range(self.MAX_RETRIES):
             try:
@@ -342,7 +382,7 @@ Fornisci risposte in stile conversazionale, evidenziando insights rilevanti.
                         time.sleep(retry_delay)
                     else:
                         yield f"Mi dispiace, si è verificato un errore persistente: {error_msg}"
-
+                        
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
                       file_content: Optional[str] = None, 
                       context: Optional[str] = None,
@@ -391,15 +431,26 @@ Fornisci risposte in stile conversazionale, evidenziando insights rilevanti.
         return messages
 
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
-                       file_content: Optional[str] = None, 
-                       context: Optional[str] = None) -> Generator[str, None, None]:
-        """Processa una richiesta completa con controllo utente sul retry e fallback."""
-        
+                   file_content: Optional[str] = None, 
+                   context: Optional[str] = None) -> Generator[str, None, None]:
+        """
+        Processa una richiesta completa con gestione migliorata degli artifact e modalità JSON.
+        Versione sincrona per Streamlit.
+        """
         # Se siamo in modalità analisi JSON, usa l'handler specifico
         if st.session_state.get('json_analysis_mode', False):
-            yield from self._handle_json_analysis(prompt)
+            try:
+                # Verifica se dobbiamo usare l'analisi strutturata o permettere domande aperte
+                if any(keyword in prompt.lower() for keyword in ['analizza', 'calcola', 'trova pattern', 'statistiche']):
+                    yield from self._handle_json_analysis(prompt)
+                else:
+                    # Per domande aperte, usa il modello con contesto JSON
+                    messages = self._prepare_json_context(prompt)
+                    yield from self._handle_claude_completion(messages)
+            except Exception as e:
+                yield f"Errore nell'analisi JSON: {str(e)}"
             return
-        
+
         # Altrimenti procedi con la normale elaborazione
         requires_file_handling = bool(file_content)
         
@@ -420,18 +471,102 @@ Fornisci risposte in stile conversazionale, evidenziando insights rilevanti.
         
         try:
             if model.startswith('gpt-4'):
-                yield from self._handle_gpt4_completion(messages, model)
+                for chunk in self._handle_gpt4_completion(messages, model):
+                    if isinstance(chunk, dict) and chunk.get('type') in ['artifact', 'code']:
+                        yield self._prepare_artifact(chunk)
+                    else:
+                        yield chunk
+                        
             elif model.startswith('o1'):
-                yield from self._handle_o1_completion(messages, model)
+                for chunk in self._handle_o1_completion(messages, model):
+                    if isinstance(chunk, dict) and chunk.get('type') in ['artifact', 'code']:
+                        yield self._prepare_artifact(chunk)
+                    else:
+                        yield chunk
             else:
-                yield from self._handle_claude_completion_with_user_control(messages, placeholder)
-                
+                for chunk in self._handle_claude_completion_with_user_control(messages, placeholder):
+                    if isinstance(chunk, dict) and chunk.get('type') in ['artifact', 'code']:
+                        yield self._prepare_artifact(chunk)
+                    else:
+                        yield chunk
+                        
         except Exception as e:
             error_msg = f"Errore generale: {str(e)}"
             st.error(error_msg)
             with placeholder.container():
                 if st.button("🔄 Riprova con modello alternativo"):
                     yield from self._handle_o1_completion(messages, "o1-mini")
+
+    def _prepare_artifact(self, chunk: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Prepara un artifact per il CodeViewer.
+        
+        Args:
+            chunk: Chunk di risposta contenente un artifact
+            
+        Returns:
+            Dict[str, Any]: Artifact formattato
+        """
+        try:
+            # Genera un identificatore unico se non presente
+            if 'identifier' not in chunk:
+                chunk['identifier'] = f"artifact-{uuid.uuid4()}"
+            
+            # Normalizza il tipo di artifact
+            if chunk['type'] == 'code':
+                chunk['type'] = 'application/vnd.ant.code'
+            
+            # Aggiungi metadata
+            chunk['metadata'] = {
+                'created_at': datetime.now().isoformat(),
+                'model': st.session_state.current_model,
+                'context': {
+                    'json_mode': st.session_state.get('json_analysis_mode', False),
+                    'json_type': st.session_state.get('json_type', 'unknown')
+                }
+            }
+            
+            return chunk
+            
+        except Exception as e:
+            self.logger.error(f"Error preparing artifact: {str(e)}")
+            return {
+                'type': 'application/vnd.ant.code',
+                'content': str(e),
+                'title': 'Error Artifact',
+                'identifier': f"error-{uuid.uuid4()}"
+            }
+
+    def _prepare_json_context(self, prompt: str) -> List[Dict[str, Any]]:
+        """
+        Prepara il contesto per una query JSON.
+        
+        Args:
+            prompt: Query dell'utente
+            
+        Returns:
+            List[Dict[str, Any]]: Messaggi con contesto
+        """
+        json_type = st.session_state.get('json_type', 'unknown')
+        structure = st.session_state.get('json_structure', {})
+        
+        context = f"""
+        Stai analizzando un JSON di tipo: {json_type}
+        Struttura:
+        - Tipo: {'Array di oggetti' if structure.get('is_array') else 'Oggetto singolo'}
+        - Campi: {', '.join(structure.get('sample_keys', structure.get('keys', [])))}
+        
+        Puoi rispondere a domande generali sul JSON e fornire insights.
+        Se la domanda richiede analisi specifica, usa le funzioni di analisi appropriate.
+        """
+        
+        messages = [
+            {"role": "system", "content": "Sei un esperto di analisi dati JSON."},
+            {"role": "system", "content": context},
+            {"role": "user", "content": prompt}
+        ]
+        
+        return messages
 
     def calculate_cost(self, model: str, input_tokens: int, 
                       output_tokens: int) -> float:
