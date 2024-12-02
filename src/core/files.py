@@ -79,50 +79,135 @@ class FileManager:
             
         return False, None
     
+
+
+class FileManager:
+    def _analyze_json_structure(self, content: str, filename: str) -> Dict[str, Any]:
+        """
+        Analizza la struttura del JSON e determina il tipo di dati.
+        
+        Returns:
+            Dict con struttura del JSON e tipo rilevato
+        """
+        try:
+            data = json.loads(content)
+            analysis = {
+                'is_analyzable': True,
+                'type': 'unknown',
+                'structure': {},
+                'sample_data': None
+            }
+
+            if isinstance(data, list):
+                analysis['structure']['is_array'] = True
+                analysis['structure']['length'] = len(data)
+                
+                if data:
+                    first_item = data[0]
+                    analysis['structure']['sample_keys'] = list(first_item.keys())
+                    analysis['sample_data'] = first_item
+                    
+                    # Analisi automatica del tipo
+                    if isinstance(first_item, dict):
+                        # Time series detection
+                        if any(key in ['timestamp', 'date', 'time'] for key in first_item.keys()):
+                            has_numeric = any(isinstance(v, (int, float)) for v in first_item.values())
+                            if has_numeric:
+                                analysis['type'] = 'time_series'
+                        
+                        # Entity data detection
+                        elif any(key in ['id', 'uuid', 'name'] for key in first_item.keys()):
+                            if 'properties' in first_item or 'attributes' in first_item:
+                                analysis['type'] = 'entity'
+                        
+                        # Nested data detection
+                        elif any(isinstance(v, (list, dict)) for v in first_item.values()):
+                            analysis['type'] = 'nested'
+                        
+                        # Metric data detection
+                        elif any(key in ['value', 'metric', 'measure'] for key in first_item.keys()):
+                            analysis['type'] = 'metric'
+            else:
+                analysis['structure']['is_array'] = False
+                if isinstance(data, dict):
+                    analysis['structure']['keys'] = list(data.keys())
+                    analysis['sample_data'] = {k: type(v).__name__ for k, v in data.items()}
+                    
+                    # Configuration-like data detection
+                    if all(isinstance(v, (str, int, float, bool)) for v in data.values()):
+                        analysis['type'] = 'config'
+
+            # Aggiungi metadati
+            analysis['metadata'] = {
+                'filename': filename,
+                'analyzed_at': datetime.now().isoformat(),
+                'size': len(content)
+            }
+            
+            return analysis
+
+        except json.JSONDecodeError:
+            return {'is_analyzable': False, 'error': 'Invalid JSON'}
+        except Exception as e:
+            return {'is_analyzable': False, 'error': str(e)}
+
     def process_file(self, uploaded_file) -> Optional[Dict]:
-        """Processa un file caricato."""
-        self._log_debug(f"Processing file: {uploaded_file.name}")
-        
-        result = self._process_file_cached(uploaded_file)
-        
-        if result:
+        """Processa un file caricato con supporto migliorato per JSON."""
+        if uploaded_file.size > self.MAX_FILE_SIZE:
+            st.warning(f"File {uploaded_file.name} troppo grande. Massimo 5MB consentiti.")
+            return None
+            
+        try:
+            content = uploaded_file.read()
+            if isinstance(content, bytes):
+                content = content.decode('utf-8')
+            
+            result = {
+                'content': content,
+                'name': uploaded_file.name,
+                'size': len(content)
+            }
+
+            # Gestione specializzata per JSON
             if uploaded_file.name.endswith('.json'):
-                self._log_debug("Detected JSON file, checking for forum data")
-                
-                # Mostra struttura JSON
+                analysis = self._analyze_json_structure(content, uploaded_file.name)
+                if analysis['is_analyzable']:
+                    result['json_analysis'] = analysis
+                    # Aggiorna lo stato dell'applicazione
+                    st.session_state.json_structure = analysis['structure']
+                    st.session_state.json_type = analysis['type']
+                    st.session_state.json_analysis_mode = False  # Disattivato di default
+                    st.session_state.initial_analysis_sent = False
+                    
+                    # Segnala la presenza di un file JSON valido
+                    st.session_state.has_json_file = True
+                    st.session_state.current_json_file = uploaded_file.name
+            else:
                 try:
-                    data = json.loads(result['content'])
-                    if isinstance(data, list) and len(data) > 0:
-                        self._log_debug(f"JSON structure: {list(data[0].keys())}")
+                    lexer = get_lexer_for_filename(uploaded_file.name)
+                    result['language'] = lexer.name.lower()
                 except:
-                    self._log_debug("Failed to analyze JSON structure")
+                    result['language'] = 'text'
                 
-                # Verifica se è un JSON di forum
-                is_forum, keyword = self._is_forum_json(uploaded_file.name, result['content'])
-                if is_forum:
-                    self._log_debug(f"✅ Valid forum data detected with keyword: {keyword}")
-                    st.session_state.forum_analysis_mode = True
-                    st.session_state.is_forum_json = True
-                    st.session_state.forum_keyword = keyword
-                    result['is_forum_json'] = True
-                    result['forum_keyword'] = keyword
-                    
-                    # Inizializza analisi
-                    if 'data_analyzer' not in st.session_state:
-                        self._log_debug("Initializing DataAnalysisManager")
-                        st.session_state.data_analyzer = DataAnalysisManager()
-                    
-                    analysis = st.session_state.data_analyzer.initialize_forum_analysis(
-                        result['content'], 
-                        keyword
-                    )
-                    if analysis:
-                        self._log_debug("Forum analysis initialized successfully")
-                        result['analysis'] = analysis
-                else:
-                    self._log_debug("❌ Not a valid forum JSON file")
-        
-        return result
+                result['highlighted'] = self._highlight_code(content, result['language'])
+            
+            # Aggiorna la lista dei file processati
+            if 'processed_files' not in st.session_state:
+                st.session_state.processed_files = {}
+            st.session_state.processed_files[uploaded_file.name] = result
+            
+            # Notifica il SessionManager
+            if 'session_manager' in st.session_state:
+                st.session_state.session_manager.add_file(
+                    uploaded_file.name,
+                    result
+                )
+                
+            return result
+                
+        except Exception as e:
+            st.error(f"Errore nel processare {uploaded_file.name}: {str(e)}")
+            return None
     
     @staticmethod
     @st.cache_data

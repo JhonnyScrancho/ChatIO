@@ -27,12 +27,12 @@ class LLMManager:
         
         # Costi per 1K tokens (in USD)
         self.cost_map = {
-        'gpt-4': {'input': 0.03, 'output': 0.06},
-        'gpt-4o-mini': {'input': 0.01, 'output': 0.03},
-        'o1-preview': {'input': 0.01, 'output': 0.03},
-        'o1-mini': {'input': 0.001, 'output': 0.002},
-        'claude-3-5-sonnet-20241022': {'input': 0.008, 'output': 0.024}
-    }
+            'gpt-4': {'input': 0.03, 'output': 0.06},
+            'gpt-4o-mini': {'input': 0.01, 'output': 0.03},
+            'o1-preview': {'input': 0.01, 'output': 0.03},
+            'o1-mini': {'input': 0.001, 'output': 0.002},
+            'claude-3-5-sonnet-20241022': {'input': 0.008, 'output': 0.024}
+        }
         
         # Limiti dei modelli
         self.model_limits = {
@@ -94,6 +94,11 @@ class LLMManager:
                 'role': "Sei un esperto di ottimizzazione delle performance.",
                 'focus': ["Colli di bottiglia", "Opportunità di ottimizzazione", 
                          "Efficienza algoritmica", "Uso delle risorse"]
+            },
+            'json_analysis': {
+                'role': "Sei un esperto analista dati specializzato nell'analisi di dati JSON.",
+                'focus': ["Struttura dati", "Pattern nei dati", "Analisi statistica",
+                         "Correlazioni", "Anomalie"]
             }
         }
         
@@ -103,79 +108,60 @@ class LLMManager:
         self._reset_time = {}
 
     def select_model(self, task_type: str, content_length: int, 
-                requires_file_handling: bool = False) -> str:
-        """
-        Seleziona automaticamente il modello più appropriato.
-        """
-        # Stima tokens (1 token ~ 4 caratteri)
+                    requires_file_handling: bool = False) -> str:
+        """Seleziona automaticamente il modello più appropriato."""
         estimated_tokens = content_length // 4
         
-        # Per contenuti molto grandi, usa sempre Claude
-        if estimated_tokens > 8000:  # Ridotto per rispettare i limiti di GPT-4
+        if estimated_tokens > 8000:
             return "claude-3-5-sonnet-20241022"
         
-        # Mapping task -> modello preferito
         task_model_mapping = {
-            # Task complessi che richiedono esperienza e profondità
             'architecture': 'gpt-4',
             'security': 'gpt-4',
             'complex_analysis': 'gpt-4',
             'system_design': 'gpt-4',
+            'json_analysis': 'claude-3-5-sonnet-20241022',
             
-            # Task di media complessità
             'review': 'gpt-4o-mini',
             'refactoring': 'gpt-4o-mini',
             'optimization': 'gpt-4o-mini',
             'analysis': 'gpt-4o-mini',
             
-            # Task rapidi o semplici
             'debug': 'o1-mini',
             'quick_fix': 'o1-mini',
             'formatting': 'o1-mini',
             'documentation': 'o1-mini',
             
-            # Task che richiedono contesto ampio
             'project_analysis': 'claude-3-5-sonnet-20241022',
             'codebase_review': 'claude-3-5-sonnet-20241022'
         }
         
-        # Se richiede gestione file di grandi dimensioni
         if requires_file_handling and estimated_tokens > 4000:
             return 'claude-3-5-sonnet-20241022'
         
-        # Per task specifici, usa il mapping se il contenuto è nei limiti
         if task_type in task_model_mapping:
             preferred_model = task_model_mapping[task_type]
             if estimated_tokens <= self.model_limits[preferred_model]['max_tokens']:
                 return preferred_model
         
-        # Default per task sconosciuti o contenuti che superano i limiti
         if estimated_tokens > 4000:
             return 'claude-3-5-sonnet-20241022'
         return 'o1-mini'
 
     def _enforce_rate_limit(self, model: str):
-        """
-        Implementa rate limiting per le chiamate API.
-        
-        Args:
-            model: Nome del modello
-        """
+        """Implementa rate limiting per le chiamate API."""
         current_time = time.time()
         
-        # Inizializza contatori se necessario
         if model not in self._last_call_time:
             self._last_call_time[model] = current_time
             self._call_count[model] = 0
             self._reset_time[model] = current_time + 60
         
-        # Resetta contatori se necessario
         if current_time > self._reset_time[model]:
             self._call_count[model] = 0
             self._reset_time[model] = current_time + 60
         
-        # Applica rate limiting
-        if self._call_count[model] >= 50:  # 50 richieste al minuto
+        if self._call_count[model] >= 50:
             sleep_time = self._reset_time[model] - current_time
             if sleep_time > 0:
                 time.sleep(sleep_time)
@@ -186,31 +172,45 @@ class LLMManager:
         self._last_call_time[model] = current_time
 
     def _exponential_backoff(self, attempt: int) -> float:
-        """
-        Calcola il tempo di attesa per il retry con jitter.
-        
-        Args:
-            attempt: Numero del tentativo
-            
-        Returns:
-            float: Tempo di attesa in secondi
-        """
+        """Calcola il tempo di attesa per il retry con jitter."""
         delay = min(self.MAX_RETRY_DELAY, 
                    self.INITIAL_RETRY_DELAY * (2 ** attempt))
         jitter = random.uniform(-0.25, 0.25) * delay
         return delay + jitter
 
-    def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
-        """
-        Gestisce le chiamate ai modelli o1.
-        
-        Args:
-            messages: Lista di messaggi
-            model: Nome del modello o1
+    def _prepare_json_context(self, json_type: str, structure: Dict) -> str:
+        """Prepara il contesto per l'analisi JSON."""
+        context = f"""
+Stai analizzando un JSON di tipo: {json_type}
+Struttura dei dati:
+- Tipo: {'Array di oggetti' if structure.get('is_array') else 'Oggetto singolo'}
+- Campi principali: {', '.join(structure.get('sample_keys', structure.get('keys', [])))}
+- Dimensione: {structure.get('length', 'N/A')} elementi
+
+Fornisci risposte in stile conversazionale, evidenziando insights rilevanti.
+"""
+        return context
+
+    def _handle_json_analysis(self, query: str) -> Generator[str, None, None]:
+        """Gestisce le richieste di analisi JSON."""
+        try:
+            json_type = st.session_state.get('json_type', 'unknown')
+            structure = st.session_state.get('json_structure', {})
             
-        Yields:
-            str: Chunks della risposta
-        """
+            context = self._prepare_json_context(json_type, structure)
+            messages = [
+                {"role": "system", "content": self.system_templates['json_analysis']['role']},
+                {"role": "system", "content": context},
+                {"role": "user", "content": query}
+            ]
+            
+            return self._handle_claude_completion(messages)
+            
+        except Exception as e:
+            yield f"Mi dispiace, ho incontrato un errore nell'analisi: {str(e)}"
+
+    def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
+        """Gestisce le chiamate ai modelli o1."""
         try:
             self._enforce_rate_limit(model)
             
@@ -218,7 +218,7 @@ class LLMManager:
                 model=model,
                 messages=messages,
                 stream=True,
-                max_completion_tokens=32768 if model == "o1-preview" else 65536
+                max_tokens=self.model_limits[model]['max_tokens']
             )
             
             for chunk in completion:
@@ -235,11 +235,9 @@ class LLMManager:
         try:
             self._enforce_rate_limit(model)
             
-            # Calcola lunghezza stimata del contesto
             total_length = sum(len(msg.get('content', '')) for msg in messages)
             estimated_tokens = total_length // 4
             
-            # Se supera i limiti, passa a Claude
             if estimated_tokens > self.model_limits[model]['max_tokens']:
                 st.warning(f"Contenuto troppo lungo per {model}, passaggio a Claude...")
                 return self._handle_claude_completion_with_user_control(messages, st.empty())
@@ -263,58 +261,50 @@ class LLMManager:
             error_msg = f"Errore con {model}: {str(e)}"
             st.error(error_msg)
             
-            # Fallback automatico a Claude per contenuti troppo lunghi
             if "context_length_exceeded" in str(e):
                 st.warning("Contenuto troppo lungo, passaggio a Claude...")
                 yield from self._handle_claude_completion_with_user_control(messages, st.empty())
             else:
                 yield error_msg
-    
+
+    def _handle_claude_completion(self, messages: List[Dict]) -> Generator[str, None, None]:
+        """Gestisce le chiamate base a Claude."""
+        self._enforce_rate_limit("claude-3-5-sonnet-20241022")
+        
+        claude_messages = []
+        for msg in messages:
+            if msg["role"] == "user":
+                content_msg = {
+                    "role": "user",
+                    "content": [{"type": "text", "text": msg["content"]}]
+                }
+                claude_messages.append(content_msg)
+            elif msg["role"] == "system":
+                content_msg = {
+                    "role": "user",
+                    "content": [{"type": "text", "text": f"System: {msg['content']}"}]
+                }
+                claude_messages.append(content_msg)
+        
+        response = self.anthropic_client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=4096,
+            messages=claude_messages,
+            stream=True
+        )
+        
+        for chunk in response:
+            if hasattr(chunk, 'type'):
+                if chunk.type == 'content_block_delta':
+                    if hasattr(chunk.delta, 'text'):
+                        yield chunk.delta.text
+
     def _handle_claude_completion_with_user_control(self, messages: List[Dict], 
                                                   placeholder: st.empty) -> Generator[str, None, None]:
-        """
-        Gestisce le chiamate a Claude con retry controllato dall'utente.
-        
-        Args:
-            messages: Lista di messaggi
-            placeholder: Streamlit placeholder per l'UI
-            
-        Yields:
-            str: Chunks della risposta
-        """
+        """Gestisce le chiamate a Claude con retry controllato dall'utente."""
         for attempt in range(self.MAX_RETRIES):
             try:
-                self._enforce_rate_limit("claude-3-5-sonnet-20241022")
-                
-                claude_messages = []
-                for msg in messages:
-                    if msg["role"] == "user":
-                        content_msg = {
-                            "role": "user",
-                            "content": [{"type": "text", "text": msg["content"]}]
-                        }
-                        claude_messages.append(content_msg)
-                
-                response = self.anthropic_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=4096,
-                    messages=claude_messages,
-                    stream=True
-                )
-                
-                for chunk in response:
-                    if hasattr(chunk, 'type'):
-                        if chunk.type == 'content_block_delta':
-                            if hasattr(chunk.delta, 'text'):
-                                yield chunk.delta.text
-                        elif chunk.type == 'message_start':
-                            continue
-                        elif chunk.type == 'content_block_start':
-                            continue
-                        elif chunk.type == 'content_block_stop':
-                            continue
-                        elif chunk.type == 'message_stop':
-                            continue
+                yield from self._handle_claude_completion(messages)
                 return
                 
             except Exception as e:
@@ -353,97 +343,64 @@ class LLMManager:
                     else:
                         yield f"Mi dispiace, si è verificato un errore persistente: {error_msg}"
 
-    def test_claude(self):
-        """
-        Test di connessione base con Claude.
-        """
-        try:
-            test_message = {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Ciao, questo è un test di connessione."
-                    }
-                ]
-            }
-            
-            response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=100,
-                messages=[test_message],
-                stream=True
-            )
-            
-            result = ""
-            for chunk in response:
-                if hasattr(chunk, 'type') and chunk.type == 'content_block_delta':
-                    if hasattr(chunk.delta, 'text'):
-                        result += chunk.delta.text
-            
-            return True, result
-            
-        except Exception as e:
-            return False, str(e)
-
-    def _prepare_file_context(self, files: Dict[str, Dict]) -> str:
-        """
-        Prepara il contesto dei file in un formato strutturato.
-        
-        Args:
-            files: Dizionario dei file processati
-            
-        Returns:
-            str: Contesto formattato dei file
-        """
-        if not files:
-            return ""
-            
-        context = "\n### File Context ###\n"
-        for filename, file_info in files.items():
-            context += f"\nFile: {filename} (language: {file_info['language']})\n"
-            context += f"```{file_info['language']}\n{file_info['content']}\n```\n"
-        return context
-
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
-                    file_content: Optional[str] = None, 
-                    context: Optional[str] = None,
-                    model: str = "claude-3-5-sonnet-20241022") -> List[Dict]:
+                      file_content: Optional[str] = None, 
+                      context: Optional[str] = None,
+                      model: str = "claude-3-5-sonnet-20241022") -> List[Dict]:
         """
         Prepara il prompt includendo il contesto dei file.
         """
-        # Prepara il contesto dei file caricati
-        file_context = ""
-        if 'uploaded_files' in st.session_state:
-            file_context = self._prepare_file_context(st.session_state.uploaded_files)
+        messages = []
         
-        # Prepara il contenuto principale
-        main_content = prompt
+        # Aggiungi sistema message appropriato
+        if analysis_type and analysis_type in self.system_templates:
+            messages.append({
+                "role": "system",
+                "content": self.system_templates[analysis_type]['role']
+            })
         
-        # Aggiungi il contesto dei file se presente
-        if file_context:
-            main_content = f"{file_context}\n\n{prompt}"
+        # Prepara il contesto
+        full_context = ""
         
-        # Aggiungi file_content specifico se fornito
-        if file_content:
-            main_content += f"\nSpecific file content:\n```\n{file_content}\n```"
+        # Aggiungi contesto JSON se in modalità analisi
+        if st.session_state.get('json_analysis_mode', False):
+            json_type = st.session_state.get('json_type', 'unknown')
+            structure = st.session_state.get('json_structure', {})
+            full_context += self._prepare_json_context(json_type, structure)
         
-        # Aggiungi contesto aggiuntivo se fornito
+        # Aggiungi contesto dei file
         if context:
-            main_content += f"\nAdditional context: {context}"
+            full_context += f"\n{context}"
         
-        # Restituisce il messaggio utente con il contesto completo
-        return [{
+        if file_content:
+            full_context += f"\nFile Content:\n```\n{file_content}\n```"
+        
+        # Aggiungi il contesto se presente
+        if full_context:
+            messages.append({
+                "role": "system",
+                "content": full_context
+            })
+        
+        # Aggiungi il prompt dell'utente
+        messages.append({
             "role": "user",
-            "content": main_content
-        }]
+            "content": prompt
+        })
+        
+        return messages
 
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
-                   file_content: Optional[str] = None, 
-                   context: Optional[str] = None) -> Generator[str, None, None]:
-        """
-        Processa una richiesta completa con controllo utente sul retry e fallback.
-        """
+                       file_content: Optional[str] = None, 
+                       context: Optional[str] = None) -> Generator[str, None, None]:
+        """Processa una richiesta completa con controllo utente sul retry e fallback."""
+        
+        # Se siamo in modalità analisi JSON, usa l'handler specifico
+        if st.session_state.get('json_analysis_mode', False):
+            yield from self._handle_json_analysis(prompt)
+            return
+        
+        # Altrimenti procedi con la normale elaborazione
         requires_file_handling = bool(file_content)
         
         if analysis_type and file_content:
@@ -478,17 +435,7 @@ class LLMManager:
 
     def calculate_cost(self, model: str, input_tokens: int, 
                       output_tokens: int) -> float:
-        """
-        Calcola il costo di una richiesta.
-        
-        Args:
-            model: Nome del modello
-            input_tokens: Numero di token in input
-            output_tokens: Numero di token in output
-            
-        Returns:
-            float: Costo in USD
-        """
+        """Calcola il costo di una richiesta."""
         if model not in self.cost_map:
             return 0.0
             
@@ -499,15 +446,7 @@ class LLMManager:
         return round(input_cost + output_cost, 4)
     
     def get_model_info(self, model: str) -> Dict[str, Any]:
-        """
-        Restituisce informazioni dettagliate su un modello.
-        
-        Args:
-            model: Nome del modello
-            
-        Returns:
-            Dict[str, Any]: Informazioni sul modello
-        """
+        """Restituisce informazioni dettagliate su un modello."""
         if model not in self.model_limits:
             return {}
             

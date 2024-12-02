@@ -11,172 +11,24 @@ from src.core.llm import LLMManager
 from src.core.data_analysis import DataAnalysisManager
 from typing import Dict, Any
 
-class ForumAnalysisInterface:
-    """Componente per l'analisi dei dati del forum."""
-    
-    def __init__(self):
-        if 'data_analyzer' not in st.session_state:
-            st.session_state.data_analyzer = DataAnalysisManager()
-    
-    def render(self):
-        """Renderizza l'interfaccia di analisi forum."""
-        if not st.session_state.get('is_forum_json', False):
-            return
-        
-        st.markdown("### 📊 Forum Data Analysis")
-        
-        # Toggle per attivare/disattivare l'analisi
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.markdown(f"**Forum Data Analysis** - Keyword: `{st.session_state.get('forum_keyword', '')}`")
-        with col2:
-            forum_analysis = st.toggle('Activate Analysis', 
-                                    key='forum_analysis_mode',
-                                    help='Enable specialized forum data analysis')
-        
-        if forum_analysis:
-            self._render_active_analysis()
-    
-    def _render_active_analysis(self):
-        """Renderizza l'interfaccia di analisi quando attiva."""
-        analyzer = st.session_state.data_analyzer
-        
-        # Tab per diverse visualizzazioni
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "📈 Timeline Analysis", 
-            "👥 User Interactions",
-            "🔑 Keywords Analysis",
-            "😊 Sentiment Analysis"
-        ])
-        
-        with tab1:
-            self._render_timeline_analysis()
-        
-        with tab2:
-            self._render_user_analysis()
-        
-        with tab3:
-            self._render_keyword_analysis()
-        
-        with tab4:
-            self._render_sentiment_analysis()
-        
-        # Query interface
-        st.markdown("### 🔍 Query Data")
-        query = st.text_input("Ask a question about the forum data...")
-        if query:
-            results = analyzer.query_forum_data(query)
-            self._display_query_results(results)
-    
-    def _render_timeline_analysis(self):
-        """Renderizza l'analisi temporale."""
-        analyzer = st.session_state.data_analyzer
-        if analyzer.forum_data:
-            timeline = analyzer.forum_data['mental_map']['chronological_order']
-            
-            st.markdown("#### 📅 Discussion Timeline")
-            
-            # Create timeline visualization
-            for post in timeline[:5]:  # Show first 5 posts
-                with st.expander(f"🕒 {post['time']} - {post['author']}", expanded=False):
-                    st.write(post['content_preview'] + "...")
-                    st.caption(f"Sentiment: {post['sentiment']}")
-    
-    def _render_user_analysis(self):
-        """Renderizza l'analisi degli utenti."""
-        analyzer = st.session_state.data_analyzer
-        if analyzer.forum_data:
-            users = analyzer.forum_data['mental_map']['key_users']
-            
-            st.markdown("#### 👥 Key Participants")
-            
-            # Create user activity visualization
-            for user in users[:5]:  # Show top 5 users
-                st.markdown(f"- {user}")
-    
-    def _render_keyword_analysis(self):
-        """Renderizza l'analisi delle keywords."""
-        analyzer = st.session_state.data_analyzer
-        if analyzer.forum_data:
-            keywords = analyzer.forum_data['mental_map']['keyword_clusters']
-            
-            st.markdown("#### 🔑 Top Keywords")
-            
-            # Create keyword cloud visualization
-            for keyword, count in sorted(keywords.items(), key=lambda x: x[1], reverse=True)[:10]:
-                st.markdown(f"- {keyword}: {count} occurrences")
-    
-    def _render_sentiment_analysis(self):
-        """Renderizza l'analisi del sentiment."""
-        analyzer = st.session_state.data_analyzer
-        if analyzer.forum_data:
-            sentiment_data = analyzer.forum_data['mental_map']['sentiment_timeline']
-            
-            st.markdown("#### 😊 Sentiment Overview")
-            
-            # Calculate average sentiment
-            sentiments = [s['sentiment'] for s in sentiment_data]
-            avg_sentiment = sum(sentiments) / len(sentiments) if sentiments else 0
-            
-            # Display sentiment metrics
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Average Sentiment", f"{avg_sentiment:.2f}")
-            with col2:
-                st.metric("Highest", f"{max(sentiments):.2f}")
-            with col3:
-                st.metric("Lowest", f"{min(sentiments):.2f}")
-    
-    def _display_query_results(self, results: Dict[str, Any]):
-        """
-        Visualizza i risultati di una query.
-        
-        Args:
-            results: Risultati della query
-        """
-        if "error" in results:
-            st.error(results["error"])
-            return
-            
-        # Display timeline results
-        if "timeline" in results:
-            st.markdown("#### 📅 Timeline Analysis")
-            timeline = results["timeline"]
-            st.write(f"Discussion duration: {timeline['total_duration']}")
-        
-        # Display sentiment results
-        if "sentiment" in results:
-            st.markdown("#### 😊 Sentiment Analysis")
-            sentiment = results["sentiment"]
-            st.write(f"Average sentiment: {sentiment['average']:.2f}")
-            st.write(f"Trend: {sentiment['trend']}")
-        
-        # Display user results
-        if "users" in results:
-            st.markdown("#### 👥 User Analysis")
-            users = results["users"]
-            st.write("Most active users:")
-            for user, count in users['most_active']:
-                st.write(f"- {user}: {count} interactions")
-        
-        # Display keyword results
-        if "keywords" in results:
-            st.markdown("#### 🔑 Keyword Analysis")
-            keywords = results["keywords"]
-            st.write("Top keywords:")
-            for keyword, count in keywords['top_keywords'].items():
-                st.write(f"- {keyword}: {count} occurrences")
-
 class FileExplorer:
     """Component per l'esplorazione e l'upload dei file."""
     
     def __init__(self):
         self.session = SessionManager()
         self.file_manager = FileManager()
+        self.json_enabled = False
+        self.data_analyzer = DataAnalysisManager()
         if 'uploaded_files' not in st.session_state:
             st.session_state.uploaded_files = {}
         if 'file_messages_sent' not in st.session_state:
             st.session_state.file_messages_sent = set()
+        if 'json_analysis_mode' not in st.session_state:
+            st.session_state.json_analysis_mode = False
+        if 'initial_analysis_sent' not in st.session_state:
+            st.session_state.initial_analysis_sent = False
+
+
 
     def _get_file_icon(self, filename: str) -> str:
         """Restituisce l'icona appropriata per il tipo di file."""
@@ -199,44 +51,32 @@ class FileExplorer:
         return icons.get(ext, '📄')
 
     def _create_file_tree(self, files: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Crea una struttura ad albero dai file caricati.
-        
-        Args:
-            files: Dict con i file caricati
-            
-        Returns:
-            Dict con la struttura ad albero
-        """
+        """Crea una struttura ad albero dai file caricati."""
         tree = {}
         for path, content in files.items():
             current = tree
             parts = path.split('/')
             
-            # Processa tutte le parti tranne l'ultima (file)
             for part in parts[:-1]:
                 if part not in current:
                     current[part] = {}
                 current = current[part]
             
-            # Aggiungi il file con il path completo
             current[parts[-1]] = {'content': content, 'full_path': path}
             
         return tree
 
     def _render_tree_node(self, path: str, node: Dict[str, Any], prefix: str = ""):
-        """Renderizza un nodo dell'albero dei file con pipe style."""
+        """Renderizza un nodo dell'albero dei file con stile pipe."""
         items = list(sorted(node.items()))
         for i, (name, content) in enumerate(items):
             is_last = i == len(items) - 1
             
             if isinstance(content, dict) and 'content' not in content:
-                # Directory
                 st.markdown(f"{prefix}{'└── ' if is_last else '├── '}📁 **{name}/**", unsafe_allow_html=True)
                 new_prefix = prefix + ("    " if is_last else "│   ")
                 self._render_tree_node(f"{path}/{name}", content, new_prefix)
             else:
-                # File
                 icon = self._get_file_icon(name)
                 full_path = content['full_path']
                 file_button = f"{prefix}{'└── ' if is_last else '├── '}{icon} {name}"
@@ -245,11 +85,24 @@ class FileExplorer:
                     st.session_state.selected_file = full_path
                     st.session_state.current_file = full_path
 
+    def _process_json_file(self, content: str, filename: str) -> bool:
+        """Processa un file JSON e determina se è analizzabile."""
+        try:
+            data = json.loads(content)
+            if isinstance(data, list) and len(data) > 0:
+                # Check for standard data structure
+                if all(field in data[0] for field in ['url', 'title', 'posts']):
+                    return True
+                # Add other JSON structure checks here
+                return True
+            return True
+        except json.JSONDecodeError:
+            return False
+
     def render(self):
         """Renderizza il componente."""
         st.markdown("""
             <style>
-                /* File Explorer specifico */
             [data-testid="stSidebar"] .stButton > button {
                 width: auto;
                 text-align: left !important;
@@ -273,7 +126,6 @@ class FileExplorer:
                 padding: 0 !important;
             }
             
-            /* Solo per i markdown delle directory nel file explorer */
             [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
                 font-family: monospace !important;
                 font-size: 0.9em !important;
@@ -281,7 +133,7 @@ class FileExplorer:
                 line-height: 1.5 !important;
                 margin: 0 !important;
             }
-        </style>
+            </style>
         """, unsafe_allow_html=True)
 
         uploaded_files = st.file_uploader(
@@ -296,7 +148,6 @@ class FileExplorer:
             new_files = []
             for file in uploaded_files:
                 try:
-                    # Gestione file ZIP
                     if file.name.endswith('.zip'):
                         import zipfile
                         import io
@@ -315,7 +166,7 @@ class FileExplorer:
                                         'name': zip_file
                                     }
                                     new_files.append(zip_file)
-                                except Exception as e:
+                                except Exception:
                                     continue
                     else:
                         if file.name in st.session_state.uploaded_files:
@@ -328,27 +179,29 @@ class FileExplorer:
                             'name': file.name
                         }
                         new_files.append(file.name)
-                        st.write(f"Processed file: {file.name}")
 
-                        # Special handling for JSON files
                         if file.name.endswith('.json'):
-                            st.write(f"Analyzing JSON file: {file.name}")
                             try:
-                                data = json.loads(content)
-                                if isinstance(data, list) and len(data) > 0:
-                                    # Check if it's a forum JSON
-                                    if all(field in data[0] for field in ['url', 'title', 'posts']):
-                                        st.session_state.is_forum_json = True
-                                        st.session_state.forum_keyword = file.name.replace('_scraped_data.json', '')
-                                        st.session_state.forum_analysis_mode = True
-                            except json.JSONDecodeError as e:
-                                st.write(f"Error parsing JSON: {str(e)}")
+                                if self._process_json_file(content, file.name):
+                                    st.session_state.json_analysis_mode = False
+                                    st.session_state.initial_analysis_sent = False
+                            except Exception:
+                                pass
 
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {str(e)}")
 
+            if any(f.endswith('.json') for f in st.session_state.uploaded_files):
+                col1, col2 = st.columns([3,1])
+                with col1:
+                    st.markdown("**📊 JSON Analysis Mode**")
+                with col2:
+                    json_analysis = st.toggle('Enable Analysis', 
+                                        key='json_analysis_mode',
+                                        help='Enable JSON data analysis')        
+
             if new_files and 'chats' in st.session_state and st.session_state.current_chat in st.session_state.chats:
-                files_message = "📂 Nuovi file caricati:\n"
+                files_message = "📂 New files uploaded:\n"
                 for filename in new_files:
                     files_message += f"- {self._get_file_icon(filename)} {filename}\n"
                 
@@ -365,17 +218,14 @@ class FileExplorer:
             tree = self._create_file_tree(st.session_state.uploaded_files)
             self._render_tree_node("", tree, "")
 
-        # Render forum analysis interface if applicable
-        if st.session_state.get('is_forum_json', False):
-            forum_analysis = ForumAnalysisInterface()
-            forum_analysis.render()
-
 class ChatInterface:
     """Componente per l'interfaccia chat."""
     
     def __init__(self):
         self.session = SessionManager()
         self.llm = LLMManager()
+        if 'data_analyzer' not in st.session_state:
+            st.session_state.data_analyzer = DataAnalysisManager()
         if 'chats' not in st.session_state:
             st.session_state.chats = {
                 'Chat principale': {
@@ -387,109 +237,331 @@ class ChatInterface:
                 }
             }
             st.session_state.current_chat = 'Chat principale'
+        if 'json_analysis_states' not in st.session_state:
+            st.session_state.json_analysis_states = {}    
 
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
         try:
-            # Prepara il contesto completo per l'LLM
             context = ""
             for filename, file_info in st.session_state.uploaded_files.items():
                 context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
 
             response = ""
             placeholder = st.empty()
-            with st.spinner("Analyzing code..."):
-                for chunk in self.llm.process_request(
-                    prompt=prompt,
-                    context=context
-                ):
-                    response += chunk
-                    # Aggiorna il placeholder con la risposta parziale
-                    with placeholder:
-                        st.markdown(response)
+            with st.spinner("Analyzing..."):
+                if st.session_state.get('json_analysis_mode', False) and prompt:
+                    analyzer = st.session_state.data_analyzer
+                    response = analyzer.query_data(prompt)
+                else:
+                    for chunk in self.llm.process_request(
+                        prompt=prompt,
+                        context=context
+                    ):
+                        response += chunk
+                        with placeholder:
+                            st.markdown(response)
             return response
         except Exception as e:
-            error_msg = f"Mi dispiace, si è verificato un errore: {str(e)}"
+            error_msg = f"Error occurred: {str(e)}"
             st.error(error_msg)
             return error_msg
-        
-    
 
     def process_user_message(self, prompt: str):
-        """
-        Processa un nuovo messaggio utente e renderizza correttamente le risposte.
-        """
+        """Processa un nuovo messaggio utente."""
         if not prompt.strip():
             return
 
-        # Aggiungi il messaggio utente
         st.session_state.chats[st.session_state.current_chat]['messages'].append({
             "role": "user",
             "content": prompt
         })
 
-        # Container per la risposta in tempo reale
         response_container = st.empty()
         
-        # Processa la risposta
         response = ""
-        with st.spinner("Elaborazione in corso..."):
-            for chunk in self.llm.process_request(prompt=prompt):
-                if chunk:
-                    response += chunk
-                    # Aggiorna la risposta in tempo reale nel container appropriato
-                    with response_container:
-                        with st.chat_message("assistant"):
-                            st.markdown(response)
+        with st.spinner("Processing..."):
+            if st.session_state.get('json_analysis_mode', False):
+                analyzer = st.session_state.data_analyzer
+                response = analyzer.query_data(prompt)
+                with response_container:
+                    with st.chat_message("assistant"):
+                        st.markdown(response)
+            else:
+                for chunk in self.llm.process_request(prompt=prompt):
+                    if chunk:
+                        response += chunk
+                        with response_container:
+                            with st.chat_message("assistant"):
+                                st.markdown(response)
 
-        # Se abbiamo una risposta valida, la aggiungiamo alla chat
         if response.strip():
             st.session_state.chats[st.session_state.current_chat]['messages'].append({
                 "role": "assistant",
                 "content": response
             })
 
+    def _handle_chat_change(self, new_chat: str):
+        """Gestisce il cambio di chat preservando lo stato dell'analisi."""
+        old_chat = st.session_state.current_chat
+        
+        # Salva stato analisi della chat corrente
+        if old_chat in st.session_state.chats:
+            st.session_state.json_analysis_states[old_chat] = {
+                'enabled': st.session_state.json_analysis_mode,
+                'structure': st.session_state.json_structure,
+                'type': st.session_state.json_type,
+                'initial_analysis_sent': st.session_state.get('initial_analysis_sent', False)
+            }
+        
+        # Imposta la nuova chat
+        st.session_state.current_chat = new_chat
+        
+        # Ripristina stato analisi per la nuova chat
+        if new_chat in st.session_state.json_analysis_states:
+            state = st.session_state.json_analysis_states[new_chat]
+            st.session_state.json_analysis_mode = state['enabled']
+            st.session_state.json_structure = state['structure']
+            st.session_state.json_type = state['type']
+            st.session_state.initial_analysis_sent = state['initial_analysis_sent']
+        else:
+            # Reset per nuova chat
+            st.session_state.json_analysis_mode = False
+            st.session_state.initial_analysis_sent = False
 
+    def _create_new_chat(self):
+        """Crea una nuova chat con stato analisi pulito."""
+        new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
+        st.session_state.chats[new_chat_name] = {
+            'messages': [],
+            'created_at': datetime.now().isoformat(),
+            'analysis_mode': False,
+            'analysis_settings': {}
+        }
+        
+        # Reset stati analisi per nuova chat
+        st.session_state.json_analysis_mode = False
+        st.session_state.initial_analysis_sent = False
+        st.session_state.current_chat = new_chat_name
+    
     def render(self):
-        """
-        Renderizza l'interfaccia chat con il corretto stile dei messaggi.
-        """
-        self.render_chat_controls()
+        """Renderizza l'interfaccia chat con supporto analisi migliorato."""
+        # Gestione JSON Analysis Toggle
+        has_json = any(f.endswith('.json') for f in st.session_state.uploaded_files)
         
-        # Container per i messaggi
+        if has_json:
+            with st.container():
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    if st.session_state.get('json_analysis_mode', False):
+                        st.markdown("**📊 Modalità Analisi JSON** 🟢")
+                    else:
+                        st.markdown("**📊 Modalità Analisi JSON** ⚪")
+                with col2:
+                    json_analysis = st.toggle(
+                        'Attiva Analisi',
+                        key='json_analysis_mode',
+                        help='Abilita analisi dati JSON nella chat'
+                    )
+                    if json_analysis != st.session_state.get('json_analysis_mode', False):
+                        self.handle_analysis_mode_change(json_analysis)
+        
+        # Render chat messages
         messages_container = st.container()
-        
-        # Set per tenere traccia dei messaggi già renderizzati
-        rendered_messages = set()
-        
         with messages_container:
-            # Renderizza tutti i messaggi nella chat corrente
-            for message in st.session_state.chats[st.session_state.current_chat]['messages']:
-                # Crea un hash univoco per il messaggio
-                message_hash = hash(f"{message['role']}:{message['content']}")
-                
-                # Renderizza solo se non è già stato mostrato
-                if message_hash not in rendered_messages:
-                    with st.chat_message(message["role"]):
-                        st.markdown(message["content"])
-                    rendered_messages.add(message_hash)
+            for message in self.session.get_messages_from_current_chat():
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+        
+        # Chat input
+        if prompt := st.chat_input("Scrivi un messaggio..."):
+            self.handle_user_input(prompt)
 
+    def handle_analysis_mode_change(self, enabled: bool):
+        """Gestisce il cambio di modalità analisi."""
+        st.session_state.json_analysis_mode = enabled
+        if enabled and not st.session_state.get('initial_analysis_sent', False):
+            with st.spinner("Eseguo analisi iniziale..."):
+                analyzer = st.session_state.data_analyzer
+                initial_analysis = analyzer.get_analysis_summary()
+                if initial_analysis:
+                    self.session.add_message_to_current_chat({
+                        "role": "assistant",
+                        "content": initial_analysis
+                    })
+                    st.session_state.initial_analysis_sent = True
+    
     def handle_user_input(self, prompt: str):
         """
-        Gestisce l'input dell'utente in modo sicuro.
+        Gestisce l'input dell'utente con supporto per analisi JSON e gestione errori.
+        
+        Args:
+            prompt: Messaggio dell'utente
         """
         if not hasattr(st.session_state, 'processing'):
             st.session_state.processing = False
             
         if not st.session_state.processing and prompt:
             st.session_state.processing = True
-            self.process_user_message(prompt)
-            st.session_state.processing = False
+            
+            # Aggiungi messaggio utente alla chat
+            self.session.add_message_to_current_chat({
+                "role": "user",
+                "content": prompt
+            })
+            
+            response_container = st.empty()
+            progress_bar = None
+            progress_container = None
+            
+            try:
+                with st.spinner("Elaborazione in corso..."):
+                    if st.session_state.get('json_analysis_mode', False):
+                        # Progress bar per analisi
+                        progress_bar = st.progress(0)
+                        progress_container = st.empty()
+                        
+                        # Prepara analisi
+                        analyzer = st.session_state.data_analyzer
+                        
+                        # Aggiorna stato progresso
+                        progress_bar.progress(25)
+                        progress_container.text("Analisi della query in corso...")
+                        
+                        # Valida e processa query
+                        cleaned_prompt = prompt.strip()
+                        if not cleaned_prompt:
+                            raise ValueError("Query vuota")
+                        
+                        # Esegui analisi con gestione cache
+                        cache_key = f"{st.session_state.current_chat}:{cleaned_prompt}"
+                        if cache_key in st.session_state.analysis_cache:
+                            response = st.session_state.analysis_cache[cache_key]
+                        else:
+                            progress_bar.progress(50)
+                            progress_container.text("Elaborazione dati...")
+                            response = analyzer.query_data(cleaned_prompt)
+                            st.session_state.analysis_cache[cache_key] = response
+                        
+                        # Aggiorna progresso
+                        progress_bar.progress(75)
+                        progress_container.text("Formattazione risposta...")
+                        
+                        # Mostra risposta
+                        with response_container:
+                            with st.chat_message("assistant"):
+                                st.markdown(response)
+                        
+                        # Registra nella cronologia
+                        self.session.add_analysis_result(
+                            st.session_state.current_chat,
+                            cleaned_prompt,
+                            response
+                        )
+                        
+                        # Completa
+                        progress_bar.progress(100)
+                        time.sleep(0.5)  # Breve pausa per mostrare completamento
+                        
+                    else:
+                        # Modalità chat normale
+                        response = ""
+                        context = self._prepare_chat_context()
+                        
+                        for chunk in self.llm.process_request(
+                            prompt=prompt,
+                            context=context,
+                            analysis_type=None
+                        ):
+                            if chunk:
+                                response += chunk
+                                with response_container:
+                                    with st.chat_message("assistant"):
+                                        st.markdown(response)
+                    
+                    # Aggiungi risposta alla chat
+                    if response.strip():
+                        self.session.add_message_to_current_chat({
+                            "role": "assistant",
+                            "content": response
+                        })
+                        
+            except Exception as e:
+                st.error(f"Errore nell'elaborazione della richiesta: {str(e)}")
+                with response_container:
+                    with st.chat_message("assistant"):
+                        error_msg = ("❌ Mi dispiace, ho incontrato un errore nell'analisi. "
+                                "Puoi riprovare o riformulare la domanda?")
+                        st.markdown(error_msg)
+                        # Aggiungi messaggio di errore alla chat
+                        self.session.add_message_to_current_chat({
+                            "role": "assistant",
+                            "content": error_msg
+                        })
+                # Log error
+                logging.error(f"Error processing user input: {str(e)}", exc_info=True)
+                
+            finally:
+                st.session_state.processing = False
+                if progress_bar:
+                    progress_bar.empty()
+                if progress_container:
+                    progress_container.empty()
+                    
+        def _prepare_chat_context(self) -> str:
+            """Prepara il contesto per la chat."""
+            context = []
+            
+            # Aggiungi contesto dei file
+            if hasattr(st.session_state, 'uploaded_files'):
+                for filename, file_info in st.session_state.uploaded_files.items():
+                    context.append(f"File: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n")
+            
+            # Aggiungi contesto JSON se in modalità analisi
+            if st.session_state.get('json_analysis_mode', False):
+                json_structure = st.session_state.get('json_structure', {})
+                json_type = st.session_state.get('json_type', 'unknown')
+                context.append(f"\nJSON Analysis Context:\nType: {json_type}\nStructure: {json_structure}")
+            
+            return "\n".join(context)
 
+    def render_analysis_status(self):
+        """Renderizza informazioni sullo stato dell'analisi."""
+        if st.session_state.get('json_analysis_mode', False):
+            with st.container():
+                json_type = st.session_state.get('json_type', 'unknown')
+                st.markdown(f"""
+                **Current Analysis Status:**
+                - Type: {json_type}
+                - Mode: Active 🟢
+                - Cache: {len(st.session_state.analysis_cache)} entries
+                """)
+                
+                # Mostra suggerimenti basati sul tipo
+                if json_type == 'time_series':
+                    st.markdown("""
+                    **Suggested queries:**
+                    - "Show me the overall trend"
+                    - "Find seasonal patterns"
+                    - "Identify outliers"
+                    """)
+                elif json_type == 'entity':
+                    st.markdown("""
+                    **Suggested queries:**
+                    - "Analyze property distributions"
+                    - "Find common patterns"
+                    - "Show relationships"
+                    """)
+                elif json_type == 'metric':
+                    st.markdown("""
+                    **Suggested queries:**
+                    - "Compare metrics"
+                    - "Show correlations"
+                    - "Find anomalies"
+                    """)
+    
     def render_chat_controls(self):
-        """
-        Renderizza i controlli della chat.
-        """
+        """Renderizza i controlli della chat."""
         col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
         
         with col1:
@@ -503,7 +575,7 @@ class ChatInterface:
                 st.session_state.current_chat = current_chat
         
         with col2:
-            if st.button("🆕", help="Nuova chat"):
+            if st.button("🆕", help="New chat"):
                 new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
                 st.session_state.chats[new_chat_name] = {
                     'messages': [],
@@ -512,11 +584,11 @@ class ChatInterface:
                 st.session_state.current_chat = new_chat_name
         
         with col3:
-            if st.button("✏️", help="Rinomina chat"):
+            if st.button("✏️", help="Rename chat"):
                 st.session_state.renaming = True
         
         with col4:
-            if len(st.session_state.chats) > 1 and st.button("🗑️", help="Elimina chat"):
+            if len(st.session_state.chats) > 1 and st.button("🗑️", help="Delete chat"):
                 del st.session_state.chats[st.session_state.current_chat]
                 st.session_state.current_chat = list(st.session_state.chats.keys())[0]
 
@@ -553,11 +625,11 @@ class ModelSelector:
         
         current_model = self.session.get_current_model()
         selected = st.selectbox(
-            " ",  # Spazio vuoto invece di "Select Model"
+            " ",
             list(models.keys()),
             format_func=lambda x: models[x],
             index=list(models.keys()).index(current_model),
-            label_visibility="collapsed"  # Nasconde il label
+            label_visibility="collapsed"
         )
         
         if selected != current_model:
@@ -587,39 +659,3 @@ class StatsDisplay:
                 f"${stats['cost']:.3f}",
                 delta=None
             )
-
-class DataAnalysisInterface:
-    """Interfaccia per l'analisi dei dati."""
-    
-    def __init__(self):
-        if 'data_analyzer' not in st.session_state:
-            st.session_state.data_analyzer = DataAnalysisManager()
-    
-    def render(self):
-        """Renderizza l'interfaccia di analisi dati."""
-        if not st.session_state.get('analysis_mode'):
-            return
-            
-        st.markdown("### 📊 Analisi Dati")
-        
-        # Mostra sommario
-        with st.expander("📝 Sommario Analisi", expanded=True):
-            summary = st.session_state.data_analyzer.get_analysis_summary()
-            st.markdown(summary)
-        
-        # Input per query
-        query = st.text_input("🔍 Fai una domanda sui tuoi dati...")
-        if query:
-            response = st.session_state.data_analyzer.query_data(query)
-            st.markdown(response)
-        
-        # Visualizzazioni base
-        if hasattr(st.session_state.data_analyzer, 'current_dataset'):
-            df = st.session_state.data_analyzer.current_dataset
-            if df is not None:
-                st.dataframe(df.head())
-                
-                # Grafici base se ci sono dati numerici
-                numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
-                if len(numeric_cols) > 0:
-                    st.line_chart(df[numeric_cols])            
