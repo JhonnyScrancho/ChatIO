@@ -517,8 +517,8 @@ class ChatInterface:
                         ):
                             if chunk:
                                 # Verifica se il chunk è un artifact
-                                if isinstance(chunk, dict) and 'type' in chunk and 'content' in chunk:
-                                    # È un artifact, renderizzalo nel container dedicato
+                                if isinstance(chunk, dict) and 'type' in chunk:
+                                    # È un artifact, passalo al CodeViewer
                                     with artifact_container:
                                         self.code_viewer.render_artifact(chunk)
                                 else:
@@ -646,7 +646,7 @@ class CodeViewer:
     
     def __init__(self):
         """Inizializza il CodeViewer."""
-        # Inizializzazione dello stato
+        # Inizializzazione dello stato - mantenuto dal tuo codice originale
         if 'current_artifact' not in st.session_state:
             st.session_state.current_artifact = None
         if 'artifact_history' not in st.session_state:
@@ -654,14 +654,14 @@ class CodeViewer:
         if 'artifact_metadata' not in st.session_state:
             st.session_state.artifact_metadata = {}
         
-        # Setup logging
+        # Setup logging - mantenuto dal tuo codice originale
         self.logger = logging.getLogger(__name__)
         
-        # Mappatura dei tipi MIME
+        # Mappatura dei tipi MIME - estesa con i nuovi renderer
         self.mime_types = {
             'application/vnd.ant.code': self._render_code_artifact,
-            'text/html': self._render_code_artifact,
-            'application/vnd.ant.react': self._render_code_artifact,
+            'text/html': self._render_html_artifact,
+            'application/vnd.ant.react': self._render_react_artifact,
             'application/vnd.ant.mermaid': self._render_mermaid_artifact,
             'image/svg+xml': self._render_svg_artifact
         }
@@ -697,13 +697,7 @@ class CodeViewer:
             return 'text'
 
     def _create_copy_button(self, code: str, key: str):
-        """
-        Crea un pulsante per copiare il codice.
-        
-        Args:
-            code: Codice da copiare
-            key: Chiave unica per il bottone
-        """
+        """Crea un pulsante per copiare il codice."""
         try:
             col1, col2 = st.columns([1, 15])
             with col1:
@@ -713,46 +707,17 @@ class CodeViewer:
             with col2:
                 if st.session_state.get(f"copied_{key}", False):
                     st.success("Copied to clipboard!")
-                    # Reset dopo 2 secondi
+                    time.sleep(1)
                     st.session_state[f"copied_{key}"] = False
                     
         except Exception as e:
             self.logger.error(f"Error creating copy button: {str(e)}")
             st.error("Unable to create copy button")
 
-    def _syntax_highlight(self, code: str, language: str) -> str:
-        """
-        Applica syntax highlighting al codice.
-        
-        Args:
-            code: Codice da evidenziare
-            language: Linguaggio del codice
-            
-        Returns:
-            str: Codice HTML con syntax highlighting
-        """
-        try:
-            lexer = get_lexer_by_name(language, stripall=True)
-        except Exception:
-            lexer = TextLexer()
-            
-        formatter = HtmlFormatter(
-            style='monokai',
-            linenos=True,
-            cssclass='source'
-        )
-        
-        return highlight(code, lexer, formatter)
-
     def _render_code_artifact(self, artifact: Dict[str, Any]):
-        """
-        Renderizza un artifact di codice.
-        
-        Args:
-            artifact: Dizionario contenente i dettagli dell'artifact
-        """
+        """Renderizza un artifact di codice."""
         try:
-            st.markdown(f"### {artifact.get('title', 'Code Artifact')}")
+            st.markdown(f"### {artifact.get('title', 'Code')}")
             
             # Determina il linguaggio
             language = self._get_language_label(
@@ -760,21 +725,19 @@ class CodeViewer:
                 artifact.get('language')
             )
             
-            # Aggiungi pulsante copia
-            self._create_copy_button(
-                artifact['content'],
-                artifact.get('identifier', 'code')
-            )
+            # Container per codice e pulsante copia
+            code_container = st.container()
             
-            # Renderizza il codice
-            st.code(artifact['content'], language=language)
-            
-            # Preview per React e HTML
-            if artifact['type'] in ['application/vnd.ant.react', 'text/html']:
-                if st.button("👁️ Preview Output", key=f"preview_{artifact.get('identifier', 'preview')}"):
-                    with st.expander("Preview", expanded=True):
-                        st.components.v1.html(artifact['content'], height=400)
-            
+            with code_container:
+                # Aggiungi pulsante copia
+                self._create_copy_button(
+                    artifact['content'],
+                    artifact.get('identifier', 'code')
+                )
+                
+                # Renderizza il codice
+                st.code(artifact['content'], language=language)
+                
             # Metadati
             with st.expander("Artifact Metadata"):
                 st.json({
@@ -790,13 +753,58 @@ class CodeViewer:
             self.logger.error(f"Error rendering code artifact: {str(e)}")
             st.error("Error rendering code artifact")
 
+    def _render_html_artifact(self, artifact: Dict[str, Any]):
+        """Renderizza un artifact HTML."""
+        try:
+            st.markdown(f"### {artifact.get('title', 'HTML Preview')}")
+            
+            # Mostra il codice sorgente
+            with st.expander("View Source"):
+                st.code(artifact['content'], language='html')
+                self._create_copy_button(
+                    artifact['content'],
+                    artifact.get('identifier', 'html')
+                )
+            
+            # Renderizza HTML
+            st.components.v1.html(artifact['content'], height=400)
+            
+        except Exception as e:
+            self.logger.error(f"Error rendering HTML artifact: {str(e)}")
+            st.error("Error rendering HTML preview")
+
+    def _render_react_artifact(self, artifact: Dict[str, Any]):
+        """Renderizza un artifact React."""
+        try:
+            st.markdown(f"### {artifact.get('title', 'React Component')}")
+            
+            # Mostra il codice sorgente
+            with st.expander("View Source"):
+                st.code(artifact['content'], language='jsx')
+                self._create_copy_button(
+                    artifact['content'],
+                    artifact.get('identifier', 'react')
+                )
+            
+            # Opzione per visualizzare il componente
+            if st.toggle("Show Preview", key=f"preview_{artifact.get('identifier', 'react')}"):
+                st.write("Component Preview:")
+                st.components.v1.html(
+                    f"""
+                    <div id="react-root"></div>
+                    <script type="text/babel">
+                        {artifact['content']}
+                    </script>
+                    """,
+                    height=400
+                )
+                
+        except Exception as e:
+            self.logger.error(f"Error rendering React artifact: {str(e)}")
+            st.error("Error rendering React component")
+
     def _render_mermaid_artifact(self, artifact: Dict[str, Any]):
-        """
-        Renderizza un artifact Mermaid.
-        
-        Args:
-            artifact: Dizionario contenente i dettagli dell'artifact
-        """
+        """Renderizza un artifact Mermaid."""
         try:
             st.markdown(f"### {artifact.get('title', 'Diagram')}")
             st.mermaid(artifact['content'])
@@ -812,17 +820,10 @@ class CodeViewer:
             st.error("Error rendering Mermaid diagram")
 
     def _render_svg_artifact(self, artifact: Dict[str, Any]):
-        """
-        Renderizza un artifact SVG.
-        
-        Args:
-            artifact: Dizionario contenente i dettagli dell'artifact
-        """
+        """Renderizza un artifact SVG."""
         try:
             st.markdown(f"### {artifact.get('title', 'SVG Image')}")
-            
-            # Renderizza SVG
-            st.image(artifact['content'])
+            st.markdown(artifact['content'], unsafe_allow_html=True)
             
             # Aggiungi pulsante copia per il codice SVG
             self._create_copy_button(
@@ -835,12 +836,7 @@ class CodeViewer:
             st.error("Error rendering SVG image")
 
     def _update_artifact_history(self, artifact: Dict[str, Any]):
-        """
-        Aggiorna la storia degli artifact.
-        
-        Args:
-            artifact: Artifact da aggiungere alla storia
-        """
+        """Aggiorna la storia degli artifact."""
         try:
             # Aggiorna metadata
             identifier = artifact.get('identifier')
@@ -863,32 +859,24 @@ class CodeViewer:
             self.logger.error(f"Error updating artifact history: {str(e)}")
 
     def render_artifact(self, artifact: Dict[str, Any]):
-        """
-        Renderizza un artifact basato sul suo tipo.
-        
-        Args:
-            artifact: Dizionario contenente i dettagli dell'artifact
-        """
+        """Renderizza un artifact basato sul suo tipo."""
         try:
-            if not artifact:
+            if not artifact or 'type' not in artifact:
                 return
-            
-            # Valida l'artifact
-            required_fields = ['type', 'content']
-            if not all(field in artifact for field in required_fields):
-                raise ValueError(f"Artifact missing required fields: {required_fields}")
-            
-            # Aggiorna stato corrente
+
+            # Salva l'artifact corrente
             st.session_state.current_artifact = artifact
-            self._update_artifact_history(artifact)
             
-            # Renderizza usando il renderer appropriato
+            # Aggiorna la storia
+            self._update_artifact_history(artifact)
+
+            # Trova il renderer appropriato e renderizza
             renderer = self.mime_types.get(artifact['type'])
             if renderer:
                 renderer(artifact)
             else:
                 st.warning(f"Unsupported artifact type: {artifact['type']}")
-                
+
         except Exception as e:
             self.logger.error(f"Error rendering artifact: {str(e)}")
             st.error(f"Error rendering artifact: {str(e)}")
@@ -900,7 +888,7 @@ class CodeViewer:
             if st.session_state.current_artifact:
                 self.render_artifact(st.session_state.current_artifact)
             
-            # Storia degli artifact
+            # Mostra la storia degli artifact
             if st.session_state.artifact_history:
                 with st.expander("Previous Artifacts"):
                     for idx, artifact in enumerate(reversed(st.session_state.artifact_history[-5:])):
