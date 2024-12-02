@@ -548,9 +548,10 @@ class ChatInterface:
                     displayed_ids.add(msg_id)
 
         # Chat input
-        if prompt := st.chat_input("Ask me anything..."):
+        chat_interface = ChatInterface()
+        if prompt := st.chat_input("Che minchia vuoi?"):
             if not st.session_state.get('processing', False):
-                self.handle_user_input(prompt)
+                chat_interface.handle_user_input(prompt)
         
         with artifact_container:
             self.code_viewer.render()
