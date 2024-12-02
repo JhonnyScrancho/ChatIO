@@ -391,10 +391,12 @@ class ChatInterface:
         # Render chat messages
         messages_container = st.container()
         artifact_container = st.container()
+        
         with messages_container:
             for message in self.session.get_messages_from_current_chat():
-                icon = "👲🏿" if message["role"] == "assistant" else None
-                with st.chat_message(message["role"], icon=icon):
+                # Usa "👲🏿" come role per i messaggi dell'assistente
+                role = "👲🏿" if message["role"] == "assistant" else "user"
+                with st.chat_message(role):
                     st.markdown(message["content"])
 
         with artifact_container:
