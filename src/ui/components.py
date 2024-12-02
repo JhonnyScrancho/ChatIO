@@ -393,7 +393,8 @@ class ChatInterface:
         artifact_container = st.container()
         with messages_container:
             for message in self.session.get_messages_from_current_chat():
-                with st.chat_message(message["role"]):
+                icon = "👲🏿" if message["role"] == "assistant" else None
+                with st.chat_message(message["role"], icon=icon):
                     st.markdown(message["content"])
 
         with artifact_container:
