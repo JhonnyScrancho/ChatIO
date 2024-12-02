@@ -6,7 +6,7 @@ Handles file uploads, processing, and caching.
 import os
 from core.data_analysis import DataAnalysisManager
 import streamlit as st
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from zipfile import ZipFile
 from io import BytesIO
 from pygments import highlight
