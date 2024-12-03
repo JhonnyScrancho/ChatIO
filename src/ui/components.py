@@ -324,6 +324,10 @@ class ChatInterface:
         if not prompt.strip():
             return
 
+        # Inizializza il tracking dei messaggi mostrati se non esiste
+        if 'shown_messages' not in st.session_state:
+            st.session_state.shown_messages = set()
+
         # Controlla duplicazioni
         messages = st.session_state.chats[st.session_state.current_chat]['messages']
         if messages and messages[-1].get("role") == "user" and messages[-1].get("content") == prompt:
@@ -342,20 +346,25 @@ class ChatInterface:
             message_content = prompt
 
         # Aggiungi il messaggio utente alla chat
-        messages = st.session_state.chats[st.session_state.current_chat]['messages']
+        message_id = str(len(messages))
         messages.append({
             "role": "user",
-            "content": message_content
+            "content": message_content,
+            "id": message_id
         })
+        
+        # Marca il messaggio come mostrato
+        st.session_state.shown_messages.add(message_id)
 
-        # Mostra immediatamente il messaggio utente usando un placeholder
-        with st.empty():
-            with st.chat_message("user"):
-                if isinstance(message_content, dict) and "image" in message_content:
-                    st.image(message_content["image"])
-                    st.write(message_content["text"])
-                else:
-                    st.write(message_content)
+        # Renderizza tutti i messaggi, incluso quello nuovo
+        for msg in messages:
+            if msg.get("id") in st.session_state.shown_messages:
+                with st.chat_message(msg["role"]):
+                    if isinstance(msg["content"], dict) and "image" in msg["content"]:
+                        st.image(msg["content"]["image"])
+                        st.write(msg["content"]["text"])
+                    else:
+                        st.write(msg["content"])
 
         try:
             # Prepara il generatore di risposta appropriato
@@ -376,7 +385,7 @@ class ChatInterface:
 
             # Accumula la risposta completa
             response = ""
-            with st.spinner("Elaborazione in corso..."):
+            with st.spinner("Io pensare.."):
                 for chunk in response_generator:
                     if chunk:
                         response += chunk
@@ -397,7 +406,8 @@ class ChatInterface:
                     cost=0.0
                 )
                 
-            # Ora facciamo il rerun DOPO aver completato tutto
+            # Reset shown messages e forza rerun
+            st.session_state.shown_messages = set()
             st.rerun()
 
         except Exception as e:
@@ -411,6 +421,9 @@ class ChatInterface:
             
             if st.session_state.config.get('DEBUG', False):
                 st.exception(e)
+            
+            # Reset shown messages e forza rerun anche in caso di errore
+            st.session_state.shown_messages = set()
             st.rerun()
 
     def render(self):
