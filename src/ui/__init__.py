@@ -4,6 +4,8 @@ UI package for Allegro IO Code Assistant.
 Contains components for the Streamlit interface.
 """
 
+from .components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay
+
 __all__ = [
     'FileExplorer',
     'ChatInterface',
@@ -11,6 +13,3 @@ __all__ = [
     'ModelSelector',
     'StatsDisplay'
 ]
-
-# Sposta l'import dopo __all__
-from .components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay

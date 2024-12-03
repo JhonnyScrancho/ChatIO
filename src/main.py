@@ -203,14 +203,14 @@ def render_main_layout():
     clients = init_clients()
     clients['session'].init_session()
     
-    # Title Area
-    col1, col2 = st.columns([6, 1])
+    # Title Area con Stats
+    col1, col2, col3 = st.columns([4, 1, 1])
     with col1:
         st.title("👲🏿 Allegro IO")
     with col2:
-        if st.session_state.get('debug_mode', False):
-            if st.button("📊", help="Show Stats"):
-                st.session_state.show_stats = not st.session_state.get('show_stats', False)
+        st.metric("Tokens Used", f"{st.session_state.get('token_count', 0):,}")
+    with col3:
+        st.metric("Cost ($)", f"${st.session_state.get('cost', 0):.3f}")
     
     # Sidebar con File Manager e Model Selector
     with st.sidebar:

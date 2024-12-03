@@ -44,16 +44,6 @@ def load_config() -> Dict[str, Any]:
                 'cost_per_1k': {'input': 0.001, 'output': 0.002},
                 'best_for': ['debug', 'quick_fix']
             },
-            'gpt-4': {
-            'token_limit': 128000,
-            'cost_per_1k': {'input': 0.03, 'output': 0.06},
-            'best_for': ['complex_analysis', 'expert_review']
-            },
-            'gpt-4o-mini': {
-                'token_limit': 128000,
-                'cost_per_1k': {'input': 0.01, 'output': 0.03},
-                'best_for': ['quick_analysis', 'general_tasks']
-            },
             'claude-3-5-sonnet-20241022': {
                 'token_limit': 200000,
                 'cost_per_1k': {'input': 0.008, 'output': 0.024},

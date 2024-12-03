@@ -4,17 +4,14 @@ Handles file uploads, processing, and caching.
 """
 
 import os
-from core.data_analysis import DataAnalysisManager
 import streamlit as st
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from zipfile import ZipFile
 from io import BytesIO
 from pygments import highlight
 from pygments.lexers import get_lexer_for_filename, TextLexer
 from pygments.formatters import HtmlFormatter
 import mimetypes
-import json
-from datetime import datetime
 
 class FileManager:
     """Gestisce l'upload, il processing e il caching dei file."""
@@ -31,204 +28,18 @@ class FileManager:
     def __init__(self):
         """Inizializza il FileManager."""
         self.current_path = None
-        if 'forum_analysis_mode' not in st.session_state:
-            st.session_state.forum_analysis_mode = False
-        if 'is_forum_json' not in st.session_state:
-            st.session_state.is_forum_json = False
-        if 'forum_keyword' not in st.session_state:
-            st.session_state.forum_keyword = None
-            
-        # Debug container
-        if 'debug_container' not in st.session_state:
-            st.session_state.debug_container = st.empty()
     
-    def _log_debug(self, message: str):
-        """Log debug message to Streamlit."""
-        with st.session_state.debug_container.container():
-            st.info(f"🔍 Debug: {message}")
-    
-    def _is_forum_json(self, filename: str, content: str) -> Tuple[bool, Optional[str]]:
-        """Verifica se il file JSON è un file di dati di forum."""
-        self._log_debug(f"Checking if {filename} is a forum JSON file")
-        
-        if not filename.endswith('_scraped_data.json'):
-            self._log_debug(f"File {filename} does not match the required name pattern")
-            return False, None
-            
-        try:
-            data = json.loads(content)
-            self._log_debug(f"Successfully parsed JSON from {filename}")
-            
-            if isinstance(data, list) and len(data) > 0:
-                first_item = data[0]
-                required_fields = ['url', 'title', 'posts', 'metadata']
-                
-                # Log structure
-                self._log_debug(f"First item fields: {list(first_item.keys())}")
-                
-                if all(field in first_item for field in required_fields):
-                    keyword = filename.replace('_scraped_data.json', '')
-                    self._log_debug(f"Found valid forum JSON with keyword: {keyword}")
-                    return True, keyword
-                else:
-                    self._log_debug("Missing required fields in JSON structure")
-            else:
-                self._log_debug("JSON is not a list or is empty")
-        except json.JSONDecodeError as e:
-            self._log_debug(f"Failed to parse JSON: {str(e)}")
-            
-        return False, None
-    
-
-
-class FileManager:
-    def _analyze_json_structure(self, content: str, filename: str) -> Dict[str, Any]:
-        """
-        Analizza la struttura del JSON e determina il tipo di dati.
-        
-        Returns:
-            Dict con struttura del JSON e tipo rilevato
-        """
-        try:
-            data = json.loads(content)
-            analysis = {
-                'is_analyzable': True,
-                'type': 'unknown',
-                'structure': {},
-                'sample_data': None,
-                'metadata': {
-                    'filename': filename,
-                    'analyzed_at': datetime.now().isoformat(),
-                    'size': len(content)
-                }
-            }
-
-            if isinstance(data, list):
-                analysis['structure']['is_array'] = True
-                analysis['structure']['length'] = len(data)
-                
-                if data:
-                    first_item = data[0]
-                    if isinstance(first_item, dict):
-                        analysis['structure']['sample_keys'] = list(first_item.keys())
-                        analysis['sample_data'] = first_item
-                        
-                        # Rilevamento automatico del tipo
-                        # Time series
-                        if any(key in ['timestamp', 'date', 'time'] for key in first_item.keys()):
-                            has_numeric = any(isinstance(v, (int, float)) for v in first_item.values())
-                            if has_numeric:
-                                analysis['type'] = 'time_series'
-                        
-                        # Entity data
-                        elif any(key in ['id', 'uuid', 'name'] for key in first_item.keys()):
-                            if 'properties' in first_item or 'attributes' in first_item:
-                                analysis['type'] = 'entity'
-                        
-                        # Nested data
-                        elif any(isinstance(v, (list, dict)) for v in first_item.values()):
-                            analysis['type'] = 'nested'
-                        
-                        # Metric data
-                        elif any(key in ['value', 'metric', 'measure'] for key in first_item.keys()):
-                            analysis['type'] = 'metric'
-                            
-                        # Forum data (aggiunto per il tuo caso specifico)
-                        elif all(key in first_item for key in ['url', 'title', 'posts']):
-                            analysis['type'] = 'forum'
-            else:
-                analysis['structure']['is_array'] = False
-                if isinstance(data, dict):
-                    analysis['structure']['keys'] = list(data.keys())
-                    analysis['sample_data'] = {k: type(v).__name__ for k, v in data.items()}
-                    
-                    # Configuration data
-                    if all(isinstance(v, (str, int, float, bool)) for v in data.values()):
-                        analysis['type'] = 'config'
-
-            return analysis
-
-        except json.JSONDecodeError:
-            return {'is_analyzable': False, 'error': 'Invalid JSON'}
-        except Exception as e:
-            return {'is_analyzable': False, 'error': str(e)}
-
     def process_file(self, uploaded_file) -> Optional[Dict]:
-        """Processa un file caricato con supporto migliorato per JSON."""
-        if uploaded_file.size > self.MAX_FILE_SIZE:
-            st.warning(f"File {uploaded_file.name} troppo grande. Massimo 5MB consentiti.")
-            return None
+        """
+        Processa un file caricato.
+        
+        Args:
+            uploaded_file: File caricato tramite st.file_uploader
             
-        try:
-            # Leggi il contenuto del file
-            content = uploaded_file.read()
-            if isinstance(content, bytes):
-                content = content.decode('utf-8')
-            
-            # Risultato base per tutti i file
-            result = {
-                'content': content,
-                'name': uploaded_file.name,
-                'size': len(content),
-                'type': 'regular'  # tipo default
-            }
-
-            # Gestione specializzata per JSON
-            if uploaded_file.name.endswith('.json'):
-                try:
-                    # Verifica che sia JSON valido
-                    json_data = json.loads(content)
-                    
-                    # Analisi struttura JSON
-                    analysis = self._analyze_json_structure(content, uploaded_file.name)
-                    if analysis['is_analyzable']:
-                        result.update({
-                            'type': 'json',
-                            'json_analysis': analysis,
-                            'json_data': json_data
-                        })
-                        
-                        # Aggiorna lo stato dell'applicazione per JSON
-                        st.session_state.json_structure = analysis['structure']
-                        st.session_state.json_type = analysis['type']
-                        st.session_state.has_json_file = True
-                        st.session_state.current_json_file = uploaded_file.name
-                        
-                except json.JSONDecodeError:
-                    st.warning(f"Il file {uploaded_file.name} non è un JSON valido.")
-                    return None
-                    
-            else:
-                # Per file non-JSON, aggiungi syntax highlighting
-                try:
-                    lexer = get_lexer_for_filename(uploaded_file.name)
-                    result.update({
-                        'language': lexer.name.lower(),
-                        'highlighted': self._highlight_code(content, lexer.name.lower())
-                    })
-                except:
-                    result.update({
-                        'language': 'text',
-                        'highlighted': self._highlight_code(content, 'text')
-                    })
-
-            # Aggiorna la lista dei file processati
-            if 'uploaded_files' not in st.session_state:
-                st.session_state.uploaded_files = {}
-            st.session_state.uploaded_files[uploaded_file.name] = result
-            
-            # Notifica il SessionManager
-            if 'session_manager' in st.session_state:
-                st.session_state.session_manager.add_file(
-                    uploaded_file.name,
-                    result
-                )
-                    
-            return result
-                    
-        except Exception as e:
-            st.error(f"Errore nel processare {uploaded_file.name}: {str(e)}")
-            return None
+        Returns:
+            Optional[Dict]: Informazioni sul file processato
+        """
+        return self._process_file_cached(uploaded_file)
     
     @staticmethod
     @st.cache_data
@@ -258,8 +69,7 @@ class FileManager:
                 'language': language,
                 'size': len(content),
                 'name': uploaded_file.name,
-                'highlighted': highlighted,
-                'upload_time': datetime.now().isoformat()
+                'highlighted': highlighted
             }
             
         except Exception as e:
@@ -300,7 +110,7 @@ class FileManager:
                     continue
                     
                 try:
-                    content = zip_ref.read(file_info.filename).decode('utf-8', errors='ignore')
+                    content = zip_ref.read(file_info.filename).decode('utf-8')
                     try:
                         lexer = get_lexer_for_filename(file_info.filename)
                         language = lexer.name.lower()
