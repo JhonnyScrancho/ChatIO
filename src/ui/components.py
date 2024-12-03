@@ -7,6 +7,7 @@ from datetime import datetime
 import json
 import time
 import logging
+import hashlib
 from src.core.session import SessionManager
 from src.core.files import FileManager
 from src.core.llm import LLMManager
