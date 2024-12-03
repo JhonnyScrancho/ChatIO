@@ -776,10 +776,11 @@ class ModelSelector:
 
         # Crea il selectbox
         selected = st.selectbox(
-            "",
+            "Select Model",
             options=all_options,
             format_func=lambda x: display_map[x],
-            index=current_index
+            index=current_index,
+            label_visibility="collapsed"
         )
 
         # Aggiorna il modello solo se è stata fatta una selezione valida
