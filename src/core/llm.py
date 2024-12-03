@@ -248,38 +248,51 @@ class LLMManager:
         return delay + jitter
 
     def update_message_stats(self, model: str, input_tokens: int, output_tokens: int, cost: float):
-        """
-        Aggiorna le statistiche dei messaggi in modo atomico e sincronizzato.
+        """Aggiorna le statistiche in modo atomico e sincronizzato."""
+        if 'message_stats' not in st.session_state:
+            st.session_state.message_stats = []
+            st.session_state.total_stats = {
+                'input_tokens': 0,
+                'output_tokens': 0,
+                'total_tokens': 0,
+                'total_cost': 0.0
+            }
         
-        Args:
-            model: Nome del modello
-            input_tokens: Numero di token in input
-            output_tokens: Numero di token in output
-            cost: Costo della chiamata
-        """
-        # Add new entry to message history
+        # Calcola il costo corretto usando i prezzi dal cost_map
+        costs = self.cost_map[model]
+        actual_cost = (input_tokens * costs['input'] + output_tokens * costs['output']) / 1000
+        
+        # Aggiunge nuova entry nella history
         new_stat = {
             'timestamp': datetime.now().strftime('%H:%M:%S'),
             'model': model,
             'input_tokens': input_tokens,
             'output_tokens': output_tokens,
             'total_tokens': input_tokens + output_tokens,
-            'cost': cost
+            'cost': actual_cost
         }
         
-        # Update message stats
         st.session_state.message_stats.append(new_stat)
         
-        # Update total stats
+        # Aggiorna i totali
         st.session_state.total_stats['input_tokens'] += input_tokens
         st.session_state.total_stats['output_tokens'] += output_tokens
         st.session_state.total_stats['total_tokens'] += (input_tokens + output_tokens)
-        st.session_state.total_stats['total_cost'] += cost
+        st.session_state.total_stats['total_cost'] += actual_cost
 
     def render_token_stats(self):
         """Renderizza le statistiche in modo sincronizzato."""
+        if 'message_stats' not in st.session_state:
+            st.session_state.message_stats = []
+            st.session_state.total_stats = {
+                'input_tokens': 0,
+                'output_tokens': 0,
+                'total_tokens': 0,
+                'total_cost': 0.0
+            }
+        
         with st.expander("📊 Token Usage Statistics", expanded=False):
-            # Show current totals
+            # Mostra i totali dalla session state
             cols = st.columns(4)
             with cols[0]:
                 st.metric("Input Tokens", st.session_state.total_stats['input_tokens'])
@@ -290,10 +303,13 @@ class LLMManager:
             with cols[3]:
                 st.metric("Cost ($)", f"${st.session_state.total_stats['total_cost']:.4f}")
             
-            # Show complete history
+            # Mostra history completa
             if st.session_state.message_stats:
                 st.markdown("### History")
                 df = pd.DataFrame(st.session_state.message_stats)
+                # Formatta la colonna cost per mostrare 4 decimali
+                if 'cost' in df.columns:
+                    df['cost'] = df['cost'].apply(lambda x: f"${x:.4f}")
                 st.dataframe(
                     df.sort_values('timestamp', ascending=False),
                     use_container_width=True
