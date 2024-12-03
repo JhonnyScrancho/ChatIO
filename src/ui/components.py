@@ -317,117 +317,8 @@ class ChatInterface:
             st.error(error_msg)
             return error_msg
     
-    def process_user_message(self, prompt: str):
-        """
-        Processa un messaggio utente con supporto per immagini e gestione completa degli errori.
-        """
-        if not prompt.strip():
-            return
-
-        # Inizializza il tracking dei messaggi mostrati se non esiste
-        if 'shown_messages' not in st.session_state:
-            st.session_state.shown_messages = set()
-
-        # Controlla duplicazioni
-        messages = st.session_state.chats[st.session_state.current_chat]['messages']
-        if messages and messages[-1].get("role") == "user" and messages[-1].get("content") == prompt:
-            return
-
-        # Gestione immagine corrente se presente
-        current_image = st.session_state.get('current_image')
-        
-        # Prepara il contenuto del messaggio
-        if current_image and st.session_state.current_model == 'grok-vision-beta':
-            message_content = {
-                "image": current_image,
-                "text": prompt
-            }
-        else:
-            message_content = prompt
-
-        # Aggiungi il messaggio utente alla chat
-        message_id = str(len(messages))
-        messages.append({
-            "role": "user",
-            "content": message_content,
-            "id": message_id
-        })
-        
-        # Marca il messaggio come mostrato
-        st.session_state.shown_messages.add(message_id)
-
-        # Renderizza tutti i messaggi, incluso quello nuovo
-        for msg in messages:
-            if msg.get("id") in st.session_state.shown_messages:
-                with st.chat_message(msg["role"]):
-                    if isinstance(msg["content"], dict) and "image" in msg["content"]:
-                        st.image(msg["content"]["image"])
-                        st.write(msg["content"]["text"])
-                    else:
-                        st.write(msg["content"])
-
-        try:
-            # Prepara il generatore di risposta appropriato
-            if current_image and st.session_state.current_model == 'grok-vision-beta':
-                image_bytes = current_image.getvalue()
-                response_generator = self.llm.process_image_request(image_bytes, prompt)
-            else:
-                # Ottieni il contesto dai file se presenti
-                context = ""
-                if hasattr(st.session_state, 'uploaded_files') and st.session_state.uploaded_files:
-                    for filename, file_info in st.session_state.uploaded_files.items():
-                        context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
-                
-                response_generator = self.llm.process_request(
-                    prompt=prompt,
-                    context=context
-                )
-
-            # Accumula la risposta completa
-            response = ""
-            with st.spinner("Io pensare.."):
-                for chunk in response_generator:
-                    if chunk:
-                        response += chunk
-                        
-            # Aggiungi la risposta completa alla chat solo se non è vuota
-            if response.strip():
-                messages.append({
-                    "role": "assistant",
-                    "content": response
-                })
-                
-            # Aggiorna le statistiche dei token se disponibili
-            if hasattr(self.llm, 'update_message_stats'):
-                self.llm.update_message_stats(
-                    model=st.session_state.current_model,
-                    input_tokens=len(prompt) // 4,
-                    output_tokens=len(response) // 4,
-                    cost=0.0
-                )
-                
-            # Reset shown messages e forza rerun
-            st.session_state.shown_messages = set()
-            st.rerun()
-
-        except Exception as e:
-            error_msg = f"Si è verificato un errore durante l'elaborazione: {str(e)}"
-            st.error(error_msg)
-            
-            messages.append({
-                "role": "assistant",
-                "content": f"🚨 {error_msg}"
-            })
-            
-            if st.session_state.config.get('DEBUG', False):
-                st.exception(e)
-            
-            # Reset shown messages e forza rerun anche in caso di errore
-            st.session_state.shown_messages = set()
-            st.rerun()
-
     def render(self):
-        """Renderizza l'interfaccia chat con quick prompts."""
+        """Renderizza l'interfaccia chat."""
         self.render_chat_controls()
         self.render_token_stats()
         
@@ -450,28 +341,103 @@ class ChatInterface:
         # Renderizza i quick prompts
         self.render_quick_prompts()
         
-        # Processa il quick prompt se selezionato
-        if hasattr(st.session_state, 'process_quick_prompt') and st.session_state.process_quick_prompt:
-            prompt = st.session_state.quick_prompt_selected
+        # Renderizza i messaggi
+        for message in st.session_state.chats[st.session_state.current_chat]['messages']:
+            with st.chat_message(message["role"]):
+                if isinstance(message["content"], dict) and "image" in message["content"]:
+                    st.image(message["content"]["image"])
+                    st.write(message["content"]["text"])
+                else:
+                    st.write(message["content"])
+
+        # Input per nuovi messaggi
+        if prompt := st.chat_input("Scrivi un messaggio..."):
             self.process_user_message(prompt)
-            # Resetta il flag dopo il processing
-            st.session_state.process_quick_prompt = False
+
+    def process_user_message(self, prompt: str):
+        """
+        Processa un messaggio utente con supporto per immagini e gestione completa degli errori.
+        """
+        if not prompt.strip():
+            return
+
+        # Controlla duplicazioni
+        messages = st.session_state.chats[st.session_state.current_chat]['messages']
+        if messages and messages[-1].get("role") == "user" and messages[-1].get("content") == prompt:
+            return
+
+        # Gestione immagine corrente se presente
+        current_image = st.session_state.get('current_image')
         
-        # Container per i messaggi
-        messages_container = st.container()
-        
-        with messages_container:
-            # Ottieni tutti i messaggi
-            messages = st.session_state.chats[st.session_state.current_chat]['messages']
+        # Prepara il contenuto del messaggio
+        if current_image and st.session_state.current_model == 'grok-vision-beta':
+            message_content = {
+                "image": current_image,
+                "text": prompt
+            }
+        else:
+            message_content = prompt
+
+        # Aggiungi il messaggio utente alla chat
+        messages.append({
+            "role": "user",
+            "content": message_content
+        })
+
+        try:
+            # Prepara il generatore di risposta appropriato
+            if current_image and st.session_state.current_model == 'grok-vision-beta':
+                image_bytes = current_image.getvalue()
+                response_generator = self.llm.process_image_request(image_bytes, prompt)
+            else:
+                # Ottieni il contesto dai file se presenti
+                context = ""
+                if hasattr(st.session_state, 'uploaded_files') and st.session_state.uploaded_files:
+                    for filename, file_info in st.session_state.uploaded_files.items():
+                        context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
+                
+                response_generator = self.llm.process_request(
+                    prompt=prompt,
+                    context=context
+                )
+
+            # Accumula la risposta completa
+            response = ""
+            with st.spinner("Elaborazione in corso..."):
+                for chunk in response_generator:
+                    if chunk:
+                        response += chunk
+                        
+            # Aggiungi la risposta completa alla chat solo se non è vuota
+            if response.strip():
+                messages.append({
+                    "role": "assistant",
+                    "content": response
+                })
+                
+            # Aggiorna le statistiche dei token se disponibili
+            if hasattr(self.llm, 'update_message_stats'):
+                self.llm.update_message_stats(
+                    model=st.session_state.current_model,
+                    input_tokens=len(prompt) // 4,
+                    output_tokens=len(response) // 4,
+                    cost=0.0
+                )
+                
+            st.rerun()
+
+        except Exception as e:
+            error_msg = f"Si è verificato un errore durante l'elaborazione: {str(e)}"
+            st.error(error_msg)
             
-            # Renderizza i messaggi in ordine inverso
-            for message in messages:
-                with st.chat_message(message["role"]):
-                    if isinstance(message["content"], str):
-                        st.markdown(message["content"])
-                    elif isinstance(message["content"], dict) and "image" in message["content"]:
-                        st.image(message["content"]["image"])
-                        st.markdown(message["content"]["text"])
+            messages.append({
+                "role": "assistant",
+                "content": f"🚨 {error_msg}"
+            })
+            
+            if st.session_state.config.get('DEBUG', False):
+                st.exception(e)
+            st.rerun()
 
     def handle_user_input(self, prompt: str):
         """
