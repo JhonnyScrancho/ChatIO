@@ -65,37 +65,48 @@ def render_main_layout():
     # CSS per layout e posizionamento
     st.markdown("""
         <style>
-        /* Chat container margins */
-        div[data-testid="stChatMessageContainer"] {
-            margin-bottom: 100px;
+        /* Chat container padding bottom per evitare che i messaggi finiscano sotto l'input */
+        .stChatMessageContainer {
+            padding-bottom: 140px !important;
         }
         
-        /* Fixed footer container */
-        .stChatFloatingInputContainer {
-            bottom: 0 !important;
+        /* Base floating container con stile comune */
+        .stBottomBlockContainer {
             background: white !important;
-            padding: 0 !important;
-            padding-top: 8px !important;
+            border-top: 1px solid rgba(49, 51, 63, 0.2) !important;
         }
 
         /* Quick prompts styling */
-        .st-emotion-cache-desfit {
-            margin-bottom: 8px !important;
+        .stBottomBlockContainer .st-emotion-cache-ocqkz7 {
+            padding: 0.5rem 1rem !important;
+            gap: 0.5rem !important;
+            margin-bottom: 0 !important;
         }
         
-        .stButton button {
+        .stBottomBlockContainer .stButton button {
             min-height: 32px !important;
             line-height: 1.1 !important;
-            margin: 0 !important;
             background: #f0f2f6 !important;
             color: #31333F !important;
             border-radius: 16px !important;
             border: none !important;
+            padding: 0.25rem 1rem !important;
+            font-size: 0.875rem !important;
         }
         
-        .stButton button:hover {
+        .stBottomBlockContainer .stButton button:hover {
             background: #e0e2e6 !important;
             color: #131415 !important;
+        }
+
+        /* Chat input styling */
+        .stChatInput {
+            padding: 1rem !important;
+            padding-top: 0 !important;
+        }
+
+        .stChatInput textarea {
+            resize: none !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -120,11 +131,10 @@ def render_main_layout():
         chat_interface = ChatInterface()
         chat_interface.render()
     
-    # Footer con quick prompts e input
+    # Quick prompts
     cols = st.columns(4)
     prompts = chat_interface.quick_prompts.get(st.session_state.current_model, 
                                              chat_interface.quick_prompts['default'])
-    # Quick prompts all'interno del container di input
     for i, prompt in enumerate(prompts):
         if cols[i % 4].button(prompt, key=f"quick_prompt_{i}", 
                             use_container_width=True):
