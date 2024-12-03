@@ -316,9 +316,7 @@ class ChatInterface:
             error_msg = f"Mi dispiace, si è verificato un errore: {str(e)}"
             st.error(error_msg)
             return error_msg
-        
     
-
     def process_user_message(self, prompt: str):
         """
         Processa un messaggio utente con supporto per immagini e gestione completa degli errori.
@@ -346,54 +344,76 @@ class ChatInterface:
         else:
             message_content = prompt
 
-        # Aggiungi il messaggio utente alla chat
+        # Aggiungi immediatamente il messaggio utente alla chat e forza l'aggiornamento
         st.session_state.chats[st.session_state.current_chat]['messages'].append({
             "role": "user",
             "content": message_content
         })
+        st.rerun()  # Mostra subito il messaggio utente
 
         try:
-            # Prepara il generatore di risposta appropriato
-            if current_image and st.session_state.current_model == 'grok-vision-beta':
-                image_bytes = current_image.getvalue()
-                response_generator = self.llm.process_image_request(image_bytes, prompt)
-            else:
-                # Ottieni il contesto dai file se presenti
-                context = ""
-                if hasattr(st.session_state, 'uploaded_files') and st.session_state.uploaded_files:
-                    for filename, file_info in st.session_state.uploaded_files.items():
-                        context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
-                
-                response_generator = self.llm.process_request(
-                    prompt=prompt,
-                    context=context
-                )
-
-            # Accumula la risposta completa
-            response = ""
+            # Mostra un placeholder per la risposta in arrivo
             with st.spinner("Elaborazione in corso..."):
+                # Prepara il generatore di risposta appropriato
+                if current_image and st.session_state.current_model == 'grok-vision-beta':
+                    if not hasattr(current_image, 'getvalue'):
+                        raise ValueError("Formato immagine non valido")
+                    image_bytes = current_image.getvalue()
+                    response_generator = self.llm.process_image_request(image_bytes, prompt)
+                else:
+                    # Ottieni il contesto dai file se presenti
+                    context = ""
+                    if hasattr(st.session_state, 'uploaded_files') and st.session_state.uploaded_files:
+                        for filename, file_info in st.session_state.uploaded_files.items():
+                            if isinstance(file_info, dict) and 'content' in file_info and 'language' in file_info:
+                                context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
+
+                    # Verifica che il modello sia impostato
+                    if not hasattr(st.session_state, 'current_model'):
+                        st.session_state.current_model = 'o1-mini'  # Modello di default
+
+                    response_generator = self.llm.process_request(
+                        prompt=prompt,
+                        context=context
+                    )
+
+                # Accumula la risposta completa
+                response = ""
                 for chunk in response_generator:
                     if chunk:
                         response += chunk
-                        
-            # Aggiungi la risposta completa alla chat solo se non è vuota
-            if response.strip():
+
+                # Verifica e pulisci la risposta
+                if not response.strip():
+                    raise ValueError("Risposta vuota dal modello")
+
+                # Aggiungi la risposta alla chat
                 st.session_state.chats[st.session_state.current_chat]['messages'].append({
                     "role": "assistant",
                     "content": response
                 })
                 
-            # Aggiorna le statistiche dei token se disponibili
-            if hasattr(self.llm, 'update_message_stats'):
-                self.llm.update_message_stats(
-                    model=st.session_state.current_model,
-                    input_tokens=len(prompt) // 4,  # Stima approssimativa
-                    output_tokens=len(response) // 4,  # Stima approssimativa
-                    cost=0.0  # Il costo verrà calcolato dal LLMManager
-                )
-                
-            # Forza il rerun di Streamlit per aggiornare l'interfaccia in modo pulito
-            st.rerun()
+                # Aggiorna le statistiche dei token
+                if hasattr(self.llm, 'update_message_stats'):
+                    self.llm.update_message_stats(
+                        model=st.session_state.current_model,
+                        input_tokens=len(prompt) // 4,  # Stima approssimativa
+                        output_tokens=len(response) // 4,  # Stima approssimativa
+                        cost=0.0  # Il costo verrà calcolato dal LLMManager
+                    )
+
+                # Gestione della history
+                if 'message_history' not in st.session_state:
+                    st.session_state.message_history = []
+                st.session_state.message_history.append({
+                    'timestamp': datetime.now().isoformat(),
+                    'prompt': prompt,
+                    'response': response,
+                    'model': st.session_state.current_model
+                })
+
+                # Forza il rerun per l'aggiornamento pulito
+                st.rerun()
 
         except Exception as e:
             error_msg = f"Si è verificato un errore durante l'elaborazione: {str(e)}"
@@ -406,9 +426,10 @@ class ChatInterface:
             })
             
             # Log dell'errore per debug
-            if st.session_state.config.get('DEBUG', False):
+            if hasattr(st.session_state, 'config') and st.session_state.config.get('DEBUG', False):
                 st.exception(e)
-
+            
+            st.rerun()  # Aggiorna l'interfaccia anche in caso di errore
 
     def render(self):
         """Renderizza l'interfaccia chat con quick prompts."""
