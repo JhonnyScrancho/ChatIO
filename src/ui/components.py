@@ -13,7 +13,7 @@ from typing import Dict, Any
 def load_custom_css():
     st.markdown("""
         <style>
-           [data-testid="stVerticalBlock"] {
+           [data-testid="stChatMessageContainer"] > div {
                 gap: 0 !important;
            }
         </style>
