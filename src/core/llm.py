@@ -505,32 +505,13 @@ class LLMManager:
             yield error_msg
     
     def process_request(self, prompt: str, analysis_type: Optional[str] = None,
-                       file_content: Optional[str] = None, 
-                       context: Optional[str] = None,
-                       image: Optional[str] = None) -> Generator[str, None, None]:
+                   file_content: Optional[str] = None, 
+                   context: Optional[str] = None,
+                   image: Optional[str] = None) -> Generator[str, None, None]:
         """
         Processa una richiesta completa con controllo utente sul retry e fallback.
-        
-        Args:
-            prompt: Prompt dell'utente
-            analysis_type: Tipo di analisi
-            file_content: Contenuto del file
-            context: Contesto aggiuntivo
-            image: URL o base64 dell'immagine
-            
-        Yields:
-            str: Chunks della risposta
         """
-        requires_file_handling = bool(file_content)
-        requires_vision = bool(image)
-        
-        model = self.select_model(
-            analysis_type or "general",
-            len(prompt) + len(context or "") + len(file_content or ""),
-            requires_file_handling,
-            requires_vision
-        )
-        
+        model = st.session_state.current_model
         messages = self.prepare_prompt(
             prompt=prompt,
             analysis_type=analysis_type,
@@ -545,7 +526,17 @@ class LLMManager:
         
         try:
             if model.startswith('grok'):
-                yield from self._handle_grok_completion(messages, model)
+                # Usa il client Grok specifico
+                completion = self.grok_client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    stream=True
+                )
+                
+                for chunk in completion:
+                    if chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+                        
             elif model.startswith('o1'):
                 yield from self._handle_o1_completion(messages, model)
             else:
@@ -554,7 +545,9 @@ class LLMManager:
         except Exception as e:
             error_msg = f"Errore generale: {str(e)}"
             st.error(error_msg)
-            yield error_msg
+            with placeholder.container():
+                if st.button("🔄 Riprova con un altro modello"):
+                    yield from self._handle_o1_completion(messages, "o1-mini")
 
     def calculate_cost(self, model: str, input_tokens: int, 
                       output_tokens: int) -> float:
