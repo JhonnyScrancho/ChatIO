@@ -348,6 +348,15 @@ class ChatInterface:
             "content": message_content
         })
 
+        # Mostra immediatamente il messaggio utente usando un placeholder
+        with st.empty():
+            with st.chat_message("user"):
+                if isinstance(message_content, dict) and "image" in message_content:
+                    st.image(message_content["image"])
+                    st.write(message_content["text"])
+                else:
+                    st.write(message_content)
+
         try:
             # Prepara il generatore di risposta appropriato
             if current_image and st.session_state.current_model == 'grok-vision-beta':
