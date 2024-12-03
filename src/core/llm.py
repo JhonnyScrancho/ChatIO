@@ -253,7 +253,14 @@ class LLMManager:
                 model=model,
                 messages=messages,
                 stream=False,
-                max_completion_tokens=32768 if model == "o1-preview" else 65536  # Changed from max_tokens
+                max_completion_tokens=32768 if model == "o1-preview" else 65536
+            )
+            
+            # Calcoliamo il costo prima di usarlo
+            cost = self.calculate_cost(
+                model,
+                usage_response.usage.prompt_tokens,
+                usage_response.usage.completion_tokens
             )
             
             # Aggiorniamo l'usage dai dati ricevuti
@@ -262,7 +269,7 @@ class LLMManager:
                     model,
                     usage_response.usage.prompt_tokens,
                     usage_response.usage.completion_tokens,
-                    cost
+                    cost  # Ora cost è definito
                 )
             
             # Poi facciamo la chiamata streaming per la risposta effettiva
@@ -270,7 +277,7 @@ class LLMManager:
                 model=model,
                 messages=messages,
                 stream=True,
-                max_completion_tokens=32768 if model == "o1-preview" else 65536  # Changed from max_tokens
+                max_completion_tokens=32768 if model == "o1-preview" else 65536
             )
             
             for chunk in completion:
