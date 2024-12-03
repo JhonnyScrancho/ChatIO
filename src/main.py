@@ -78,45 +78,7 @@ def render_main_layout():
     clients = init_clients()
     clients['session'].init_session()
     
-    # CSS per layout e posizionamento
-    st.markdown("""
-        <style>
-        /* Chat container margins */
-        div[data-testid="stChatMessageContainer"] {
-            margin-bottom: 100px;
-        }
-        
-        /* Fixed footer container */
-        .stChatFloatingInputContainer {
-            bottom: 0 !important;
-            background: white !important;
-            padding: 0 !important;
-            padding-top: 8px !important;
-        }
-
-        /* Quick prompts styling */
-        .st-emotion-cache-desfit {
-            margin-bottom: 8px !important;
-        }
-        
-        .stButton button {
-            min-height: 32px !important;
-            line-height: 1.1 !important;
-            margin: 0 !important;
-            background: #f0f2f6 !important;
-            color: #31333F !important;
-            border-radius: 16px !important;
-            border: none !important;
-        }
-        
-        .stButton button:hover {
-            background: #e0e2e6 !important;
-            color: #131415 !important;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    
-# Header area
+    # Header area
     header_container = st.container()
     with header_container:
         col1, col2 = st.columns([6,1])
