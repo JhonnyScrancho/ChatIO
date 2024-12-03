@@ -692,80 +692,63 @@ class ChatInterface:
 
     def render(self):
         """Renderizza l'interfaccia chat."""
-        # Render chat controls
-        self.render_chat_controls()
-        
-        # Render token stats
-        self.render_token_stats()
-        
-        # Aggiornamento stili CSS per i messaggi
+        # Custom CSS con selettori stabili
         st.markdown("""
             <style>
-            /* Base message styling */
-            .stChatMessage {
-                padding: 1rem 0;
+            /* Stili base del messaggio */
+            [data-testid="stChatMessage"] {
+                background-color: transparent !important;
+                padding: 1rem 0 !important;
             }
             
-            /* Message content styling */
-            .stChatMessage .stMarkdown p {
-                margin: 0;
+            /* Messaggi utente - usa l'attributo aria-label */
+            [data-testid="stChatMessage"] [aria-label="Chat message from user"] {
+                background-color: #f7f7f7 !important;
+                border-radius: 10px !important;
+                margin: 0.5rem 0 !important;
+            }
+            
+            /* Messaggi assistente */
+            [data-testid="stChatMessage"] [aria-label="Chat message from assistant"] {
+                background-color: #eef2f7 !important;
+                border-radius: 10px !important;
+                margin: 0.5rem 0 !important;
+            }
+            
+            /* Contenuto del messaggio */
+            [data-testid="stMarkdownContainer"] p {
                 font-size: 16px !important;
                 line-height: 1.5 !important;
                 color: #111 !important;
+                margin: 0 !important;
+                padding: 0.5rem 1rem !important;
             }
             
-            /* Custom message classes */
-            .assistant-message .stMarkdown p,
-            .user-message .stMarkdown p {
-                padding: 0.5rem 0;
-                font-family: -apple-system, BlinkMacSystemFont, sans-serif !important;
+            /* Spaziatura contenuto verticale */
+            [data-testid="stVerticalBlock"] {
+                gap: 0 !important;
             }
             
-            .assistant-message {
-                background-color: rgba(240, 242, 246, 0.5);
-                padding: 1rem;
-                border-radius: 0.5rem;
-            }
-            
-            .user-message {
-                background-color: rgba(230, 230, 230, 0.5);
-                padding: 1rem;
-                border-radius: 0.5rem;
-            }
-            
-            /* Reset background for message containers */
-            .stChatMessage > div {
-                background: transparent !important;
+            /* Container elemento */
+            [data-testid="stElementContainer"] {
+                margin: 0 !important;
             }
             </style>
         """, unsafe_allow_html=True)
         
-        # Render messages container
+        # Resto del codice come prima
         messages_container = st.container()
         with messages_container:
             messages = st.session_state.chats[st.session_state.current_chat]['messages']
             for message in messages:
-                # Determina l'avatar e la classe in base al ruolo
-                if message["role"] == "assistant":
-                    avatar = "👲🏿"
-                    css_class = "assistant-message"
-                else:
-                    avatar = "🫏"
-                    css_class = "user-message"
+                avatar = "👲🏿" if message["role"] == "assistant" else "🫏"
                 
-                # Renderizza il messaggio con l'avatar personalizzato
                 with st.chat_message(message["role"], avatar=avatar):
-                    # Aggiungi la classe CSS al contenitore del messaggio
-                    st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
-                    
-                    # Renderizza il contenuto del messaggio
                     if isinstance(message["content"], str):
                         st.markdown(message["content"])
                     elif isinstance(message["content"], dict) and "image" in message["content"]:
                         st.image(message["content"]["image"])
-                        st.markdown(message["content"]["text"])
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)     
+                        st.markdown(message["content"]["text"])    
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
