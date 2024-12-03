@@ -194,37 +194,28 @@ class FileExplorer:
             self._render_tree_node("", tree, "")
 
 class ChatInterface:
-    """
-    Gestisce l'interfaccia di chat dell'applicazione.
-    Include gestione messaggi, statistiche e interazione con l'utente.
-    """
+    """Componente per l'interfaccia chat."""
     
     def __init__(self):
-        """Inizializza la chat interface con le dipendenze e lo stato necessario."""
         self.session = SessionManager()
         self.llm = LLMManager()
-        
-        # Inizializzazione stato sessione
-        if 'messages' not in st.session_state:
-            st.session_state.messages = []
-        if 'token_stats' not in st.session_state:
-            st.session_state.token_stats = {'total': 0, 'cost': 0.0}
-        if 'waiting_for_response' not in st.session_state:
-            st.session_state.waiting_for_response = False
-        if 'current_chat' not in st.session_state:
-            st.session_state.current_chat = 'main'
-        if 'chat_history' not in st.session_state:
-            st.session_state.chat_history = {}
-        if 'quick_prompts_enabled' not in st.session_state:
-            st.session_state.quick_prompts_enabled = True
-        if 'style_config' not in st.session_state:
-            st.session_state.style_config = self._get_default_style()
-        
-        # Quick prompts predefiniti per diversi modelli
+        if 'chats' not in st.session_state:
+            st.session_state.chats = {
+                'Chat principale': {
+                    'messages': [{
+                        "role": "assistant",
+                        "content": "Ciao! Carica dei file o delle immagini e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
+                    }],
+                    'created_at': datetime.now().isoformat()
+                }
+            }
+            st.session_state.current_chat = 'Chat principale'
+            
+        # Quick prompts predefiniti per ogni tipo di modello
         self.quick_prompts = {
             'default': [
                 "Analizza questo codice",
-                "Trova bug potenziali",
+                "Trova potenziali bug",
                 "Suggerisci miglioramenti",
                 "Spiega il funzionamento"
             ],
@@ -232,520 +223,244 @@ class ChatInterface:
                 "Descrivi questa immagine",
                 "Trova testo nell'immagine",
                 "Analizza i colori",
-                "Identifica gli oggetti"
+                "Identifica gli oggetti",
+                "Analizza la composizione"
             ]
         }
 
-    def _get_default_style(self) -> Dict[str, Any]:
-        """Restituisce la configurazione di stile predefinita."""
-        return {
-            'chat_container_height': '600px',
-            'message_spacing': '1rem',
-            'user_message_bg': '#e6f3ff',
-            'assistant_message_bg': '#f0f2f6',
-            'input_height': '100px',
-            'max_width': '800px'
-        }
-
-    def _init_chat(self, chat_id: str):
-        """
-        Inizializza una nuova chat con struttura dati predefinita.
-        
-        Args:
-            chat_id: Identificatore univoco della chat
-        """
-        if chat_id not in st.session_state.chat_history:
-            st.session_state.chat_history[chat_id] = {
-                'messages': [],
-                'created_at': datetime.now().isoformat(),
-                'token_stats': {'total': 0, 'cost': 0.0},
-                'metadata': {
-                    'model': st.session_state.get('current_model', 'o1-mini'),
-                    'user_settings': {}
-                }
-            }
-
-    def _update_token_stats(self, tokens: int, cost: float):
-        """
-        Aggiorna le statistiche dei token sia per la chat corrente che globali.
-        
-        Args:
-            tokens: Numero di token utilizzati
-            cost: Costo della richiesta
-        """
-        chat_id = st.session_state.current_chat
-        if chat_id in st.session_state.chat_history:
-            # Aggiorna statistiche chat specifica
-            st.session_state.chat_history[chat_id]['token_stats']['total'] += tokens
-            st.session_state.chat_history[chat_id]['token_stats']['cost'] += cost
-            
-            # Aggiorna statistiche globali
-            st.session_state.token_stats['total'] += tokens
-            st.session_state.token_stats['cost'] += cost
-
-    def _get_current_chat_messages(self) -> List[Dict[str, str]]:
-        """
-        Recupera i messaggi della chat corrente.
-        
-        Returns:
-            Lista dei messaggi nella chat corrente
-        """
-        chat_id = st.session_state.current_chat
-        if chat_id in st.session_state.chat_history:
-            return st.session_state.chat_history[chat_id]['messages']
-        return []
-
-    def render_chat_controls(self):
-        """Renderizza i controlli principali della chat."""
-        st.markdown("""
-            <style>
-            .chat-controls {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 0.5rem;
-                background: var(--secondary-background-color);
-                border-radius: 0.5rem;
-                margin-bottom: 1rem;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-        
-        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
-        
-        with col1:
-            # Selezione chat
-            chats = list(st.session_state.chat_history.keys())
-            current_chat = st.selectbox(
-                "Seleziona Chat",
-                chats,
-                index=chats.index(st.session_state.current_chat) if chats else 0,
-                key="chat_selector"
-            )
-            if current_chat != st.session_state.current_chat:
-                st.session_state.current_chat = current_chat
-                st.rerun()
-
-        with col2:
-            # Nuova chat
-            if st.button("➕ Nuova", help="Crea una nuova chat"):
-                new_chat_id = f"chat_{len(st.session_state.chat_history) + 1}"
-                self._init_chat(new_chat_id)
-                st.session_state.current_chat = new_chat_id
-                st.rerun()
-
-        with col3:
-            # Rinomina chat
-            if st.button("✏️ Rinomina", help="Rinomina la chat corrente"):
-                st.session_state.renaming_chat = True
-                st.rerun()
-
-        with col4:
-            # Elimina chat
-            if len(st.session_state.chat_history) > 1:
-                if st.button("🗑️ Elimina", help="Elimina la chat corrente"):
-                    if st.session_state.current_chat in st.session_state.chat_history:
-                        del st.session_state.chat_history[st.session_state.current_chat]
-                        st.session_state.current_chat = list(st.session_state.chat_history.keys())[0]
-                        st.rerun()
-
-        # Gestione rinomina chat
-        if hasattr(st.session_state, 'renaming_chat') and st.session_state.renaming_chat:
-            with st.form("rename_chat_form"):
-                new_name = st.text_input("Nuovo nome per la chat:", 
-                                       value=st.session_state.current_chat)
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.form_submit_button("Conferma"):
-                        if new_name and new_name != st.session_state.current_chat:
-                            # Rinomina la chat mantenendo i dati
-                            st.session_state.chat_history[new_name] = \
-                                st.session_state.chat_history[st.session_state.current_chat]
-                            del st.session_state.chat_history[st.session_state.current_chat]
-                            st.session_state.current_chat = new_name
-                            st.session_state.renaming_chat = False
-                            st.rerun()
-                with col2:
-                    if st.form_submit_button("Annulla"):
-                        st.session_state.renaming_chat = False
-                        st.rerun()
-
-    def render_token_stats(self):
-        """Renderizza le statistiche dei token per la chat corrente."""
-        chat_id = st.session_state.current_chat
-        if chat_id in st.session_state.chat_history:
-            stats = st.session_state.chat_history[chat_id]['token_stats']
-            
-            with st.expander("📊 Statistiche Token", expanded=False):
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.metric(
-                        "Token Chat",
-                        f"{stats['total']:,}",
-                        help="Token utilizzati in questa chat"
-                    )
-                
-                with col2:
-                    st.metric(
-                        "Costo Chat",
-                        f"${stats['cost']:.4f}",
-                        help="Costo della chat corrente"
-                    )
-                
-                with col3:
-                    st.metric(
-                        "Token Totali",
-                        f"{st.session_state.token_stats['total']:,}",
-                        help="Token utilizzati in totale"
-                    )
-
-                if len(st.session_state.chat_history) > 0:
-                    st.markdown("### Storico Chat")
-                    history_data = []
-                    for chat_id, chat_data in st.session_state.chat_history.items():
-                        history_data.append({
-                            'Chat': chat_id,
-                            'Token': chat_data['token_stats']['total'],
-                            'Costo': f"${chat_data['token_stats']['cost']:.4f}",
-                            'Creata': datetime.fromisoformat(chat_data['created_at']).strftime('%Y-%m-%d %H:%M')
-                        })
-                    if history_data:
-                        df = pd.DataFrame(history_data)
-                        st.dataframe(df, hide_index=True)
-
     def render_quick_prompts(self):
-        """Renderizza i quick prompts come bottoni interattivi."""
-        if not st.session_state.quick_prompts_enabled:
-            return
-            
+        """Renderizza i quick prompts come bottoni."""
         st.markdown("""
             <style>
-            .quick-prompts {
+            .quick-prompts-container {
                 display: flex;
                 flex-wrap: wrap;
                 gap: 0.5rem;
                 margin-bottom: 1rem;
-            }
-            .quick-prompt-button {
-                padding: 0.5rem 1rem;
-                border: 1px solid var(--primary-color);
-                border-radius: 0.5rem;
-                cursor: pointer;
-            }
-            .quick-prompt-button:hover {
-                background: var(--primary-color-light);
+                padding: 0.5rem;
+                border-radius: 5px;
+                background-color: #f8f9fa;
             }
             </style>
         """, unsafe_allow_html=True)
 
         # Seleziona i prompt appropriati in base al modello
-        current_model = st.session_state.get('current_model', 'default')
-        prompts = self.quick_prompts.get(current_model, self.quick_prompts['default'])
+        current_model = st.session_state.current_model
+        prompts = self.quick_prompts.get(
+            current_model, 
+            self.quick_prompts['default']
+        )
 
-        st.markdown("### 🚀 Quick Prompts")
+        # Container per i quick prompts
+        st.markdown('<div class="quick-prompts-container">', unsafe_allow_html=True)
         cols = st.columns(len(prompts))
         for col, prompt in zip(cols, prompts):
             with col:
-                if st.button(prompt, key=f"quick_prompt_{prompt}",
-                           help="Clicca per usare questo prompt",
-                           use_container_width=True):
-                    self.process_user_message(prompt)
-                    st.rerun()
+                if st.button(
+                    prompt, 
+                    key=f"quick_prompt_{prompt}", 
+                    use_container_width=True
+                ):
+                    # Invece di processare direttamente, settiamo un flag nella session_state
+                    st.session_state.quick_prompt_selected = prompt
+                    st.session_state.process_quick_prompt = True
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    def render_token_stats(self):
+        """Renderizza le statistiche dei token per ogni messaggio."""
+        
+        if 'message_stats' not in st.session_state:
+            st.session_state.message_stats = []
+        
+        with st.expander("📊 Token Usage Statistics", expanded=False):
+            # Mostra statistiche per l'ultima chiamata
+            if st.session_state.message_stats:
+                last_call = st.session_state.message_stats[-1]
+                
+                cols = st.columns(4)
+                with cols[0]:
+                    st.metric("Input Tokens", last_call.get('input_tokens', 0))
+                with cols[1]:
+                    st.metric("Output Tokens", last_call.get('output_tokens', 0))
+                with cols[2]:
+                    st.metric("Total Tokens", last_call.get('total_tokens', 0))
+                with cols[3]:
+                    st.metric("Cost ($)", f"${last_call.get('cost', 0):.4f}")
+                    
+            # Mostra storico in una tabella
+            if len(st.session_state.message_stats) > 1:
+                st.markdown("### History")
+                df = pd.DataFrame(st.session_state.message_stats)
+                st.dataframe(df)
+    
+    def _process_response(self, prompt: str) -> str:
+        """Processa la richiesta e genera una risposta."""
+        try:
+            # Prepara il contesto completo per l'LLM
+            context = ""
+            for filename, file_info in st.session_state.uploaded_files.items():
+                context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
+
+            response = ""
+            placeholder = st.empty()
+            with st.spinner("Analyzing code..."):
+                for chunk in self.llm.process_request(
+                    prompt=prompt,
+                    context=context
+                ):
+                    response += chunk
+                    # Aggiorna il placeholder con la risposta parziale
+                    with placeholder:
+                        st.markdown(response)
+            return response
+        except Exception as e:
+            error_msg = f"Mi dispiace, si è verificato un errore: {str(e)}"
+            st.error(error_msg)
+            return error_msg
+        
+    
+
+    def process_user_message(self, prompt: str):
+        """Processa un messaggio utente con supporto per immagini."""
+        if not prompt.strip():
+            return
+
+        # Aggiungi il messaggio utente
+        current_image = st.session_state.get('current_image')
+        if current_image and st.session_state.current_model == 'grok-vision-beta':
+            message_content = {
+                "image": current_image,
+                "text": prompt
+            }
+        else:
+            message_content = prompt
+
+        st.session_state.chats[st.session_state.current_chat]['messages'].append({
+            "role": "user",
+            "content": message_content
+        })
+
+        # Container per la risposta
+        response_container = st.empty()
+        
+        try:
+            # Processa la richiesta in base al tipo
+            if current_image and st.session_state.current_model == 'grok-vision-beta':
+                image_bytes = current_image.getvalue()
+                response_generator = self.llm.process_image_request(image_bytes, prompt)
+            else:
+                response_generator = self.llm.process_request(prompt=prompt)
+
+            # Accumula e mostra la risposta
+            response = ""
+            with st.spinner("Elaborazione in corso..."):
+                for chunk in response_generator:
+                    if chunk:
+                        response += chunk
+                        with response_container:
+                            with st.chat_message("assistant"):
+                                st.markdown(response)
+
+            # Aggiungi la risposta completa alla chat
+            if response.strip():
+                st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                    "role": "assistant",
+                    "content": response
+                })
+
+        except Exception as e:
+            error_msg = f"Si è verificato un errore: {str(e)}"
+            st.error(error_msg)
+
 
     def render(self):
-        """Renderizza l'interfaccia chat completa."""
-        # Renderizza controlli chat
+        """Renderizza l'interfaccia chat con quick prompts."""
         self.render_chat_controls()
-        
-        # Container principale per la chat
-        chat_container = st.container()
-        
-        with chat_container:
-            # Quick prompts
-            self.render_quick_prompts()
+        self.render_token_stats()
+
+        # Gestione immagini per Grok Vision
+        if st.session_state.current_model == 'grok-vision-beta':
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                uploaded_image = st.file_uploader(
+                    "Carica un'immagine da analizzare",
+                    type=['png', 'jpg', 'jpeg', 'gif'],
+                    key="image_uploader"
+                )
+            with col2:
+                if uploaded_image:
+                    st.image(uploaded_image, caption="Immagine caricata", use_column_width=True)
             
-            # Messaggi esistenti
-            messages = self._get_current_chat_messages()
-            for message in messages:
+            if uploaded_image:
+                st.session_state.current_image = uploaded_image
+
+        # Renderizza i quick prompts
+        self.render_quick_prompts()
+        
+        # Processa il quick prompt se selezionato
+        if hasattr(st.session_state, 'process_quick_prompt') and st.session_state.process_quick_prompt:
+            prompt = st.session_state.quick_prompt_selected
+            self.process_user_message(prompt)
+            # Resetta il flag dopo il processing
+            st.session_state.process_quick_prompt = False
+        
+        # Container per i messaggi
+        messages_container = st.container()
+        
+        with messages_container:
+            for message in st.session_state.chats[st.session_state.current_chat]['messages']:
                 with st.chat_message(message["role"]):
                     if isinstance(message["content"], str):
                         st.markdown(message["content"])
-                    elif isinstance(message["content"], dict):
-                        if "image" in message["content"]:
-                            st.image(message["content"]["image"])
-                        st.markdown(message["content"].get("text", ""))
-            
-            # Statistiche token
-            self.render_token_stats()
-            
-            # Input chat
-            if not st.session_state.waiting_for_response:
-                if prompt := st.chat_input(
-                    "Scrivi il tuo messaggio...",
-                    key=f"chat_input_{st.session_state.current_chat}"
-                ):
-                    # Aggiungi messaggio utente
-                    chat_id = st.session_state.current_chat
-                    if chat_id in st.session_state.chat_history:
-                        st.session_state.chat_history[chat_id]['messages'].append({
-                            "role": "user",
-                            "content": prompt
-                        })
-                        # Processa il messaggio
-                        self.process_user_message(prompt)
-                        st.rerun()
+                    elif isinstance(message["content"], dict) and "image" in message["content"]:
+                        st.image(message["content"]["image"])
+                        st.markdown(message["content"]["text"])
 
-    def process_user_message(self, prompt: str):
+    def handle_user_input(self, prompt: str):
         """
-        Processa il messaggio utente e genera una risposta.
-        
-        Args:
-            prompt: Il messaggio dell'utente da processare
+        Gestisce l'input dell'utente in modo sicuro.
         """
-        try:
-            # Imposta flag di processing
-            st.session_state.waiting_for_response = True
-            chat_id = st.session_state.current_chat
+        if not hasattr(st.session_state, 'processing'):
+            st.session_state.processing = False
             
-            # Container per la risposta
-            with st.chat_message("assistant"):
-                response_placeholder = st.empty()
-                full_response = ""
-                
-                # Processa la risposta in streaming
-                for chunk in self.llm.process_request(prompt=prompt):
-                    if chunk:
-                        full_response += chunk
-                        # Aggiorna il placeholder con la risposta parziale
-                        response_placeholder.markdown(full_response + "▌")
-                
-                # Risposta finale
-                response_placeholder.markdown(full_response)
-            
-            # Aggiorna stato sessione
-            if chat_id in st.session_state.chat_history:
-                st.session_state.chat_history[chat_id]['messages'].append({
-                    "role": "assistant",
-                    "content": full_response
-                })
-            
-            # Aggiorna statistiche token
-            if hasattr(self.llm, 'last_token_count'):
-                self._update_token_stats(
-                    self.llm.last_token_count,
-                    self.llm.last_cost
-                )
-            
-            # Reset flag processing
-            st.session_state.waiting_for_response = False
-            
-            # Forza rerun per aggiornare l'interfaccia
-            st.rerun()
-            
-        except Exception as e:
-            st.error(f"Errore durante l'elaborazione: {str(e)}")
-            st.session_state.waiting_for_response = False
+        if not st.session_state.processing and prompt:
+            st.session_state.processing = True
+            self.process_user_message(prompt)
+            st.session_state.processing = False
 
-    def clear_chat_history(self, chat_id: Optional[str] = None):
+    def render_chat_controls(self):
         """
-        Pulisce la cronologia della chat specificata.
+        Renderizza i controlli della chat.
+        """
+        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
         
-        Args:
-            chat_id: ID della chat da pulire. Se None, usa la chat corrente
-        """
-        if chat_id is None:
-            chat_id = st.session_state.current_chat
+        with col1:
+            current_chat = st.selectbox(
+                " ",
+                options=list(st.session_state.chats.keys()),
+                index=list(st.session_state.chats.keys()).index(st.session_state.current_chat),
+                label_visibility="collapsed"
+            )
+            if current_chat != st.session_state.current_chat:
+                st.session_state.current_chat = current_chat
         
-        if chat_id in st.session_state.chat_history:
-            st.session_state.chat_history[chat_id]['messages'] = []
-            st.session_state.chat_history[chat_id]['token_stats'] = {
-                'total': 0,
-                'cost': 0.0
-            }
-            st.rerun()
-
-    def export_chat_history(self, chat_id: Optional[str] = None) -> Optional[Dict]:
-        """
-        Esporta la cronologia della chat in formato JSON.
-        
-        Args:
-            chat_id: ID della chat da esportare. Se None, usa la chat corrente
-            
-        Returns:
-            Dict contenente la cronologia della chat o None se la chat non esiste
-        """
-        if chat_id is None:
-            chat_id = st.session_state.current_chat
-            
-        if chat_id in st.session_state.chat_history:
-            return {
-                'messages': st.session_state.chat_history[chat_id]['messages'],
-                'stats': st.session_state.chat_history[chat_id]['token_stats'],
-                'created_at': st.session_state.chat_history[chat_id]['created_at'],
-                'metadata': st.session_state.chat_history[chat_id]['metadata']
-            }
-        return None
-
-    def import_chat_history(self, chat_data: Dict, chat_id: Optional[str] = None):
-        """
-        Importa una cronologia chat da un dizionario.
-        
-        Args:
-            chat_data: Dizionario contenente i dati della chat
-            chat_id: ID opzionale per la nuova chat. Se None, ne genera uno nuovo
-        """
-        if chat_id is None:
-            chat_id = f"chat_imported_{len(st.session_state.chat_history) + 1}"
-        
-        if chat_id not in st.session_state.chat_history:
-            st.session_state.chat_history[chat_id] = {
-                'messages': chat_data.get('messages', []),
-                'token_stats': chat_data.get('stats', {'total': 0, 'cost': 0.0}),
-                'created_at': chat_data.get('created_at', datetime.now().isoformat()),
-                'metadata': chat_data.get('metadata', {})
-            }
-            st.session_state.current_chat = chat_id
-            st.rerun()
-
-    def handle_file_upload(self, uploaded_file):
-        """
-        Gestisce l'upload di un file nella chat.
-        
-        Args:
-            uploaded_file: File caricato attraverso st.file_uploader
-        """
-        try:
-            content = uploaded_file.read().decode()
-            message = {
-                "role": "user",
-                "content": f"Ho caricato il file {uploaded_file.name}:\n```\n{content}\n```"
-            }
-            
-            chat_id = st.session_state.current_chat
-            if chat_id in st.session_state.chat_history:
-                st.session_state.chat_history[chat_id]['messages'].append(message)
-                st.rerun()
-                
-        except Exception as e:
-            st.error(f"Errore durante il caricamento del file: {str(e)}")
-
-    def handle_image_upload(self, uploaded_image):
-        """
-        Gestisce l'upload di un'immagine nella chat.
-        
-        Args:
-            uploaded_image: Immagine caricata attraverso st.file_uploader
-        """
-        try:
-            chat_id = st.session_state.current_chat
-            if chat_id in st.session_state.chat_history:
-                message = {
-                    "role": "user",
-                    "content": {
-                        "image": uploaded_image,
-                        "text": f"Ho caricato l'immagine {uploaded_image.name}"
-                    }
+        with col2:
+            if st.button("🆕", help="Nuova chat"):
+                new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
+                st.session_state.chats[new_chat_name] = {
+                    'messages': [],
+                    'created_at': datetime.now().isoformat()
                 }
-                st.session_state.chat_history[chat_id]['messages'].append(message)
-                st.rerun()
-                
-        except Exception as e:
-            st.error(f"Errore durante il caricamento dell'immagine: {str(e)}")
-
-    def toggle_quick_prompts(self, enabled: bool):
-        """
-        Attiva/disattiva i quick prompts.
+                st.session_state.current_chat = new_chat_name
         
-        Args:
-            enabled: True per attivare, False per disattivare
-        """
-        st.session_state.quick_prompts_enabled = enabled
-        st.rerun()
-
-    def update_style(self, style_config: Dict[str, Any]):
-        """
-        Aggiorna la configurazione di stile dell'interfaccia.
+        with col3:
+            if st.button("✏️", help="Rinomina chat"):
+                st.session_state.renaming = True
         
-        Args:
-            style_config: Dizionario con le nuove configurazioni di stile
-        """
-        st.session_state.style_config.update(style_config)
-        st.rerun()
-
-    def get_chat_statistics(self) -> Dict[str, Any]:
-        """
-        Raccoglie statistiche complete sulla chat corrente.
-        
-        Returns:
-            Dict con statistiche dettagliate
-        """
-        chat_id = st.session_state.current_chat
-        if chat_id not in st.session_state.chat_history:
-            return {}
-            
-        chat_data = st.session_state.chat_history[chat_id]
-        messages = chat_data['messages']
-        
-        return {
-            'total_messages': len(messages),
-            'user_messages': sum(1 for m in messages if m['role'] == 'user'),
-            'assistant_messages': sum(1 for m in messages if m['role'] == 'assistant'),
-            'token_stats': chat_data['token_stats'],
-            'created_at': chat_data['created_at'],
-            'average_response_length': sum(len(m['content']) for m in messages if m['role'] == 'assistant') / 
-                                    (sum(1 for m in messages if m['role'] == 'assistant') or 1),
-            'metadata': chat_data['metadata']
-        }
-
-    def render_chat_settings(self):
-        """Renderizza il pannello delle impostazioni della chat."""
-        with st.expander("⚙️ Impostazioni Chat", expanded=False):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Toggle quick prompts
-                enabled = st.toggle(
-                    "Quick Prompts",
-                    value=st.session_state.quick_prompts_enabled,
-                    help="Attiva/disattiva i quick prompts"
-                )
-                if enabled != st.session_state.quick_prompts_enabled:
-                    self.toggle_quick_prompts(enabled)
-            
-            with col2:
-                # Selezione modello
-                current_model = st.selectbox(
-                    "Modello",
-                    ['o1-mini', 'o1-preview', 'claude-3-5-sonnet-20241022'],
-                    index=['o1-mini', 'o1-preview', 'claude-3-5-sonnet-20241022'].index(
-                        st.session_state.get('current_model', 'o1-mini')
-                    )
-                )
-                if current_model != st.session_state.get('current_model'):
-                    st.session_state.current_model = current_model
-                    st.rerun()
-            
-            # Personalizzazione stile
-            st.markdown("#### Personalizzazione")
-            col1, col2 = st.columns(2)
-            with col1:
-                new_height = st.slider(
-                    "Altezza Chat",
-                    min_value=300,
-                    max_value=1000,
-                    value=int(st.session_state.style_config['chat_container_height'].replace('px', ''))
-                )
-                self.update_style({'chat_container_height': f"{new_height}px"})
-            
-            with col2:
-                new_width = st.slider(
-                    "Larghezza Massima",
-                    min_value=400,
-                    max_value=1200,
-                    value=int(st.session_state.style_config['max_width'].replace('px', ''))
-                )
-                self.update_style({'max_width': f"{new_width}px"})
+        with col4:
+            if len(st.session_state.chats) > 1 and st.button("🗑️", help="Elimina chat"):
+                del st.session_state.chats[st.session_state.current_chat]
+                st.session_state.current_chat = list(st.session_state.chats.keys())[0]
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
