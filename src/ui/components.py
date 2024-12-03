@@ -10,6 +10,87 @@ from src.core.files import FileManager
 from src.core.llm import LLMManager
 from typing import Dict, Any
 
+def load_custom_css():
+    st.markdown("""
+        <style>
+        /* Chat Header */
+        .chat-header {
+            padding: 0.5rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            border-bottom: 1px solid var(--gray-200);
+            background: white;
+        }
+        
+        /* Chat Messages */
+        .stChatMessage {
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            margin: 0.5rem 0;
+        }
+        
+        /* Assistant Message */
+        .stChatMessage [data-testid="StChatMessage"] {
+            background: var(--secondary-background-color);
+        }
+        
+        /* User Message */
+        div.stChatMessage [data-testid="StChatMessage"] {
+            background: var(--primary-background-color);
+        }
+        
+        /* Quick Prompt Buttons */
+        .quick-prompts {
+            display: flex;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            overflow-x: auto;
+        }
+        
+        .quick-prompts button {
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            background: var(--secondary-background-color);
+            border: none;
+            font-size: 0.875rem;
+            white-space: nowrap;
+            transition: background-color 0.2s;
+        }
+        
+        .quick-prompts button:hover {
+            background: var(--primary-color-light);
+        }
+        
+        /* Custom Icons */
+        .stChatMessage [data-testid="StChatMessage"][data-testid="assistant"] > div:first-child {
+            content: "👲🏿";
+        }
+        
+        .stChatMessage [data-testid="StChatMessage"][data-testid="user"] > div:first-child {
+            content: "🫏";
+        }
+        
+        /* Chat Input */
+        .stChatInputContainer {
+            padding: 1rem;
+            border-top: 1px solid var(--gray-200);
+            background: white;
+        }
+        
+        /* Select styling */
+        .stSelectbox {
+            border: none !important;
+            background: transparent !important;
+        }
+        
+        .stSelectbox > div {
+            border: none !important;
+            background: transparent !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
 class FileExplorer:
     """Component per l'esplorazione e l'upload dei file."""
     
@@ -508,10 +589,8 @@ class ChatInterface:
             st.session_state.processing = False
 
     def render_chat_controls(self):
-        """
-        Renderizza i controlli della chat.
-        """
-        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+        """Renderizza i controlli chat in modo minimale."""
+        col1, col2, col3 = st.columns([4, 1, 1])
         
         with col1:
             current_chat = st.selectbox(
@@ -520,26 +599,14 @@ class ChatInterface:
                 index=list(st.session_state.chats.keys()).index(st.session_state.current_chat),
                 label_visibility="collapsed"
             )
-            if current_chat != st.session_state.current_chat:
-                st.session_state.current_chat = current_chat
-        
+            
         with col2:
             if st.button("🆕", help="Nuova chat"):
-                new_chat_name = f"Chat {len(st.session_state.chats) + 1}"
-                st.session_state.chats[new_chat_name] = {
-                    'messages': [],
-                    'created_at': datetime.now().isoformat()
-                }
-                st.session_state.current_chat = new_chat_name
-        
+                self.create_new_chat()
+                
         with col3:
-            if st.button("✏️", help="Rinomina chat"):
-                st.session_state.renaming = True
-        
-        with col4:
             if len(st.session_state.chats) > 1 and st.button("🗑️", help="Elimina chat"):
-                del st.session_state.chats[st.session_state.current_chat]
-                st.session_state.current_chat = list(st.session_state.chats.keys())[0]
+                self.delete_current_chat()
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
