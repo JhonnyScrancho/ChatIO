@@ -249,16 +249,51 @@ class LLMManager:
         
         return 'open'
 
+    def _prepare_messages_for_model(self, messages: List[Dict], model: str) -> List[Dict]:
+        """
+        Prepara i messaggi in base alle capacità del modello.
+        
+        Args:
+            messages: Lista originale dei messaggi
+            model: Nome del modello
+            
+        Returns:
+            List[Dict]: Messaggi formattati per il modello specifico
+        """
+        if model.startswith('o1'):
+            # Per i modelli o1, combina i messaggi di sistema nel prompt utente
+            formatted_messages = []
+            system_context = []
+            
+            for msg in messages:
+                if msg['role'] == 'system':
+                    system_context.append(msg['content'])
+                else:
+                    formatted_messages.append(msg)
+            
+            if system_context and formatted_messages:
+                # Combina il contesto di sistema con il primo messaggio utente
+                combined_content = "\n\n".join(system_context + [formatted_messages[0]['content']])
+                formatted_messages[0]['content'] = combined_content
+                
+            return formatted_messages
+        
+        # Per altri modelli, mantieni i messaggi originali
+        return messages
+
     def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
         """Gestisce le chiamate ai modelli o1 in modo sincrono."""
         try:
             self._enforce_rate_limit(model)
             
+            # Formatta i messaggi per o1
+            formatted_messages = self._prepare_messages_for_model(messages, model)
+            
             completion = self.openai_client.chat.completions.create(
                 model=model,
-                messages=messages,
+                messages=formatted_messages,
                 stream=True,
-                max_completion_tokens=self.model_limits[model]['max_tokens']  # Cambiato da max_tokens a max_completion_tokens
+                max_completion_tokens=self.model_limits[model]['max_tokens']
             )
             
             for chunk in completion:
@@ -267,6 +302,43 @@ class LLMManager:
                     
         except Exception as e:
             error_msg = f"Errore con {model}: {str(e)}"
+            st.error(error_msg)
+            yield error_msg
+
+    def process_request(self, prompt: str, analysis_type: Optional[str] = None,
+                    file_content: Optional[str] = None, 
+                    context: Optional[str] = None) -> Generator[str, None, None]:
+        """Processa una richiesta completa."""
+        messages = []
+        
+        # Prepara il contesto
+        system_content = ["Sei un assistente esperto in analisi del codice."]
+        if context:
+            system_content.append(f"Contesto dei file:\n{context}")
+        
+        # Aggiungi messaggi base
+        if st.session_state.current_model.startswith('o1'):
+            # Per o1, includi il contesto direttamente nel prompt utente
+            user_content = "\n\n".join(system_content + [prompt])
+            messages = [{"role": "user", "content": user_content}]
+        else:
+            # Per altri modelli, usa messaggi di sistema separati
+            messages = [{"role": "system", "content": "\n\n".join(system_content)}]
+            messages.append({"role": "user", "content": prompt})
+
+        try:
+            if st.session_state.current_model.startswith('gpt-4'):
+                for chunk in self._handle_gpt4_completion(messages, st.session_state.current_model):
+                    yield chunk
+            elif st.session_state.current_model.startswith('o1'):
+                for chunk in self._handle_o1_completion(messages, st.session_state.current_model):
+                    yield chunk
+            else:
+                for chunk in self._handle_claude_completion(messages):
+                    yield chunk
+                    
+        except Exception as e:
+            error_msg = f"Errore generale: {str(e)}"
             st.error(error_msg)
             yield error_msg
 
@@ -431,75 +503,7 @@ class LLMManager:
         
         return messages
 
-    def process_request(self, prompt: str, analysis_type: Optional[str] = None,
-                   file_content: Optional[str] = None, 
-                   context: Optional[str] = None) -> Generator[str, None, None]:
-        """
-        Processa una richiesta completa con gestione migliorata degli artifact e modalità JSON.
-        Versione sincrona per Streamlit.
-        """
-        # Se siamo in modalità analisi JSON, usa l'handler specifico
-        if st.session_state.get('json_analysis_mode', False):
-            try:
-                if any(keyword in prompt.lower() for keyword in ['analizza', 'calcola', 'trova pattern', 'statistiche']):
-                    yield from self._handle_json_analysis(prompt)
-                else:
-                    messages = self._prepare_json_context(prompt)
-                    yield from self._handle_claude_completion(messages)
-                return
-            except Exception as e:
-                yield f"Errore nell'analisi JSON: {str(e)}"
-                return
-
-        # Prepara il contesto completo includendo tutti i file
-        full_context = self._prepare_full_context(file_content, context)
-        
-        # Seleziona il modello appropriato
-        requires_file_handling = bool(file_content)
-        if analysis_type and file_content:
-            model = self.select_model(analysis_type, len(full_context), requires_file_handling)
-        else:
-            model = st.session_state.current_model
-
-        # Prepara i messaggi includendo il contesto
-        messages = [
-            {"role": "system", "content": "Sei un assistente esperto in analisi del codice."}
-        ]
-        
-        # Aggiungi il contesto come messaggio di sistema se presente
-        if full_context:
-            messages.append({"role": "system", "content": full_context})
-        
-        # Aggiungi il prompt dell'utente
-        messages.append({"role": "user", "content": prompt})
-        
-        placeholder = st.empty()
-        
-        try:
-            if model.startswith('gpt-4'):
-                for chunk in self._handle_gpt4_completion(messages, model):
-                    if isinstance(chunk, dict) and chunk.get('type') in ['artifact', 'code']:
-                        yield self._prepare_artifact(chunk)
-                    else:
-                        yield chunk
-            elif model.startswith('o1'):
-                for chunk in self._handle_o1_completion(messages, model):
-                    if isinstance(chunk, dict) and chunk.get('type') in ['artifact', 'code']:
-                        yield self._prepare_artifact(chunk)
-                    else:
-                        yield chunk
-            else:
-                for chunk in self._handle_claude_completion_with_user_control(messages, placeholder):
-                    if isinstance(chunk, dict) and chunk.get('type') in ['artifact', 'code']:
-                        yield self._prepare_artifact(chunk)
-                    else:
-                        yield chunk
-        except Exception as e:
-            error_msg = f"Errore generale: {str(e)}"
-            st.error(error_msg)
-            with placeholder.container():
-                if st.button("🔄 Riprova con modello alternativo"):
-                    yield from self._handle_o1_completion(messages, "o1-mini")
+    
 
     def _prepare_full_context(self, file_content: Optional[str], additional_context: Optional[str]) -> str:
         """
