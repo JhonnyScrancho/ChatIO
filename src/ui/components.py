@@ -607,7 +607,6 @@ class ChatInterface:
         if not prompt.strip():
             return
 
-        # Genera un ID univoco per il messaggio
         message_id = hashlib.md5(f"{prompt}:{time.time()}".encode()).hexdigest()
         if message_id in st.session_state.message_ids:
             return
@@ -618,6 +617,9 @@ class ChatInterface:
             response_container = st.empty()
             artifact_container = st.empty()
 
+            # Prepara il contesto dei file
+            files_context = self._prepare_files_context()
+
             # Aggiungi messaggio utente
             self.session.add_message_to_current_chat({
                 "role": "user",
@@ -626,15 +628,13 @@ class ChatInterface:
             })
 
             if st.session_state.get('json_analysis_mode', False):
-                # Determina se usare analisi strutturata o LLM
                 if self._is_structured_query(prompt):
                     response = self._handle_structured_analysis(prompt, response_container)
                 else:
                     response = self._handle_llm_query(prompt, response_container)
             else:
-                response = self._handle_normal_chat(prompt, response_container, artifact_container)
+                response = self._handle_normal_chat(prompt, response_container, artifact_container, files_context)
 
-            # Aggiungi risposta alla chat solo se non è vuota e non è un duplicato
             if response.strip():
                 response_id = f"response_{message_id}"
                 if response_id not in st.session_state.message_ids:
@@ -651,6 +651,25 @@ class ChatInterface:
         finally:
             st.session_state.processing = False
             self._cleanup_old_messages()
+
+    def _prepare_files_context(self) -> str:
+        """Prepara il contesto completo di tutti i file caricati."""
+        if not hasattr(st.session_state, 'uploaded_files') or not st.session_state.uploaded_files:
+            return ""
+
+        context_parts = []
+        context_parts.append("\n=== FILES CARICATI ===\n")
+        
+        for filename, file_info in st.session_state.uploaded_files.items():
+            context_parts.append(f"\n### File: {filename}")
+            context_parts.append(f"Linguaggio: {file_info.get('language', 'text')}")
+            if file_info.get('type') == 'json':
+                context_parts.append("Tipo: JSON")
+                context_parts.append(f"```json\n{file_info['content']}\n```\n")
+            else:
+                context_parts.append(f"```{file_info.get('language', '')}\n{file_info['content']}\n```\n")
+
+        return "\n".join(context_parts)
 
     def _is_structured_query(self, query: str) -> bool:
         """Determina se la query richiede analisi strutturata."""
@@ -729,7 +748,7 @@ class ChatInterface:
             return f"❌ Error processing query: {str(e)}"
 
     def _handle_normal_chat(self, prompt: str, response_container: st.container, 
-                        artifact_container: st.container) -> str:
+                       artifact_container: st.container, files_context: str) -> str:
         """Gestisce chat normale con supporto artifact e streaming."""
         try:
             response = ""
@@ -739,22 +758,22 @@ class ChatInterface:
                 with st.chat_message("assistant"):
                     message_placeholder = st.empty()
                     
-                    for chunk in self.llm.process_request(prompt=prompt):
+                    for chunk in self.llm.process_request(
+                        prompt=prompt,
+                        context=files_context,  # Passa il contesto dei file
+                        file_content=None  # Non necessario dato che è incluso nel context
+                    ):
                         if isinstance(chunk, dict) and chunk.get('type') == 'artifact':
-                            # Gestione artifact
                             with artifact_container:
                                 self.code_viewer.render_artifact(chunk)
                             response += f"\n[Artifact: {chunk.get('title', 'Code')}]\n"
                             has_artifact = True
                         else:
                             response += chunk
-                            # Aggiorna il placeholder con il testo accumulato
                             message_placeholder.markdown(response + "▌")
                     
-                    # Aggiorna una ultima volta senza il cursore
                     message_placeholder.markdown(response)
             
-            # Se c'è stato un artifact, aggiungi un separatore
             if has_artifact:
                 response += "\n---\n"
             
