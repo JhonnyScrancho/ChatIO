@@ -308,8 +308,8 @@ class ChatInterface:
             ]
         }
 
-    class ChatInterface:
-        def render_quick_prompts(self):
+
+    def render_quick_prompts(self):
             """Renderizza i quick prompts come HTML puro per maggiore flessibilità."""
             st.markdown("""
                 <style>
