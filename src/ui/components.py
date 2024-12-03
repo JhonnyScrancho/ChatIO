@@ -323,6 +323,10 @@ class ChatInterface:
         if not prompt.strip():
             return
 
+        # Prima mostriamo il messaggio dell'utente
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
         # Aggiungi il messaggio utente
         current_image = st.session_state.get('current_image')
         if current_image and st.session_state.current_model == 'grok-vision-beta':
@@ -404,15 +408,18 @@ class ChatInterface:
         
         # Container per i messaggi
         messages_container = st.container()
-        
+    
         with messages_container:
             for message in st.session_state.chats[st.session_state.current_chat]['messages']:
-                with st.chat_message(message["role"]):
-                    if isinstance(message["content"], str):
-                        st.markdown(message["content"])
-                    elif isinstance(message["content"], dict) and "image" in message["content"]:
-                        st.image(message["content"]["image"])
-                        st.markdown(message["content"]["text"])
+                role = message["role"]
+                content = message["content"]
+                
+                with st.chat_message(role):
+                    if isinstance(content, str):
+                        st.markdown(content)
+                    elif isinstance(content, dict) and "image" in content:
+                        st.image(content["image"])
+                        st.markdown(content["text"])
 
     def handle_user_input(self, prompt: str):
         """
