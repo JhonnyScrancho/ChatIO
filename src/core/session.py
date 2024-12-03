@@ -177,16 +177,6 @@ class SessionManager:
         return st.session_state.current_file
     
     @staticmethod
-    def update_token_count(tokens: int):
-        """Aggiorna il conteggio dei token utilizzati."""
-        st.session_state.token_count += tokens
-    
-    @staticmethod
-    def update_cost(amount: float):
-        """Aggiorna il costo totale delle richieste LLM."""
-        st.session_state.cost += amount
-    
-    @staticmethod
     def get_stats() -> Dict[str, Any]:
         """Restituisce le statistiche correnti della sessione."""
         return {
