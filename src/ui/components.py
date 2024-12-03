@@ -11,9 +11,53 @@ from src.core.llm import LLMManager
 from typing import Dict, Any
 
 def load_custom_css():
+    """Load unified custom CSS styles."""
     st.markdown("""
         <style>
-        /* Chat Header */
+        /* Root Variables */
+        :root {
+            --primary-color: #1E88E5;
+            --primary-color-light: #64B5F6;
+            --primary-color-dark: #1976D2;
+            --secondary-background-color: #f0f2f6;
+            --background-color: #ffffff;
+            --text-color: #333;
+            --gray-200: #e5e7eb;
+        }
+
+        /* General Layout */
+        .main {
+            padding: 0 !important;
+        }
+        
+        .block-container {
+            padding-top: 1rem !important;
+            max-width: 100% !important;
+            padding-bottom: 100px !important;
+        }
+
+        /* Content Container */
+        .content-container {
+            margin: 0 auto;
+            max-width: 1200px;
+            padding: 0 1rem;
+        }
+
+        /* Sidebar */
+        [data-testid="stSidebar"] {
+            background-color: var(--background-color);
+            padding: 1rem;
+        }
+        
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+            font-family: monospace !important;
+            font-size: 0.9em !important;
+            white-space: pre !important;
+            line-height: 1.5 !important;
+            margin: 0 !important;
+        }
+
+        /* Chat Interface */
         .chat-header {
             padding: 0.5rem 1rem;
             display: flex;
@@ -22,71 +66,127 @@ def load_custom_css():
             border-bottom: 1px solid var(--gray-200);
             background: white;
         }
-        
-        /* Chat Messages */
+
         .stChatMessage {
             padding: 0;
             border-radius: 0.5rem;
-            margin: 0;
+            margin: 0.5rem 0 !important;
+            max-width: none !important;
+            width: 100% !important;
         }
-        
-        /* Assistant Message */
+
         .stChatMessage [data-testid="StChatMessage"] {
             background: var(--secondary-background-color);
         }
-        
-        /* User Message */
+
         div.stChatMessage [data-testid="StChatMessage"] {
             background: var(--primary-background-color);
         }
-        
-        /* Quick Prompt Buttons */
-        .quick-prompts {
+
+        .stChatFloatingInputContainer {
+            bottom: 0 !important;
+            padding: 1rem 2rem !important;
+            background: var(--background-color) !important;
+            border-top: 1px solid var(--gray-200) !important;
+        }
+
+        /* Quick Prompts */
+        .quick-prompts-container {
+            position: fixed;
+            bottom: 80px;
+            left: 0;
+            right: 0;
+            background: var(--background-color);
+            padding: 8px 16px;
+            border-top: 1px solid var(--secondary-background-color);
+            z-index: 100;
             display: flex;
-            gap: 0.5rem;
-            padding: 0.5rem;
+            gap: 8px;
             overflow-x: auto;
         }
-        
-        .quick-prompts button {
-            padding: 0.5rem 1rem;
-            border-radius: 0.375rem;
-            background: var(--secondary-background-color);
-            border: none;
-            font-size: 0.875rem;
-            white-space: nowrap;
-            transition: background-color 0.2s;
-        }
-        
-        .quick-prompts button:hover {
+
+        .quick-prompt-btn {
             background: var(--primary-color-light);
+            border: none;
+            border-radius: 16px;
+            padding: 6px 12px;
+            font-size: 14px;
+            color: var(--text-color);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
         }
-        
-        /* Custom Icons */
-        .stChatMessage [data-testid="StChatMessage"][data-testid="assistant"] > div:first-child {
-            content: "👲🏿";
+
+        .quick-prompt-btn:hover {
+            background: var(--primary-color);
+            color: white;
         }
-        
-        .stChatMessage [data-testid="StChatMessage"][data-testid="user"] > div:first-child {
-            content: "🫏";
+
+        /* File Explorer */
+        [data-testid="stSidebar"] .stButton > button {
+            width: auto;
+            text-align: left !important;
+            padding: 2px 8px !important;
+            background: none !important;
+            border: none !important;
+            font-family: monospace !important;
+            font-size: 0.9em !important;
+            white-space: pre !important;
+            line-height: 1.5 !important;
+            color: var(--text-color) !important;
         }
-        
-        /* Chat Input */
-        .stChatInputContainer {
-            padding: 1rem;
-            border-top: 1px solid var(--gray-200);
-            background: white;
+
+        [data-testid="stSidebar"] .stButton > button:hover {
+            background-color: var(--primary-color-light) !important;
+            color: var(--primary-color) !important;
         }
-        
-        /* Select styling */
+
+        [data-testid="stSidebar"] .element-container:has(button[kind="secondary"]) {
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        /* Select Styling */
         .stSelectbox {
             border: none !important;
             background: transparent !important;
         }
-        
+
         .stSelectbox > div {
             border: none !important;
             background: transparent !important;
+        }
+
+        /* Scrollbars */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--secondary-background-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-color-dark);
+        }
+
+        /* Responsive Adjustments */
+        @media (max-width: 768px) {
+            .quick-prompts-container {
+                flex-wrap: nowrap;
+                padding-bottom: 12px;
+            }
+            
+            .content-container {
+                padding: 0 0.5rem;
+            }
         }
         </style>
     """, unsafe_allow_html=True)
@@ -310,89 +410,51 @@ class ChatInterface:
 
 
     def render_quick_prompts(self):
-            """Renderizza i quick prompts come HTML puro per maggiore flessibilità."""
-            st.markdown("""
-                <style>
-                .quick-prompts-container {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 8px;
-                    padding: 12px 0;
-                    margin-bottom: 16px;
-                }
-                
-                .quick-prompt-btn {
-                    background: transparent;
-                    border: 1px solid #e5e7eb;
-                    border-radius: 6px;
-                    padding: 6px 12px;
-                    font-size: 14px;
-                    color: #374151;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                    white-space: nowrap;
-                }
-                
-                .quick-prompt-btn:hover {
-                    background: #f3f4f6;
-                    border-color: #d1d5db;
-                    transform: translateY(-1px);
-                }
-                
-                .quick-prompt-btn:active {
-                    transform: translateY(0px);
-                }
-                
-                @media (max-width: 768px) {
-                    .quick-prompts-container {
-                        overflow-x: auto;
-                        flex-wrap: nowrap;
-                        padding-bottom: 12px;
-                    }
-                }
-                </style>
-                
-                <div class="quick-prompts-container">
-                    <button class="quick-prompt-btn" onclick="handleQuickPrompt('analizza')">
-                        Analizza questo codice
-                    </button>
-                    <button class="quick-prompt-btn" onclick="handleQuickPrompt('bug')">
-                        Trova potenziali bug
-                    </button>
-                    <button class="quick-prompt-btn" onclick="handleQuickPrompt('miglioramenti')">
-                        Suggerisci miglioramenti
-                    </button>
-                    <button class="quick-prompt-btn" onclick="handleQuickPrompt('spiega')">
-                        Spiega il funzionamento
-                    </button>
-                </div>
-            """, unsafe_allow_html=True)
+        """Renderizza i quick prompts sopra la chat input bar."""
+        st.markdown("""
+            <style>
+            .quick-prompts-container {
+                position: fixed;
+                bottom: 80px;  /* Posiziona sopra la chat input bar */
+                left: 0;
+                right: 0;
+                background: var(--background-color);
+                padding: 8px 16px;
+                border-top: 1px solid var(--secondary-background-color);
+                z-index: 100;
+                display: flex;
+                gap: 8px;
+                overflow-x: auto;
+            }
             
-            # Gestione dei click tramite query params
-            query_params = st.experimental_get_query_params()
-            if 'prompt' in query_params:
-                prompt_type = query_params['prompt'][0]
-                prompts = {
-                    'analizza': 'Analizza questo codice',
-                    'bug': 'Trova potenziali bug',
-                    'miglioramenti': 'Suggerisci miglioramenti',
-                    'spiega': 'Spiega il funzionamento'
-                }
-                if prompt_type in prompts:
-                    self.process_user_message(prompts[prompt_type])
-                    # Reset query params
-                    st.experimental_set_query_params()
-                    
-            # JavaScript per gestire i click
-            st.markdown("""
-                <script>
-                function handleQuickPrompt(type) {
-                    const searchParams = new URLSearchParams(window.location.search);
-                    searchParams.set('prompt', type);
-                    window.location.search = searchParams.toString();
-                }
-                </script>
-            """, unsafe_allow_html=True)
+            .quick-prompt-btn {
+                background: var(--primary-color-light);
+                border: none;
+                border-radius: 16px;
+                padding: 6px 12px;
+                font-size: 14px;
+                color: var(--text-color);
+                cursor: pointer;
+                white-space: nowrap;
+                transition: all 0.2s;
+            }
+            
+            .quick-prompt-btn:hover {
+                background: var(--primary-color);
+                color: white;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+        
+        # Usa columns per il layout
+        container = st.container()
+        with container:
+            cols = st.columns(4)
+            prompts = self.quick_prompts.get(st.session_state.current_model, self.quick_prompts['default'])
+            
+            for i, prompt in enumerate(prompts):
+                if cols[i % 4].button(prompt, key=f"quick_prompt_{i}", use_container_width=True):
+                    self.process_user_message(prompt)
 
     def render_token_stats(self):
         """Renderizza le statistiche dei token per ogni messaggio."""

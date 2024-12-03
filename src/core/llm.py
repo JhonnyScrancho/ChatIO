@@ -37,11 +37,14 @@ class LLMManager:
         
         # Costi per 1K tokens (in USD)
         self.cost_map = {
-            'o1-preview': {'input': 0.01, 'output': 0.03},
-            'o1-mini': {'input': 0.001, 'output': 0.002},
-            'claude-3-5-sonnet-20241022': {'input': 0.008, 'output': 0.024},
-            'grok-beta': {'input': 0.002, 'output': 0.006},
-            'grok-vision-beta': {'input': 0.004, 'output': 0.012}
+            'o1-preview': {'input': 0.015, 'output': 0.060},  # $15.00 e $60.00 per milione
+            'o1-mini': {'input': 0.003, 'output': 0.012},     # $3.00 e $12.00 per milione
+            'claude-3-5-sonnet-20241022': {'input': 0.003, 'output': 0.015},  # $3.00 e $15.00 per milione
+            'claude-3-haiku': {'input': 0.00025, 'output': 0.00125},  # $0.25 e $1.25 per milione
+            'grok-beta': {'input': 0.0006, 'output': 0.0008},  # $0.59 e $0.79 per milione
+            'grok-vision-beta': {'input': 0.00024, 'output': 0.00024},  # $0.24 e $0.24 per milione
+            'gpt-4': {'input': 0.03, 'output': 0.06},  # $30.00 e $60.00 per milione
+            'gpt-4o-mini': {'input': 0.00015, 'output': 0.0006},  # $0.15 e $0.60 per milione
         }
         
         # Limiti dei modelli
@@ -231,23 +234,18 @@ class LLMManager:
         return delay + jitter
 
     def update_message_stats(self, model: str, input_tokens: int, output_tokens: int, cost: float):
-        """Aggiorna le statistiche per ogni messaggio."""
-        if 'message_stats' not in st.session_state:
-            st.session_state.message_stats = []
-            
-        st.session_state.message_stats.append({
-            'timestamp': datetime.now().strftime('%H:%M:%S'),
-            'model': model,
-            'input_tokens': input_tokens,
-            'output_tokens': output_tokens,
-            'total_tokens': input_tokens + output_tokens,
-            'cost': cost
-        })
-
-    def update_message_stats(self, model: str, input_tokens: int, output_tokens: int, cost: float):
         """Aggiorna le statistiche in modo atomico e sincronizzato."""
         if 'message_stats' not in st.session_state:
             st.session_state.message_stats = []
+        
+        # Calcola il costo effettivo usando cost_map
+        if model in self.cost_map:
+            actual_cost = (
+                (input_tokens * self.cost_map[model]['input']) + 
+                (output_tokens * self.cost_map[model]['output'])
+            )
+        else:
+            actual_cost = 0
             
         # Aggiunge nuova entry nella history
         new_stat = {
@@ -256,7 +254,7 @@ class LLMManager:
             'input_tokens': input_tokens,
             'output_tokens': output_tokens,
             'total_tokens': input_tokens + output_tokens,
-            'cost': round(cost, 4)  # Arrotondiamo a 4 decimali per consistenza
+            'cost': round(actual_cost, 4)  # Arrotondiamo a 4 decimali
         }
         
         st.session_state.message_stats.append(new_stat)
@@ -267,7 +265,7 @@ class LLMManager:
             'output_tokens': sum(stat['output_tokens'] for stat in st.session_state.message_stats),
             'total_tokens': sum(stat['total_tokens'] for stat in st.session_state.message_stats),
             'total_cost': round(sum(stat['cost'] for stat in st.session_state.message_stats), 4)
-        }  
+        }
 
     def render_token_stats(self):
         """Renderizza le statistiche in modo sincronizzato."""
