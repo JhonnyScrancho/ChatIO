@@ -65,44 +65,25 @@ def render_main_layout():
     # CSS per posizionamento corretto
     st.markdown("""
         <style>
-        /* Quick prompts styling */
-        .quick-prompts {
+        /* Container per input bar e quick prompts */
+        .input-container {
             position: fixed;
-            bottom: 67px;  /* Esattamente sopra la chat input */
+            bottom: 0;
             left: 0;
             right: 0;
             background: white;
-            padding: 8px 16px 8px 16px;
-            border-top: 1px solid #e5e7eb;
-            z-index: 99;
+            z-index: 1000;
         }
         
-        /* Stile bottoni quick prompts */
-        .quick-prompts .stButton button {
-            border-radius: 20px;
-            padding: 2px 12px;
-            font-size: 14px;
-            border: 1px solid #e5e7eb;
-            background: white;
-            min-height: 32px;
+        /* Quick prompts */
+        .stButton button {
+            min-height: 31px !important;
+            line-height: 1.1 !important;
         }
         
-        .quick-prompts .stButton button:hover {
-            border-color: #1E88E5;
-            color: #1E88E5;
-        }
-        
-        /* Padding per contenuto */
+        /* Padding per evitare che il contenuto finisca sotto l'input */
         .main .block-container {
             padding-bottom: 120px !important;
-        }
-        
-        /* Assicura che la chat input rimanga in basso */
-        .stChatFloatingInputContainer {
-            bottom: 0 !important;
-            position: fixed !important;
-            background: white !important;
-            border-top: 1px solid #e5e7eb !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -126,21 +107,24 @@ def render_main_layout():
         st.markdown("### 💬 Chat")
         chat_interface = ChatInterface()
         chat_interface.render()
-        
-        # Quick prompts sopra la chat input
-        st.markdown('<div class="quick-prompts">', unsafe_allow_html=True)
-        cols = st.columns(4)
-        prompts = chat_interface.quick_prompts.get(st.session_state.current_model, 
-                                                 chat_interface.quick_prompts['default'])
-        for i, prompt in enumerate(prompts):
-            if cols[i % 4].button(prompt, key=f"quick_prompt_{i}", 
-                                use_container_width=True):
-                chat_interface.process_user_message(prompt)
-        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Fixed input area at bottom
+    st.markdown('<div class="input-container">', unsafe_allow_html=True)
+    
+    # Quick prompts
+    cols = st.columns(4)
+    prompts = chat_interface.quick_prompts.get(st.session_state.current_model, 
+                                             chat_interface.quick_prompts['default'])
+    for i, prompt in enumerate(prompts):
+        if cols[i % 4].button(prompt, key=f"quick_prompt_{i}", 
+                            use_container_width=True):
+            chat_interface.process_user_message(prompt)
     
     # Chat input
     if prompt := st.chat_input("Cazzo vuoi?"):
         chat_interface.process_user_message(prompt)
+        
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def main():
     """Main application function."""

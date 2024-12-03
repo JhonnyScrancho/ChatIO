@@ -596,7 +596,6 @@ class ChatInterface:
                 st.exception(e)
             st.rerun()
 
-    
     def render(self):
         """Renderizza l'interfaccia chat."""
         self.render_chat_controls()
