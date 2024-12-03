@@ -51,36 +51,56 @@ class LLMManager:
         
         # Costi per 1K tokens (in USD)
         self.cost_map = {
-            'o1-preview': {'input': 0.015, 'output': 0.060},  # $15.00 e $60.00 per milione
-            'o1-mini': {'input': 0.003, 'output': 0.012},     # $3.00 e $12.00 per milione
+            'o1-mini': {'input': 0.003, 'output': 0.012},         # $3.00 e $12.00 per milione
+            'o1-preview': {'input': 0.015, 'output': 0.060},      # $15.00 e $60.00 per milione
+            'o1-mini-2024-09-12': {'input': 0.003, 'output': 0.012},  # $3.00 e $12.00 per milione
+            'o1-preview-2024-09-12': {'input': 0.015, 'output': 0.060},  # $15.00 e $60.00 per milione
+            'gpt-4o-2024-08-06': {'input': 0.0025, 'output': 0.010},  # $2.50 e $10.00 per milione
+            'gpt-4o-mini': {'input': 0.00015, 'output': 0.0006},  # $0.15 e $0.60 per milione
+            'gpt-4o': {'input': 0.0025, 'output': 0.010},         # $2.50 e $10.00 per milione
+            'gpt-4o-2024-05-13': {'input': 0.005, 'output': 0.015},  # $5.00 e $15.00 per milione
+            'gpt-4-turbo-2024-04': {'input': 0.01, 'output': 0.03},  # $10.00 e $30.00 per milione
+            'gpt-3.5-turbo-0125': {'input': 0.0005, 'output': 0.0015},  # $0.50 e $1.50 per milione
             'claude-3-5-sonnet-20241022': {'input': 0.003, 'output': 0.015},  # $3.00 e $15.00 per milione
             'claude-3-haiku': {'input': 0.00025, 'output': 0.00125},  # $0.25 e $1.25 per milione
-            'grok-beta': {'input': 0.0006, 'output': 0.0008},  # $0.59 e $0.79 per milione
+            'grok-beta': {'input': 0.0006, 'output': 0.0008},     # $0.60 e $0.80 per milione
             'grok-vision-beta': {'input': 0.00024, 'output': 0.00024},  # $0.24 e $0.24 per milione
-            'gpt-4': {'input': 0.03, 'output': 0.06},  # $30.00 e $60.00 per milione
-            'gpt-4o-mini': {'input': 0.00015, 'output': 0.0006},  # $0.15 e $0.60 per milione
         }
         
         # Limiti dei modelli
         self.model_limits = {
-            'o1-preview': {
+            'o1-preview-2024-09-12': {
                 'max_tokens': 32768,
                 'context_window': 128000,
                 'supports_files': False,
-                'supports_system_message': False,
-                'supports_functions': False
+                'supports_system_message': True,
+                'supports_functions': True
             },
-            'o1-mini': {
+            'o1-mini-2024-09-12': {
                 'max_tokens': 65536,
                 'context_window': 128000,
                 'supports_files': False,
-                'supports_system_message': False,
-                'supports_functions': False
+                'supports_system_message': True,
+                'supports_functions': True
             },
             'claude-3-5-sonnet-20241022': {
-                'max_tokens': 200000,
+                'max_tokens': 4096,
                 'context_window': 200000,
                 'supports_files': True,
+                'supports_system_message': True,
+                'supports_functions': True
+            },
+            'gpt-4o': {
+                'max_tokens': 2048,
+                'context_window': 128000,
+                'supports_files': False,
+                'supports_system_message': True,
+                'supports_functions': True
+            },
+            'gpt-4o-mini': {
+                'max_tokens': 16384,
+                'context_window': 128000,
+                'supports_files': False,
                 'supports_system_message': True,
                 'supports_functions': True
             },
@@ -314,6 +334,52 @@ class LLMManager:
                     df.sort_values('timestamp', ascending=False),
                     use_container_width=True
                 )
+    
+    def _handle_gpt4o_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
+        """Gestisce le chiamate ai modelli GPT-4o."""
+        try:
+            self._enforce_rate_limit(model)
+            
+            # Prima facciamo una chiamata non-streaming per ottenere l'usage
+            usage_response = self.openai_client.chat.completions.create(
+                model=model,
+                messages=messages,
+                stream=False,
+                max_tokens=4096
+            )
+            
+            # Calcoliamo il costo prima di usarlo
+            cost = self.calculate_cost(
+                model,
+                usage_response.usage.prompt_tokens,
+                usage_response.usage.completion_tokens
+            )
+            
+            # Aggiorniamo l'usage dai dati ricevuti
+            if hasattr(usage_response, 'usage'):
+                self.update_message_stats(
+                    model,
+                    usage_response.usage.prompt_tokens,
+                    usage_response.usage.completion_tokens,
+                    cost
+                )
+            
+            # Poi facciamo la chiamata streaming per la risposta effettiva
+            completion = self.openai_client.chat.completions.create(
+                model=model,
+                messages=messages,
+                stream=True,
+                max_tokens=4096
+            )
+            
+            for chunk in completion:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+                    
+        except Exception as e:
+            error_msg = f"Error with {model}: {str(e)}"
+            st.error(error_msg)
+            yield error_msg
     
     def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
         """Gestisce le chiamate ai modelli o1."""
@@ -608,9 +674,7 @@ class LLMManager:
                    file_content: Optional[str] = None, 
                    context: Optional[str] = None,
                    image: Optional[str] = None) -> Generator[str, None, None]:
-        """
-        Processa una richiesta completa con controllo utente sul retry e fallback.
-        """
+        """Processa una richiesta completa con controllo utente sul retry e fallback."""
         model = st.session_state.current_model
         messages = self.prepare_prompt(
             prompt=prompt,
@@ -626,19 +690,11 @@ class LLMManager:
         
         try:
             if model.startswith('grok'):
-                # Usa il client Grok specifico
-                completion = self.grok_client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    stream=True
-                )
-                
-                for chunk in completion:
-                    if chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
-                        
+                yield from self._handle_grok_completion(messages, model)
             elif model.startswith('o1'):
                 yield from self._handle_o1_completion(messages, model)
+            elif model.startswith('gpt-4o'):
+                yield from self._handle_gpt4o_completion(messages, model)
             else:
                 yield from self._handle_claude_completion_with_user_control(messages, placeholder)
                 
