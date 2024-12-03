@@ -643,13 +643,6 @@ class ChatInterface:
                     elif isinstance(message["content"], dict) and "image" in message["content"]:
                         st.image(message["content"]["image"])
                         st.markdown(message["content"]["text"])
-        
-        # Render quick prompts
-        self.render_quick_prompts()
-        
-        # Render chat input
-        if prompt := st.chat_input("Come posso aiutarti?"):
-            self.process_user_message(prompt)
 
     def handle_user_input(self, prompt: str):
         """

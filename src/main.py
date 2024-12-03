@@ -62,7 +62,7 @@ def render_main_layout():
     clients = init_clients()
     clients['session'].init_session()
     
-    # Consolidated CSS injection for layout and positioning
+    # CSS for layout and fixed positioning
     st.markdown("""
         <style>
         /* Main layout */
@@ -76,36 +76,35 @@ def render_main_layout():
             padding-bottom: 140px !important;
         }
         
-        /* Fixed input container */
-        .input-container {
+        /* Fixed elements container */
+        .fixed-container {
             position: fixed;
             bottom: 0;
             left: 0;
             right: 0;
             background: white;
-            padding: 16px;
-            border-top: 1px solid rgba(49, 51, 63, 0.2);
-            z-index: 998;
-        }
-        
-        /* Quick prompts wrapper */
-        .quick-prompts-wrapper {
-            position: fixed;
-            bottom: 80px;
-            left: 0;
-            right: 0;
-            background: white;
-            padding: 8px 16px;
-            border-top: 1px solid rgba(49, 51, 63, 0.2);
             z-index: 999;
-            display: flex;
-            gap: 8px;
-            overflow-x: auto;
+            border-top: 1px solid rgba(49, 51, 63, 0.2);
+        }
+
+        /* Quick prompts styling */
+        .quick-prompts-container {
+            padding: 8px 16px;
+            border-bottom: 1px solid rgba(49, 51, 63, 0.2);
+        }
+
+        /* Chat input container */
+        .stChatInputContainer {
+            position: sticky !important;
+            bottom: 0 !important;
+            background: white !important;
+            padding: 1rem !important;
+            z-index: 999 !important;
         }
         
         /* Ensure content doesn't get hidden */
         #root > div:first-child {
-            padding-bottom: 140px;
+            padding-bottom: 160px;
         }
         
         @media (max-width: 768px) {
@@ -137,17 +136,19 @@ def render_main_layout():
         chat_interface = ChatInterface()
         chat_interface.render()
     
-    # Fixed input area at bottom
-    st.markdown('<div class="input-container">', unsafe_allow_html=True)
+    # Fixed bottom container
+    st.markdown('<div class="fixed-container">', unsafe_allow_html=True)
     
-    # Quick prompts
+    # Quick prompts in fixed container
+    st.markdown('<div class="quick-prompts-container">', unsafe_allow_html=True)
     cols = st.columns(4)
     prompts = chat_interface.quick_prompts.get(st.session_state.current_model, 
                                              chat_interface.quick_prompts['default'])
     for i, prompt in enumerate(prompts):
-        if cols[i % 4].button(prompt, key=f"quick_prompt_{i}", 
+        if cols[i % 4].button(prompt, key=f"main_quick_prompt_{i}",  # Changed key to be unique 
                             use_container_width=True):
             chat_interface.process_user_message(prompt)
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # Chat input
     if prompt := st.chat_input("Cazzo vuoi?"):
