@@ -62,56 +62,40 @@ def render_main_layout():
     clients = init_clients()
     clients['session'].init_session()
     
-    # CSS for layout and fixed positioning
+    # CSS per layout e posizionamento
     st.markdown("""
         <style>
-        /* Main layout */
-        .main {
+        /* Chat container margins */
+        div[data-testid="stChatMessageContainer"] {
+            margin-bottom: 100px;
+        }
+        
+        /* Fixed footer container */
+        .stChatFloatingInputContainer {
+            bottom: 0 !important;
+            background: white !important;
             padding: 0 !important;
-        }
-        
-        .main .block-container {
-            padding-top: 1rem !important;
-            max-width: 100% !important;
-            padding-bottom: 140px !important;
-        }
-        
-        /* Fixed elements container */
-        .fixed-container {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: white;
-            z-index: 999;
-            border-top: 1px solid rgba(49, 51, 63, 0.2);
+            padding-top: 8px !important;
         }
 
         /* Quick prompts styling */
-        .quick-prompts-container {
-            padding: 8px 16px;
-            border-bottom: 1px solid rgba(49, 51, 63, 0.2);
-        }
-
-        /* Chat input container */
-        .stChatInputContainer {
-            position: sticky !important;
-            bottom: 0 !important;
-            background: white !important;
-            padding: 1rem !important;
-            z-index: 999 !important;
+        .st-emotion-cache-desfit {
+            margin-bottom: 8px !important;
         }
         
-        /* Ensure content doesn't get hidden */
-        #root > div:first-child {
-            padding-bottom: 160px;
+        .stButton button {
+            min-height: 32px !important;
+            line-height: 1.1 !important;
+            margin: 0 !important;
+            background: #f0f2f6 !important;
+            color: #31333F !important;
+            border-radius: 16px !important;
+            border: none !important;
         }
         
-        @media (max-width: 768px) {
-            .main .block-container {
-                padding: 0.5rem !important;
-                padding-bottom: 160px !important;
-            }
+        .stButton button:hover {
+            background: #e0e2e6 !important;
+            color: #131415 !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -136,25 +120,19 @@ def render_main_layout():
         chat_interface = ChatInterface()
         chat_interface.render()
     
-    # Fixed bottom container
-    st.markdown('<div class="fixed-container">', unsafe_allow_html=True)
-    
-    # Quick prompts in fixed container
-    st.markdown('<div class="quick-prompts-container">', unsafe_allow_html=True)
+    # Footer con quick prompts e input
     cols = st.columns(4)
     prompts = chat_interface.quick_prompts.get(st.session_state.current_model, 
                                              chat_interface.quick_prompts['default'])
+    # Quick prompts all'interno del container di input
     for i, prompt in enumerate(prompts):
-        if cols[i % 4].button(prompt, key=f"main_quick_prompt_{i}",  # Changed key to be unique 
+        if cols[i % 4].button(prompt, key=f"quick_prompt_{i}", 
                             use_container_width=True):
             chat_interface.process_user_message(prompt)
-    st.markdown('</div>', unsafe_allow_html=True)
     
     # Chat input
     if prompt := st.chat_input("Cazzo vuoi?"):
         chat_interface.process_user_message(prompt)
-        
-    st.markdown('</div>', unsafe_allow_html=True)
 
 def main():
     """Main application function."""
