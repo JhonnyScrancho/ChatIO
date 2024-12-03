@@ -367,7 +367,9 @@ class ModelSelector:
         models = {
             'o1-mini': '🚀 O1 Mini (Fast)',
             'o1-preview': '🔍 O1 Preview (Advanced)',
-            'claude-3-5-sonnet-20241022': '🎭 Claude 3.5 Sonnet (Detailed)'
+            'claude-3-5-sonnet-20241022': '🎭 Claude 3.5 Sonnet (Detailed)',
+            'grok-beta': '🤖 Grok Beta (Smart)',
+            'grok-vision-beta': '👁️ Grok Vision (Image Analysis)'
         }
         
         current_model = self.session.get_current_model()
@@ -381,6 +383,10 @@ class ModelSelector:
         
         if selected != current_model:
             self.session.set_current_model(selected)
+            
+        # Mostra info aggiuntive per Grok Vision
+        if selected == 'grok-vision-beta':
+            st.info("💡 Grok Vision può analizzare immagini. Usa il file uploader per caricare immagini.")
 
 class StatsDisplay:
     """Componente per la visualizzazione delle statistiche."""
