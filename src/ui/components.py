@@ -227,43 +227,91 @@ class ChatInterface:
             ]
         }
 
-    def render_quick_prompts(self):
-        """Renderizza i quick prompts come bottoni."""
-        st.markdown("""
-            <style>
-            .quick-prompts-container {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 0.5rem;
-                margin-bottom: 1rem;
-                padding: 0.5rem;
-                border-radius: 5px;
-                background-color: #f8f9fa;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-
-        # Seleziona i prompt appropriati in base al modello
-        current_model = st.session_state.current_model
-        prompts = self.quick_prompts.get(
-            current_model, 
-            self.quick_prompts['default']
-        )
-
-        # Container per i quick prompts
-        st.markdown('<div class="quick-prompts-container">', unsafe_allow_html=True)
-        cols = st.columns(len(prompts))
-        for col, prompt in zip(cols, prompts):
-            with col:
-                if st.button(
-                    prompt, 
-                    key=f"quick_prompt_{prompt}", 
-                    use_container_width=True
-                ):
-                    # Invece di processare direttamente, settiamo un flag nella session_state
-                    st.session_state.quick_prompt_selected = prompt
-                    st.session_state.process_quick_prompt = True
-        st.markdown('</div>', unsafe_allow_html=True)
+    class ChatInterface:
+        def render_quick_prompts(self):
+            """Renderizza i quick prompts come HTML puro per maggiore flessibilità."""
+            st.markdown("""
+                <style>
+                .quick-prompts-container {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    padding: 12px 0;
+                    margin-bottom: 16px;
+                }
+                
+                .quick-prompt-btn {
+                    background: transparent;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 6px;
+                    padding: 6px 12px;
+                    font-size: 14px;
+                    color: #374151;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    white-space: nowrap;
+                }
+                
+                .quick-prompt-btn:hover {
+                    background: #f3f4f6;
+                    border-color: #d1d5db;
+                    transform: translateY(-1px);
+                }
+                
+                .quick-prompt-btn:active {
+                    transform: translateY(0px);
+                }
+                
+                @media (max-width: 768px) {
+                    .quick-prompts-container {
+                        overflow-x: auto;
+                        flex-wrap: nowrap;
+                        padding-bottom: 12px;
+                    }
+                }
+                </style>
+                
+                <div class="quick-prompts-container">
+                    <button class="quick-prompt-btn" onclick="handleQuickPrompt('analizza')">
+                        Analizza questo codice
+                    </button>
+                    <button class="quick-prompt-btn" onclick="handleQuickPrompt('bug')">
+                        Trova potenziali bug
+                    </button>
+                    <button class="quick-prompt-btn" onclick="handleQuickPrompt('miglioramenti')">
+                        Suggerisci miglioramenti
+                    </button>
+                    <button class="quick-prompt-btn" onclick="handleQuickPrompt('spiega')">
+                        Spiega il funzionamento
+                    </button>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Gestione dei click tramite query params
+            query_params = st.experimental_get_query_params()
+            if 'prompt' in query_params:
+                prompt_type = query_params['prompt'][0]
+                prompts = {
+                    'analizza': 'Analizza questo codice',
+                    'bug': 'Trova potenziali bug',
+                    'miglioramenti': 'Suggerisci miglioramenti',
+                    'spiega': 'Spiega il funzionamento'
+                }
+                if prompt_type in prompts:
+                    self.process_user_message(prompts[prompt_type])
+                    # Reset query params
+                    st.experimental_set_query_params()
+                    
+            # JavaScript per gestire i click
+            st.markdown("""
+                <script>
+                function handleQuickPrompt(type) {
+                    const searchParams = new URLSearchParams(window.location.search);
+                    searchParams.set('prompt', type);
+                    window.location.search = searchParams.toString();
+                }
+                </script>
+            """, unsafe_allow_html=True)
 
     def render_token_stats(self):
         """Renderizza le statistiche dei token per ogni messaggio."""
