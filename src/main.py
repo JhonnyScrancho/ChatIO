@@ -8,6 +8,9 @@ from dotenv import load_dotenv
 from pathlib import Path
 import sys
 import os
+from datetime import datetime
+
+from utils.config import init_app_config
 
 # Force cache clear on startup
 st.cache_data.clear()
@@ -28,6 +31,61 @@ from src.core.session import SessionManager
 from src.core.llm import LLMManager
 from src.core.files import FileManager
 from src.ui.components import FileExplorer, ChatInterface, ModelSelector, load_custom_css
+
+
+def perform_full_reset():
+    """
+    Esegue un reset completo dell'applicazione con feedback visivo.
+    Pulisce tutte le cache, lo stato della sessione e reinizializza i manager.
+    """
+    try:
+        # Clear all Streamlit caches
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        
+        # Clear session state
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        
+        # Reset all managers
+        SessionManager.init_session()
+        
+        # Reset API statistics
+        st.session_state.message_stats = []
+        st.session_state.total_stats = {
+            'input_tokens': 0,
+            'output_tokens': 0,
+            'total_tokens': 0,
+            'total_cost': 0.0
+        }
+        
+        # Reset file management
+        st.session_state.uploaded_files = {}
+        st.session_state.file_messages_sent = set()
+        
+        # Reset chat state
+        st.session_state.chats = {
+            'Chat principale': {
+                'messages': [],
+                'created_at': datetime.now().isoformat()
+            }
+        }
+        st.session_state.current_chat = 'Chat principale'
+        
+        # Reset model selection
+        st.session_state.current_model = 'o1-mini'
+        
+        # Reinitialize configuration
+        init_app_config()
+        
+        # Add success flag to session state
+        st.session_state.show_reset_success = True
+        
+        # Force Streamlit to rerun
+        st.rerun()
+        
+    except Exception as e:
+        st.error(f"⚠️ Errore durante il reset: {str(e)}")
 
 
 def check_environment():
@@ -112,9 +170,13 @@ def render_main_layout():
             st.title("👲🏿 Allegro")
         with col2:
             if st.button("🔄 Reset"):
-                st.cache_data.clear()
-                st.cache_resource.clear()
-                st.rerun()
+                perform_full_reset()
+                
+        # Show success message if flag is set
+        if st.session_state.get('show_reset_success', False):
+            st.success("✅ Reset completato con successo!")
+            # Clear the flag after showing the message
+            del st.session_state.show_reset_success
         
     # Sidebar
     with st.sidebar:
