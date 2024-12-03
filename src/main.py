@@ -114,7 +114,7 @@ def render_main_layout():
             if st.button("🔄 Reset"):
                 st.cache_data.clear()
                 st.cache_resource.clear()
-                st.experimental_rerun()
+                st.rerun()
         
     # Sidebar
     with st.sidebar:
