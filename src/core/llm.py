@@ -352,15 +352,29 @@ class LLMManager:
             yield error_msg
 
     def _handle_claude_completion_with_user_control(self, messages: List[Dict], 
-                                              placeholder: st.empty) -> Generator[str, None, None]:
+                                           placeholder: st.empty) -> Generator[str, None, None]:
         for attempt in range(self.MAX_RETRIES):
             try:
                 self._enforce_rate_limit("claude-3-5-sonnet-20241022")
                 
+                # Estrai il messaggio di sistema se presente
+                system_message = None
+                filtered_messages = []
+                for msg in messages:
+                    if msg["role"] == "system":
+                        system_message = msg["content"]
+                    else:
+                        filtered_messages.append({
+                            "role": msg["role"],
+                            "content": msg["content"]
+                        })
+                
+                # Crea la richiesta per Claude con il formato corretto
                 response = self.anthropic_client.messages.create(
                     model="claude-3-5-sonnet-20241022",
                     max_tokens=4096,
-                    messages=messages,
+                    messages=filtered_messages,
+                    system=system_message if system_message else None,  # Passa il system message come parametro separato
                     stream=True
                 )
                 
@@ -380,8 +394,9 @@ class LLMManager:
                 for chunk in response:
                     if chunk.type == 'content_block_delta':
                         yield chunk.delta.text
-                    return
-                
+                        
+                return
+                    
             except Exception as e:
                 error_msg = str(e)
                 
@@ -417,7 +432,7 @@ class LLMManager:
                         time.sleep(retry_delay)
                     else:
                         yield f"Mi dispiace, si è verificato un errore persistente: {error_msg}"
-
+                        
     def test_claude(self):
         """
         Test di connessione base con Claude.
