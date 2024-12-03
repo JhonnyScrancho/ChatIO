@@ -317,47 +317,8 @@ class ChatInterface:
             st.error(error_msg)
             return error_msg
     
-    def render(self):
-        """Renderizza l'interfaccia chat."""
-        self.render_chat_controls()
-        self.render_token_stats()
-        
-        # Gestione immagini per Grok Vision
-        if st.session_state.current_model == 'grok-vision-beta':
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                uploaded_image = st.file_uploader(
-                    "Carica un'immagine da analizzare",
-                    type=['png', 'jpg', 'jpeg', 'gif'],
-                    key="image_uploader"
-                )
-            with col2:
-                if uploaded_image:
-                    st.image(uploaded_image, caption="Immagine caricata", use_column_width=True)
-            
-            if uploaded_image:
-                st.session_state.current_image = uploaded_image
-
-        # Renderizza i quick prompts
-        self.render_quick_prompts()
-        
-        # Renderizza i messaggi
-        for message in st.session_state.chats[st.session_state.current_chat]['messages']:
-            with st.chat_message(message["role"]):
-                if isinstance(message["content"], dict) and "image" in message["content"]:
-                    st.image(message["content"]["image"])
-                    st.write(message["content"]["text"])
-                else:
-                    st.write(message["content"])
-
-        # Input per nuovi messaggi
-        if prompt := st.chat_input("Scrivi un messaggio..."):
-            self.process_user_message(prompt)
-
     def process_user_message(self, prompt: str):
-        """
-        Processa un messaggio utente con supporto per immagini e gestione completa degli errori.
-        """
+        """Processa un messaggio utente."""
         if not prompt.strip():
             return
 
@@ -438,6 +399,53 @@ class ChatInterface:
             if st.session_state.config.get('DEBUG', False):
                 st.exception(e)
             st.rerun()
+
+    def render(self):
+        """Renderizza l'interfaccia chat con quick prompts."""
+        self.render_chat_controls()
+        self.render_token_stats()
+        
+        # Gestione immagini per Grok Vision
+        if st.session_state.current_model == 'grok-vision-beta':
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                uploaded_image = st.file_uploader(
+                    "Carica un'immagine da analizzare",
+                    type=['png', 'jpg', 'jpeg', 'gif'],
+                    key="image_uploader"
+                )
+            with col2:
+                if uploaded_image:
+                    st.image(uploaded_image, caption="Immagine caricata", use_column_width=True)
+            
+            if uploaded_image:
+                st.session_state.current_image = uploaded_image
+
+        # Renderizza i quick prompts
+        self.render_quick_prompts()
+        
+        # Processa il quick prompt se selezionato
+        if hasattr(st.session_state, 'process_quick_prompt') and st.session_state.process_quick_prompt:
+            prompt = st.session_state.quick_prompt_selected
+            self.process_user_message(prompt)
+            # Resetta il flag dopo il processing
+            st.session_state.process_quick_prompt = False
+        
+        # Container per i messaggi
+        messages_container = st.container()
+        
+        with messages_container:
+            # Ottieni tutti i messaggi
+            messages = st.session_state.chats[st.session_state.current_chat]['messages']
+            
+            # Renderizza i messaggi in ordine inverso
+            for message in messages:
+                with st.chat_message(message["role"]):
+                    if isinstance(message["content"], str):
+                        st.markdown(message["content"])
+                    elif isinstance(message["content"], dict) and "image" in message["content"]:
+                        st.image(message["content"]["image"])
+                        st.markdown(message["content"]["text"])
 
     def handle_user_input(self, prompt: str):
         """
