@@ -703,12 +703,56 @@ class ChatInterface:
         with messages_container:
             messages = st.session_state.chats[st.session_state.current_chat]['messages']
             for message in messages:
-                with st.chat_message(message["role"]):
-                    if isinstance(message["content"], str):
-                        st.markdown(message["content"])
-                    elif isinstance(message["content"], dict) and "image" in message["content"]:
-                        st.image(message["content"]["image"])
-                        st.markdown(message["content"]["text"])            
+                # Determina l'avatar e la classe in base al ruolo
+                if message["role"] == "assistant":
+                    avatar = "👲🏿"
+                    css_class = "assistant-message"
+                else:
+                    avatar = "🫏"
+                    css_class = "user-message"
+                
+                # Aggiungi stile CSS personalizzato per i messaggi
+                st.markdown(f"""
+                    <style>
+                    .{css_class} {{
+                        padding: 1rem;
+                        border-radius: 0.5rem;
+                        margin: 0.5rem 0;
+                    }}
+                    
+                    .{css_class} .st-emotion-cache-1pat76y {{
+                        background-color: transparent !important;
+                    }}
+                    
+                    .{css_class} .st-emotion-cache-1eqt4ds {{
+                        background-color: transparent !important;
+                    }}
+                    
+                    .assistant-message {{
+                        background-color: rgba(240, 242, 246, 0.5);
+                    }}
+                    
+                    .user-message {{
+                        background-color: rgba(230, 230, 230, 0.5);
+                    }}
+                    </style>
+                """, unsafe_allow_html=True)
+                
+                # Renderizza il messaggio con l'avatar personalizzato e la classe CSS
+                with st.chat_message(message["role"], avatar=avatar):
+                    col_message = st.container()
+                    with col_message:
+                        # Aggiungi la classe CSS al contenitore del messaggio
+                        st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
+                        
+                        # Renderizza il contenuto del messaggio
+                        if isinstance(message["content"], str):
+                            st.markdown(message["content"])
+                        elif isinstance(message["content"], dict) and "image" in message["content"]:
+                            st.image(message["content"]["image"])
+                            st.markdown(message["content"]["text"])
+                        
+                        st.markdown('</div>', unsafe_allow_html=True)         
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
