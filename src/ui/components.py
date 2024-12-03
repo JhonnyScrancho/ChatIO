@@ -202,7 +202,7 @@ class ChatInterface:
                 'Chat principale': {
                     'messages': [{
                         "role": "assistant",
-                        "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
+                        "content": "Sciau migo. Caso vuoi oggi?"
                     }],
                     'created_at': datetime.now().isoformat()
                 }
@@ -237,63 +237,89 @@ class ChatInterface:
     
 
     def process_user_message(self, prompt: str):
-        """
-        Processa un nuovo messaggio utente e renderizza correttamente le risposte.
-        """
+        """Processa un messaggio utente con supporto per immagini."""
         if not prompt.strip():
             return
 
         # Aggiungi il messaggio utente
+        current_image = st.session_state.get('current_image')
+        if current_image and st.session_state.current_model == 'grok-vision-beta':
+            message_content = {
+                "image": current_image,
+                "text": prompt
+            }
+        else:
+            message_content = prompt
+
         st.session_state.chats[st.session_state.current_chat]['messages'].append({
             "role": "user",
-            "content": prompt
+            "content": message_content
         })
 
-        # Container per la risposta in tempo reale
+        # Container per la risposta
         response_container = st.empty()
         
-        # Processa la risposta
-        response = ""
-        with st.spinner("Elaborazione in corso..."):
-            for chunk in self.llm.process_request(prompt=prompt):
-                if chunk:
-                    response += chunk
-                    # Aggiorna la risposta in tempo reale nel container appropriato
-                    with response_container:
-                        with st.chat_message("assistant"):
-                            st.markdown(response)
+        try:
+            # Processa la richiesta in base al tipo
+            if current_image and st.session_state.current_model == 'grok-vision-beta':
+                image_bytes = current_image.getvalue()
+                response_generator = self.llm.process_image_request(image_bytes, prompt)
+            else:
+                response_generator = self.llm.process_request(prompt=prompt)
 
-        # Se abbiamo una risposta valida, la aggiungiamo alla chat
-        if response.strip():
-            st.session_state.chats[st.session_state.current_chat]['messages'].append({
-                "role": "assistant",
-                "content": response
-            })
+            # Accumula e mostra la risposta
+            response = ""
+            with st.spinner("Elaborazione in corso..."):
+                for chunk in response_generator:
+                    if chunk:
+                        response += chunk
+                        with response_container:
+                            with st.chat_message("assistant"):
+                                st.markdown(response)
+
+            # Aggiungi la risposta completa alla chat
+            if response.strip():
+                st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                    "role": "assistant",
+                    "content": response
+                })
+
+        except Exception as e:
+            error_msg = f"Si è verificato un errore: {str(e)}"
+            st.error(error_msg)
 
 
     def render(self):
-        """
-        Renderizza l'interfaccia chat con il corretto stile dei messaggi.
-        """
+        """Renderizza l'interfaccia chat con supporto immagini."""
         self.render_chat_controls()
         
+        # Aggiungi uploader immagini se Grok Vision è selezionato
+        if st.session_state.current_model == 'grok-vision-beta':
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                uploaded_image = st.file_uploader(
+                    "Carica un'immagine da analizzare",
+                    type=['png', 'jpg', 'jpeg', 'gif'],
+                    key="image_uploader"
+                )
+            with col2:
+                if uploaded_image:
+                    st.image(uploaded_image, caption="Immagine caricata", use_column_width=True)
+            
+            if uploaded_image:
+                st.session_state.current_image = uploaded_image
+            
         # Container per i messaggi
         messages_container = st.container()
         
-        # Set per tenere traccia dei messaggi già renderizzati
-        rendered_messages = set()
-        
         with messages_container:
-            # Renderizza tutti i messaggi nella chat corrente
             for message in st.session_state.chats[st.session_state.current_chat]['messages']:
-                # Crea un hash univoco per il messaggio
-                message_hash = hash(f"{message['role']}:{message['content']}")
-                
-                # Renderizza solo se non è già stato mostrato
-                if message_hash not in rendered_messages:
-                    with st.chat_message(message["role"]):
+                with st.chat_message(message["role"]):
+                    if isinstance(message["content"], str):
                         st.markdown(message["content"])
-                    rendered_messages.add(message_hash)
+                    elif isinstance(message["content"], dict) and "image" in message["content"]:
+                        st.image(message["content"]["image"])
+                        st.markdown(message["content"]["text"])
 
     def handle_user_input(self, prompt: str):
         """
