@@ -147,61 +147,32 @@ def init_clients():
 
 def render_main_layout():
     """Render the main application layout."""
-    # CSS for page layout and fixed input bar
-    st.markdown("""
-        <style>
-            /* General Layout */
-            .main .block-container {
-                max-width: 100% !important;
-                padding-top: 1rem !important;
-                padding-right: 1rem !important;
-                padding-left: 1rem !important;
-                padding-bottom: 80px !important;
-            }
-            
-            /* Fixed Chat Input */
-            .stChatInputContainer {
-                position: fixed !important;
-                bottom: 0 !important;
-                left: 0 !important;
-                width: 100% !important;
-                padding: 1rem 2rem !important;
-                background-color: var(--background-color) !important;
-                border-top: 1px solid var(--secondary-background-color) !important;
-                z-index: 999 !important;
-            }
-
-            /* Usage stats */
-            .usage-stats {
-                font-size: 0.9rem;
-                color: var(--text-color-secondary);
-                text-align: right;
-                padding-top: 0.5rem;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-    
     # Initial session setup
     clients = init_clients()
     clients['session'].init_session()
     
-    # Title Area with usage stats
-    with st.container():
-        col1, col2, col3 = st.columns([6, 2, 2])
+    # Header area with title and metrics
+    header_container = st.container()
+    with header_container:
+        col1, col2, col3 = st.columns([5, 2, 2])
+        
         with col1:
             st.title("👲🏿 Allegro IO")
         
         # Get total usage
         total_tokens, total_cost = SessionManager.get_total_usage()
         
-        # Show only if we have any usage
-        if total_tokens > 0:
-            with col2:
-                st.markdown(f"<div class='usage-stats'>**Tokens:** {total_tokens:,}</div>", 
-                          unsafe_allow_html=True)
-            with col3:
-                st.markdown(f"<div class='usage-stats'>**Cost:** ${total_cost:.4f}</div>", 
-                          unsafe_allow_html=True)
+        with col2:
+            st.metric(
+                label="🔢 Tokens",
+                value=f"{total_tokens:,}"
+            )
+        
+        with col3:
+            st.metric(
+                label="💰 Cost",
+                value=f"${total_cost:.4f}"
+            )
     
     # Sidebar with File Manager and Model Selector
     with st.sidebar:
@@ -211,14 +182,14 @@ def render_main_layout():
         st.markdown("### 📁 File Manager")
         FileExplorer().render()
     
-    # Main Content Area with Chat in a centered container
+    # Main Chat Area
     chat_container = st.container()
     with chat_container:
         st.markdown("### 💬 Chat")
         chat_interface = ChatInterface()
         chat_interface.render()
     
-        # Add some spacing before the input to account for the fixed position
+        # Space for fixed input
         st.markdown("<div style='height: 80px'></div>", unsafe_allow_html=True)
     
     # Fixed chat input at bottom
