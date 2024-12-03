@@ -51,27 +51,6 @@ def sanitize_input(text: str) -> str:
     text = html.escape(text)
     return text
 
-@st.cache_data(ttl=3600)
-def estimate_request_cost(model: str, text_length: int) -> float:
-    """
-    Stima il costo di una richiesta LLM.
-    
-    Args:
-        model: Nome del modello
-        text_length: Lunghezza del testo
-        
-    Returns:
-        float: Costo stimato in USD
-    """
-    tokens = calculate_tokens(text_length)
-    cost_map = st.session_state.config['MODEL_CONFIG'][model]['cost_per_1k']
-    
-    # Stima 40% input, 60% output
-    input_cost = (tokens * 0.4 * cost_map['input']) / 1000
-    output_cost = (tokens * 0.6 * cost_map['output']) / 1000
-    
-    return round(input_cost + output_cost, 4)
-
 def format_file_size(size_bytes: int) -> str:
     """
     Formatta una dimensione in bytes in formato leggibile.

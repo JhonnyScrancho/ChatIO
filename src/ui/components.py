@@ -487,13 +487,13 @@ class StatsDisplay:
     
     def render(self):
         """Renderizza il componente."""
-        stats = self.session.get_stats()
+        stats = self.session.get_api_stats()
         col1, col2 = st.columns(2)
         
         with col1:
             st.metric(
                 "Tokens Used",
-                f"{stats['token_count']:,}",
+                f"{stats['tokens']:,}",
                 delta=None
             )
         

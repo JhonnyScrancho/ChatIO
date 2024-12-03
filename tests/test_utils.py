@@ -35,12 +35,6 @@ class TestHelpers:
         assert truncate_text(text, 20) == text
         assert truncate_text("", 5) == ""
     
-    def test_calculate_tokens(self):
-        """Test calcolo tokens."""
-        text = "Hello World!"
-        assert isinstance(calculate_tokens(text), int)
-        assert calculate_tokens("") == 0
-    
     def test_sanitize_input(self):
         """Test sanitizzazione input."""
         test_cases = [

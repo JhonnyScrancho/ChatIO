@@ -52,11 +52,9 @@ class TestSessionManager:
         """Test tracking statistiche."""
         SessionManager.init_session()
         
-        SessionManager.update_token_count(100)
-        SessionManager.update_cost(0.002)
-        
-        stats = SessionManager.get_stats()
-        assert stats['token_count'] == 100
+        SessionManager.update_api_stats(100, 0.002)
+        stats = SessionManager.get_api_stats()
+        assert stats['tokens'] == 100
         assert stats['cost'] == 0.002
 
 class TestLLMManager:

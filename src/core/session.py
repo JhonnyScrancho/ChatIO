@@ -48,20 +48,6 @@ class SessionManager:
         if 'api_stats' not in st.session_state:
             st.session_state.api_stats = {'tokens': 0, 'cost': 0.0}
         return st.session_state.api_stats
-
-    @staticmethod
-    def update_api_usage(provider: str, tokens: int, cost: float):
-        """Aggiorna l'utilizzo delle API."""
-        if provider in st.session_state.api_usage:
-            st.session_state.api_usage[provider]['total_tokens'] += tokens
-            st.session_state.api_usage[provider]['total_cost'] += cost
-    
-    @staticmethod
-    def get_total_usage():
-        """Restituisce l'utilizzo totale delle API."""
-        total_tokens = sum(provider['total_tokens'] for provider in st.session_state.api_usage.values())
-        total_cost = sum(provider['total_cost'] for provider in st.session_state.api_usage.values())
-        return total_tokens, total_cost
     
     @staticmethod
     def get_current_model() -> str:
