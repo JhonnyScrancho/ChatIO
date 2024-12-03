@@ -11,35 +11,11 @@ from src.core.llm import LLMManager
 from typing import Dict, Any
 
 def load_custom_css():
-    """Load unified custom CSS styles."""
     st.markdown("""
         <style>
-           /* Rimuove il gap tra l'icona e il contenuto del messaggio */
-            [data-testid="stChatMessage"] {
+           [data-testid="stVerticalBlock"] {
                 gap: 0 !important;
-                align-items: flex-start !important;
-            }
-
-            /* Allinea l'icona con il testo */
-            [data-testid="stChatMessage"] .st-emotion-cache-1dgsum0 {
-                padding-top: 4px !important;
-            }
-
-            /* Rimuove padding extra dal contenitore del messaggio */
-            [data-testid="stChatMessageContent"] {
-                padding-left: 8px !important;
-            }
-
-            /* Rimuove margini non necessari dal contenuto del messaggio */
-            [data-testid="stMarkdownContainer"] {
-                margin: 0 !important;
-            }
-
-            /* Assicura che il contenuto del messaggio sia allineato correttamente */
-            .user-message, .assistant-message {
-                margin-top: 0 !important;
-                padding-top: 0 !important;
-            }
+           }
         </style>
     """, unsafe_allow_html=True)
 
