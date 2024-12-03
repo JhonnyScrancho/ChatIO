@@ -381,10 +381,7 @@ class ChatInterface:
         if 'chats' not in st.session_state:
             st.session_state.chats = {
                 'Chat principale': {
-                    'messages': [{
-                        "role": "assistant",
-                        "content": "Ciao! Carica dei file o delle immagini e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
-                    }],
+                    'messages': [],
                     'created_at': datetime.now().isoformat()
                 }
             }
