@@ -749,47 +749,54 @@ class ModelSelector:
                 'grok-vision-beta': '👁️ Grok Vision (Image Analysis)'
             }
         }
-        
-        # Header per la selezione
-        st.markdown("#### Select AI Model")
+
+        # CSS per la sidebar
+        st.markdown("""
+            <style>
+            /* Stile per il selectbox nella sidebar */
+            [data-testid="stSidebar"] .stSelectbox {
+                margin-bottom: 1rem;
+            }
+            
+            /* Stile per i messaggi info nella sidebar */
+            [data-testid="stSidebar"] .stAlert {
+                white-space: normal;
+                word-wrap: break-word;
+                margin: 0.5rem 0;
+                padding: 0.5rem;
+                font-size: 0.9em;
+                line-height: 1.4;
+            }
+            
+            /* Rimuovi padding eccessivo */
+            [data-testid="stSidebar"] .block-container {
+                padding-top: 2rem !important;
+            }
+            </style>
+        """, unsafe_allow_html=True)
         
         # Ottieni il modello corrente
         current_model = self.session.get_current_model()
         
-        # Crea una lista piatta di tutti i modelli per il selectbox
-        all_models = []
+        # Crea una lista piatta di tutti i modelli e le loro etichette
         model_options = []
-        
         for provider, provider_models in models.items():
-            # Aggiungi l'header del provider come opzione non selezionabile
-            all_models.append(f"──── {provider} ────")
-            model_options.append({"label": f"──── {provider} ────", "disabled": True})
-            
-            # Aggiungi i modelli di questo provider
-            for model_id, model_name in provider_models.items():
-                all_models.append(model_id)
-                model_options.append({"label": model_name, "value": model_id})
+            model_options.extend([(k, v) for k, v in provider_models.items()])
         
-        # Trova l'indice del modello corrente
-        try:
-            current_index = all_models.index(current_model)
-        except ValueError:
-            current_index = all_models.index('o1-mini-2024-09-12')  # Default
-        
-        # Crea il selectbox con i gruppi
+        # Crea il selectbox con solo i modelli selezionabili
         selected = st.selectbox(
-            " ",
-            options=all_models,
-            format_func=lambda x: next((m["label"] for m in model_options if getattr(m, "value", m["label"]) == x), x),
-            index=current_index,
-            label_visibility="collapsed"
+            "Select Model",
+            options=[m[0] for m in model_options],
+            format_func=lambda x: next((m[1] for m in model_options if m[0] == x), x),
+            index=[m[0] for m in model_options].index(current_model) if current_model in [m[0] for m in model_options] else 0
         )
-        
-        # Aggiorna solo se è stata selezionata un'opzione valida (non un header)
-        if selected and not selected.startswith('────'):
-            if selected != current_model:
-                self.session.set_current_model(selected)
-            
+
+        if selected != current_model:
+            self.session.set_current_model(selected)
+
+        # Container per i messaggi info
+        info_container = st.container()
+        with info_container:
             # Mostra info aggiuntive per modelli specifici
             if selected == 'grok-vision-beta':
                 st.info("💡 Grok Vision può analizzare immagini e generare descrizioni dettagliate.")
@@ -797,7 +804,11 @@ class ModelSelector:
                 st.info("💡 Claude eccelle nell'analisi di documenti lunghi e nella generazione di contenuti dettagliati.")
             elif selected.startswith('o1'):
                 st.info("💡 I modelli o1 offrono un ottimo bilanciamento tra velocità e qualità.")
-
+            elif selected.startswith('gpt'):
+                st.info("💡 I modelli GPT-4 offrono capacità avanzate di ragionamento e analisi.")
+            elif selected.startswith('grok'):
+                st.info("💡 Grok offre un'intelligenza versatile e adattiva per vari compiti.")
+                
 class StatsDisplay:
     """Componente per la visualizzazione delle statistiche."""
     
