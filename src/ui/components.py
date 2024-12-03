@@ -477,7 +477,7 @@ class ModelSelector:
             
         # Mostra info aggiuntive per Grok Vision
         if selected == 'grok-vision-beta':
-            st.info("💡 Grok Vision può analizzare immagini. Usa il file uploader per caricare immagini.")
+            st.info("💡 Grok Vision può analizzare immagini.")
 
 class StatsDisplay:
     """Componente per la visualizzazione delle statistiche."""
