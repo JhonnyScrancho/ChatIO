@@ -29,18 +29,6 @@ from src.core.llm import LLMManager
 from src.core.files import FileManager
 from src.ui.components import FileExplorer, ChatInterface, ModelSelector, load_custom_css
 
-def reset_app():
-    """Reset the entire application state."""
-    # Clear all caches
-    st.cache_data.clear()
-    st.cache_resource.clear()
-    
-    # Reset session state
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
-    
-    # Force rerun
-    st.rerun()
 
 def check_environment():
     """Verify required secrets are present."""
@@ -78,7 +66,7 @@ def render_main_layout():
     clients = init_clients()
     clients['session'].init_session()
     
-    # CSS minimo per il footer fisso
+    # CSS per layout e posizionamento
     st.markdown("""
         <style>
         /* Chat container margins */
@@ -93,10 +81,25 @@ def render_main_layout():
             padding: 0 !important;
             padding-top: 8px !important;
         }
-        
+
         /* Quick prompts styling */
         .st-emotion-cache-desfit {
             margin-bottom: 8px !important;
+        }
+        
+        .stButton button {
+            min-height: 32px !important;
+            line-height: 1.1 !important;
+            margin: 0 !important;
+            background: #f0f2f6 !important;
+            color: #31333F !important;
+            border-radius: 16px !important;
+            border: none !important;
+        }
+        
+        .stButton button:hover {
+            background: #e0e2e6 !important;
+            color: #131415 !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -109,7 +112,9 @@ def render_main_layout():
             st.title("👲🏿 Allegro")
         with col2:
             if st.button("🔄 Reset"):
-                reset_app()
+                st.cache_data.clear()
+                st.cache_resource.clear()
+                st.rerun()
         
     # Sidebar
     with st.sidebar:
@@ -127,22 +132,18 @@ def render_main_layout():
         chat_interface.render()
     
     # Footer con quick prompts e input
-    footer_container = st.container()
-    with footer_container:
-        prompts = chat_interface.quick_prompts.get(
-            st.session_state.current_model, 
-            chat_interface.quick_prompts['default']
-        )
-        
-        cols = st.columns(4)
-        for i, prompt in enumerate(prompts):
-            if cols[i % 4].button(prompt, key=f"quick_prompt_{i}", 
-                                use_container_width=True):
-                chat_interface.process_user_message(prompt)
-        
-        # Chat input
-        if prompt := st.chat_input("Tu chiedere, io rispondere"):
+    cols = st.columns(4)
+    prompts = chat_interface.quick_prompts.get(st.session_state.current_model, 
+                                             chat_interface.quick_prompts['default'])
+    # Quick prompts all'interno del container di input
+    for i, prompt in enumerate(prompts):
+        if cols[i % 4].button(prompt, key=f"quick_prompt_{i}", 
+                            use_container_width=True):
             chat_interface.process_user_message(prompt)
+    
+    # Chat input
+    if prompt := st.chat_input("Tu chiedere, io rispondere"):
+        chat_interface.process_user_message(prompt)
 
 def main():
     """Main application function."""
