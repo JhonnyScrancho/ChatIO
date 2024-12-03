@@ -229,6 +229,20 @@ class LLMManager:
         jitter = random.uniform(-0.25, 0.25) * delay
         return delay + jitter
 
+    def update_message_stats(self, model: str, input_tokens: int, output_tokens: int, cost: float):
+        """Aggiorna le statistiche per ogni messaggio."""
+        if 'message_stats' not in st.session_state:
+            st.session_state.message_stats = []
+            
+        st.session_state.message_stats.append({
+            'timestamp': datetime.now().strftime('%H:%M:%S'),
+            'model': model,
+            'input_tokens': input_tokens,
+            'output_tokens': output_tokens,
+            'total_tokens': input_tokens + output_tokens,
+            'cost': cost
+        })
+    
     def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
         """Gestisce le chiamate ai modelli o1."""
         try:
@@ -244,10 +258,12 @@ class LLMManager:
             
             # Aggiorniamo l'usage dai dati ricevuti
             if hasattr(usage_response, 'usage'):
-                tokens = usage_response.usage.total_tokens
-                cost = self.calculate_cost(model, usage_response.usage.prompt_tokens, 
-                                        usage_response.usage.completion_tokens)
-                SessionManager.update_api_stats(tokens, cost)
+                self.update_message_stats(
+                    model,
+                    usage_response.usage.prompt_tokens,
+                    usage_response.usage.completion_tokens,
+                    cost
+                )
             
             # Poi facciamo la chiamata streaming per la risposta effettiva
             completion = self.openai_client.chat.completions.create(
@@ -285,7 +301,12 @@ class LLMManager:
                     cost = self.calculate_cost("claude-3-5-sonnet-20241022", 
                                             response.usage.input_tokens,
                                             response.usage.output_tokens)
-                    SessionManager.update_api_stats(tokens, cost)
+                    self.update_message_stats(
+                        "claude-3-5-sonnet-20241022",
+                        response.usage.input_tokens,
+                        response.usage.output_tokens,
+                        cost
+                    )
                 
                 for chunk in response:
                     if chunk.type == 'content_block_delta':

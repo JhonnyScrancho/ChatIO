@@ -264,6 +264,33 @@ class ChatInterface:
                     st.session_state.process_quick_prompt = True
         st.markdown('</div>', unsafe_allow_html=True)
 
+    def render_token_stats(self):
+        """Renderizza le statistiche dei token per ogni messaggio."""
+        
+        if 'message_stats' not in st.session_state:
+            st.session_state.message_stats = []
+        
+        with st.expander("📊 Token Usage Statistics", expanded=False):
+            # Mostra statistiche per l'ultima chiamata
+            if st.session_state.message_stats:
+                last_call = st.session_state.message_stats[-1]
+                
+                cols = st.columns(4)
+                with cols[0]:
+                    st.metric("Input Tokens", last_call.get('input_tokens', 0))
+                with cols[1]:
+                    st.metric("Output Tokens", last_call.get('output_tokens', 0))
+                with cols[2]:
+                    st.metric("Total Tokens", last_call.get('total_tokens', 0))
+                with cols[3]:
+                    st.metric("Cost ($)", f"${last_call.get('cost', 0):.4f}")
+                    
+            # Mostra storico in una tabella
+            if len(st.session_state.message_stats) > 1:
+                st.markdown("### History")
+                df = pd.DataFrame(st.session_state.message_stats)
+                st.dataframe(df)
+    
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
         try:
@@ -347,6 +374,7 @@ class ChatInterface:
     def render(self):
         """Renderizza l'interfaccia chat con quick prompts."""
         self.render_chat_controls()
+        self.render_token_stats()
         
         # Gestione immagini per Grok Vision
         if st.session_state.current_model == 'grok-vision-beta':
