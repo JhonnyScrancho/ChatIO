@@ -237,15 +237,6 @@ class LLMManager:
         """Aggiorna le statistiche in modo atomico e sincronizzato."""
         if 'message_stats' not in st.session_state:
             st.session_state.message_stats = []
-        
-        # Calcola il costo effettivo usando cost_map
-        if model in self.cost_map:
-            actual_cost = (
-                (input_tokens * self.cost_map[model]['input']) + 
-                (output_tokens * self.cost_map[model]['output'])
-            )
-        else:
-            actual_cost = 0
             
         # Aggiunge nuova entry nella history
         new_stat = {
@@ -254,17 +245,21 @@ class LLMManager:
             'input_tokens': input_tokens,
             'output_tokens': output_tokens,
             'total_tokens': input_tokens + output_tokens,
-            'cost': round(actual_cost, 4)  # Arrotondiamo a 4 decimali
+            'cost': cost  # Il costo viene già calcolato prima di chiamare questa funzione
         }
+        
+        # Salva nella session state
+        if not hasattr(st.session_state, 'message_stats'):
+            st.session_state.message_stats = []
         
         st.session_state.message_stats.append(new_stat)
         
-        # Aggiorna i totali
-        st.session_state.current_stats = {
+        # Calcola e salva i totali
+        st.session_state.total_stats = {
             'input_tokens': sum(stat['input_tokens'] for stat in st.session_state.message_stats),
             'output_tokens': sum(stat['output_tokens'] for stat in st.session_state.message_stats),
             'total_tokens': sum(stat['total_tokens'] for stat in st.session_state.message_stats),
-            'total_cost': round(sum(stat['cost'] for stat in st.session_state.message_stats), 4)
+            'total_cost': sum(stat['cost'] for stat in st.session_state.message_stats)
         }
 
     def render_token_stats(self):

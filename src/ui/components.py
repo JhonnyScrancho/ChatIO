@@ -457,31 +457,36 @@ class ChatInterface:
                     self.process_user_message(prompt)
 
     def render_token_stats(self):
-        """Renderizza le statistiche dei token per ogni messaggio."""
-        
-        if 'message_stats' not in st.session_state:
+        """Renderizza le statistiche dei token."""
+        if not hasattr(st.session_state, 'message_stats'):
             st.session_state.message_stats = []
+            st.session_state.total_stats = {
+                'input_tokens': 0,
+                'output_tokens': 0,
+                'total_tokens': 0,
+                'total_cost': 0.0
+            }
         
         with st.expander("📊 Token Usage Statistics", expanded=False):
-            # Mostra statistiche per l'ultima chiamata
+            # Mostra i totali dalla session state
+            cols = st.columns(4)
+            with cols[0]:
+                st.metric("Input Tokens", st.session_state.total_stats['input_tokens'])
+            with cols[1]:
+                st.metric("Output Tokens", st.session_state.total_stats['output_tokens'])
+            with cols[2]:
+                st.metric("Total Tokens", st.session_state.total_stats['total_tokens'])
+            with cols[3]:
+                st.metric("Cost ($)", f"${st.session_state.total_stats['total_cost']:.4f}")
+            
+            # Mostra history completa
             if st.session_state.message_stats:
-                last_call = st.session_state.message_stats[-1]
-                
-                cols = st.columns(4)
-                with cols[0]:
-                    st.metric("Input Tokens", last_call.get('input_tokens', 0))
-                with cols[1]:
-                    st.metric("Output Tokens", last_call.get('output_tokens', 0))
-                with cols[2]:
-                    st.metric("Total Tokens", last_call.get('total_tokens', 0))
-                with cols[3]:
-                    st.metric("Cost ($)", f"${last_call.get('cost', 0):.4f}")
-                    
-            # Mostra storico in una tabella
-            if len(st.session_state.message_stats) > 1:
                 st.markdown("### History")
                 df = pd.DataFrame(st.session_state.message_stats)
-                st.dataframe(df)
+                st.dataframe(
+                    df.sort_values('timestamp', ascending=False),
+                    use_container_width=True
+                )
     
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
