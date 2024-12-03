@@ -419,26 +419,23 @@ class LLMManager:
             raise ValueError("Formato immagine non supportato")
     
     def prepare_prompt(self, prompt: str, analysis_type: Optional[str] = None,
-                    file_content: Optional[str] = None, 
-                    context: Optional[str] = None,
-                    model: str = "claude-3-5-sonnet-20241022",
-                    image: Optional[Union[str, bytes, Image.Image]] = None) -> List[Dict]:
+                file_content: Optional[str] = None, 
+                context: Optional[str] = None,
+                model: str = "claude-3-5-sonnet-20241022",
+                image: Optional[Union[str, bytes, Image.Image]] = None) -> List[Dict]:
         """
         Prepara il prompt includendo il contesto dei file e le immagini.
         """
         messages = []
         
-        # Aggiungi system message se il modello lo supporta
+        # System message se supportato
         if self.model_limits[model]['supports_system_message']:
             messages.append({
                 "role": "system",
                 "content": "Sei un assistente esperto in analisi del codice e delle immagini."
             })
 
-        # Prepara il contenuto principale
-        main_content = prompt
-
-        # Per Grok Vision, aggiungi l'immagine se presente
+        # Per Grok Vision, formatta correttamente il messaggio con l'immagine
         if model == "grok-vision-beta" and image is not None:
             try:
                 image_base64 = self._encode_image_to_base64(image)
@@ -446,14 +443,14 @@ class LLMManager:
                     "role": "user",
                     "content": [
                         {
-                            "type": "image",
-                            "image": {
-                                "base64": image_base64
-                            }
+                            "type": "text",
+                            "text": prompt
                         },
                         {
-                            "type": "text",
-                            "text": main_content
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}"
+                            }
                         }
                     ]
                 })
@@ -461,14 +458,13 @@ class LLMManager:
                 st.error(f"Errore nel processare l'immagine: {str(e)}")
                 messages.append({
                     "role": "user",
-                    "content": main_content
+                    "content": prompt
                 })
         else:
-            # Aggiungi il contesto dei file se presente
+            # Gestione normale per altri modelli
+            main_content = prompt
             if file_content:
                 main_content = f"File content:\n```\n{file_content}\n```\n\n{prompt}"
-            
-            # Aggiungi contesto aggiuntivo se fornito
             if context:
                 main_content += f"\nAdditional context: {context}"
             
@@ -480,16 +476,9 @@ class LLMManager:
         return messages
 
     def process_image_request(self, image: Union[str, bytes, Image.Image], 
-                            prompt: str) -> Generator[str, None, None]:
+                        prompt: str) -> Generator[str, None, None]:
         """
         Processa una richiesta specifica per l'analisi di immagini.
-        
-        Args:
-            image: Immagine da analizzare (path, bytes o PIL Image)
-            prompt: Prompt dell'utente per l'analisi
-            
-        Yields:
-            str: Chunks della risposta
         """
         messages = self.prepare_prompt(
             prompt=prompt,
@@ -498,7 +487,16 @@ class LLMManager:
         )
 
         try:
-            yield from self._handle_grok_completion(messages, "grok-vision-beta")
+            completion = self.grok_client.chat.completions.create(
+                model="grok-vision-beta",
+                messages=messages,
+                stream=True
+            )
+            
+            for chunk in completion:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+                    
         except Exception as e:
             error_msg = f"Errore nell'analisi dell'immagine: {str(e)}"
             st.error(error_msg)

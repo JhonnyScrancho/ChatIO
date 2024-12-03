@@ -202,12 +202,79 @@ class ChatInterface:
                 'Chat principale': {
                     'messages': [{
                         "role": "assistant",
-                        "content": "Sciau migo. Caso vuoi oggi?"
+                        "content": "Ciao! Carica dei file o delle immagini e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
                     }],
                     'created_at': datetime.now().isoformat()
                 }
             }
             st.session_state.current_chat = 'Chat principale'
+            
+        # Quick prompts predefiniti per ogni tipo di modello
+        self.quick_prompts = {
+            'default': [
+                "Analizza questo codice",
+                "Trova potenziali bug",
+                "Suggerisci miglioramenti",
+                "Spiega il funzionamento"
+            ],
+            'grok-vision-beta': [
+                "Descrivi questa immagine",
+                "Trova testo nell'immagine",
+                "Analizza i colori",
+                "Identifica gli oggetti",
+                "Analizza la composizione"
+            ]
+        }
+
+    def render_quick_prompts(self):
+        """Renderizza i quick prompts come bottoni."""
+        st.markdown("""
+            <style>
+            .quick-prompt {
+                margin: 0.2rem;
+                padding: 0.2rem 0.8rem;
+                border-radius: 15px;
+                border: 1px solid #ddd;
+                background-color: white;
+                color: #666;
+                cursor: pointer;
+                transition: all 0.3s;
+            }
+            .quick-prompt:hover {
+                background-color: #f0f0f0;
+                color: #333;
+            }
+            .quick-prompts-container {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                margin-bottom: 1rem;
+                padding: 0.5rem;
+                border-radius: 5px;
+                background-color: #f8f9fa;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # Seleziona i prompt appropriati in base al modello
+        current_model = st.session_state.current_model
+        prompts = self.quick_prompts.get(
+            current_model, 
+            self.quick_prompts['default']
+        )
+
+        # Container per i quick prompts
+        st.markdown('<div class="quick-prompts-container">', unsafe_allow_html=True)
+        cols = st.columns(len(prompts))
+        for col, prompt in zip(cols, prompts):
+            with col:
+                if st.button(
+                    prompt, 
+                    key=f"quick_prompt_{prompt}", 
+                    use_container_width=True
+                ):
+                    self.process_user_message(prompt)
+        st.markdown('</div>', unsafe_allow_html=True)    
 
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
@@ -290,7 +357,7 @@ class ChatInterface:
 
 
     def render(self):
-        """Renderizza l'interfaccia chat con supporto immagini."""
+        """Renderizza l'interfaccia chat con quick prompts."""
         self.render_chat_controls()
         
         # Aggiungi uploader immagini se Grok Vision è selezionato
@@ -308,7 +375,10 @@ class ChatInterface:
             
             if uploaded_image:
                 st.session_state.current_image = uploaded_image
-            
+
+        # Renderizza i quick prompts
+        self.render_quick_prompts()
+        
         # Container per i messaggi
         messages_container = st.container()
         
