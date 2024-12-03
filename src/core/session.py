@@ -28,10 +28,25 @@ class SessionManager:
             st.session_state.current_model = 'o1-mini'
             st.session_state.files = {}
             st.session_state.current_file = None
-            st.session_state.token_count = 0
-            st.session_state.cost = 0.0
-            st.session_state.last_error = None
-            st.session_state.debug_mode = False
+            # Track API usage
+            st.session_state.api_usage = {
+                'openai': {'total_tokens': 0, 'total_cost': 0.0},
+                'anthropic': {'total_tokens': 0, 'total_cost': 0.0}
+            }
+    
+    @staticmethod
+    def update_api_usage(provider: str, tokens: int, cost: float):
+        """Aggiorna l'utilizzo delle API."""
+        if provider in st.session_state.api_usage:
+            st.session_state.api_usage[provider]['total_tokens'] += tokens
+            st.session_state.api_usage[provider]['total_cost'] += cost
+    
+    @staticmethod
+    def get_total_usage():
+        """Restituisce l'utilizzo totale delle API."""
+        total_tokens = sum(provider['total_tokens'] for provider in st.session_state.api_usage.values())
+        total_cost = sum(provider['total_cost'] for provider in st.session_state.api_usage.values())
+        return total_tokens, total_cost
     
     @staticmethod
     def get_current_model() -> str:

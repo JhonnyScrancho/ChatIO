@@ -6,30 +6,30 @@ Streamlit-based interface for code analysis using LLMs.
 import streamlit as st
 from dotenv import load_dotenv
 from pathlib import Path
-import os
 import sys
+import os
 
-# Deve essere la prima chiamata Streamlit
+# Must be the first Streamlit call
 st.set_page_config(
     page_title="Allegro IO - Code Assistant",
     page_icon="🎯",
     layout="wide"
 )
 
-# Aggiungi la directory root al path per permettere gli import relativi
+# Add root directory to path for relative imports
 root_path = Path(__file__).parent.parent
 sys.path.append(str(root_path))
 
 from src.core.session import SessionManager
 from src.core.llm import LLMManager
 from src.core.files import FileManager
-from src.ui.components import FileExplorer, ChatInterface, CodeViewer, ModelSelector, StatsDisplay
+from src.ui.components import FileExplorer, ChatInterface, ModelSelector
 
 def load_custom_css():
-    """Carica stili CSS personalizzati."""
+    """Load custom CSS styles."""
     st.markdown("""
         <style>
-        /* Layout generale */
+        /* General Layout */
         .main {
             padding: 0 !important;
         }
@@ -39,7 +39,7 @@ def load_custom_css():
             max-width: 100% !important;
         }
         
-        /* Sidebar migliorata */
+        /* Enhanced Sidebar */
         [data-testid="stSidebar"] {
             background-color: var(--background-color);
             padding: 1rem;
@@ -49,10 +49,6 @@ def load_custom_css():
             font-size: 0.9rem;
             margin-bottom: 0.5rem;
         }
-
-        [data-testid="stMetricLabel"] {
-                height:40px;
-                }                
         
         /* Chat UI */
         .stChatFloatingInputContainer {
@@ -66,25 +62,6 @@ def load_custom_css():
             max-width: none !important;
             width: 100% !important;
             margin: 0.5rem 0 !important;
-        }
-        
-        /* Code viewer */
-        .code-viewer {
-            background: var(--background-color);
-            border-radius: 0.5rem;
-            border: 1px solid var(--secondary-background-color);
-            padding: 1rem;
-            height: calc(100vh - 130px);
-            overflow-y: auto;
-        }
-        
-        .source {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 14px;
-            line-height: 1.4;
-            padding: 10px;
-            border-radius: 5px;
-            overflow-x: auto;
         }
         
         /* File explorer */
@@ -107,15 +84,12 @@ def load_custom_css():
             padding: 0 !important;
         }
         
-        /* Stats display */
-        .stats-container {
-            display: flex;
-            justify-content: flex-end;
-            gap: 1rem;
-            padding: 0.5rem;
-            background: var(--secondary-background-color);
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
+        /* Content container */
+        .content-container {
+            margin-left: 1rem;
+            margin-right: 1rem;
+            max-width: 1200px;
+            margin: 0 auto;
         }
         
         /* Scrollbars */
@@ -142,29 +116,29 @@ def load_custom_css():
     """, unsafe_allow_html=True)
 
 def check_environment():
-    """Verifica la presenza delle secrets necessari."""
+    """Verify required secrets are present."""
     required_vars = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']
     missing_vars = [var for var in required_vars if var not in st.secrets]
     
     if missing_vars:
-        st.error(f"⚠️ Secrets mancanti: {', '.join(missing_vars)}")
-        st.info("ℹ️ Configura le API keys in .streamlit/secrets.toml")
+        st.error(f"⚠️ Missing secrets: {', '.join(missing_vars)}")
+        st.info("ℹ️ Configure API keys in .streamlit/secrets.toml")
         st.stop()
 
 def check_directories():
-    """Verifica e crea le cartelle necessarie se non esistono."""
+    """Check and create necessary directories if they don't exist."""
     required_dirs = ['templates', 'src/core', 'src/ui', 'src/utils']
     base_path = Path(__file__).parent.parent
     
     for dir_name in required_dirs:
         dir_path = base_path / dir_name
         if not dir_path.exists():
-            st.warning(f"⚠️ Cartella {dir_name} mancante. Creazione in corso...")
+            st.warning(f"⚠️ Missing directory {dir_name}. Creating...")
             dir_path.mkdir(parents=True, exist_ok=True)
 
 @st.cache_resource
 def init_clients():
-    """Inizializza e cachea i clients API."""
+    """Initialize and cache API clients."""
     return {
         'llm': LLMManager(),
         'session': SessionManager(),
@@ -172,11 +146,11 @@ def init_clients():
     }
 
 def render_main_layout():
-    """Renderizza il layout principale dell'applicazione."""
-    # CSS per gestire il layout di pagina e input bar fisso
+    """Render the main application layout."""
+    # CSS for page layout and fixed input bar
     st.markdown("""
         <style>
-            /* Layout generale */
+            /* General Layout */
             .main .block-container {
                 max-width: 100% !important;
                 padding-top: 1rem !important;
@@ -185,7 +159,7 @@ def render_main_layout():
                 padding-bottom: 80px !important;
             }
             
-            /* Chat input fisso */
+            /* Fixed Chat Input */
             .stChatInputContainer {
                 position: fixed !important;
                 bottom: 0 !important;
@@ -196,23 +170,40 @@ def render_main_layout():
                 border-top: 1px solid var(--secondary-background-color) !important;
                 z-index: 999 !important;
             }
+
+            /* Usage stats */
+            .usage-stats {
+                font-size: 0.9rem;
+                color: var(--text-color-secondary);
+                text-align: right;
+                padding-top: 0.5rem;
+            }
         </style>
     """, unsafe_allow_html=True)
     
-    # Setup iniziale della sessione
+    # Initial session setup
     clients = init_clients()
     clients['session'].init_session()
     
-    # Title Area con Stats
-    col1, col2, col3 = st.columns([4, 1, 1])
-    with col1:
-        st.title("👲🏿 Allegro IO")
-    with col2:
-        st.metric("Tokens Used", f"{st.session_state.get('token_count', 0):,}")
-    with col3:
-        st.metric("Cost ($)", f"${st.session_state.get('cost', 0):.3f}")
+    # Title Area with usage stats
+    with st.container():
+        col1, col2, col3 = st.columns([6, 2, 2])
+        with col1:
+            st.title("👲🏿 Allegro IO")
+        
+        # Get total usage
+        total_tokens, total_cost = SessionManager.get_total_usage()
+        
+        # Show only if we have any usage
+        if total_tokens > 0:
+            with col2:
+                st.markdown(f"<div class='usage-stats'>**Tokens:** {total_tokens:,}</div>", 
+                          unsafe_allow_html=True)
+            with col3:
+                st.markdown(f"<div class='usage-stats'>**Cost:** ${total_cost:.4f}</div>", 
+                          unsafe_allow_html=True)
     
-    # Sidebar con File Manager e Model Selector
+    # Sidebar with File Manager and Model Selector
     with st.sidebar:
         st.markdown("### 🤖 Model Settings")
         ModelSelector().render()
@@ -220,39 +211,38 @@ def render_main_layout():
         st.markdown("### 📁 File Manager")
         FileExplorer().render()
     
-    # Main Content Area con Chat e Code Viewer
-    col1, col2 = st.columns([3, 2])
-    
-    with col1:
+    # Main Content Area with Chat in a centered container
+    chat_container = st.container()
+    with chat_container:
         st.markdown("### 💬 Chat")
-        ChatInterface().render()
+        chat_interface = ChatInterface()
+        chat_interface.render()
     
-    with col2:
-        st.markdown("### 📝 Code Viewer")
-        CodeViewer().render()
+        # Add some spacing before the input to account for the fixed position
+        st.markdown("<div style='height: 80px'></div>", unsafe_allow_html=True)
     
-    # Chat input fisso in fondo
-    if prompt := st.chat_input("Chiedi qualcosa sul tuo codice..."):
+    # Fixed chat input at bottom
+    if prompt := st.chat_input("Ask something about your code..."):
         clients['session'].add_message_to_current_chat({
             "role": "user",
             "content": prompt
         })
-        ChatInterface().process_user_message(prompt)
+        chat_interface.process_user_message(prompt)
 
 def main():
-    """Funzione principale dell'applicazione."""
+    """Main application function."""
     load_dotenv()
     try:
-        # Controlli iniziali
+        # Initial checks
         check_environment()
         check_directories()
         load_custom_css()
         
-        # Renderizza il layout principale
+        # Render main layout
         render_main_layout()
         
     except Exception as e:
-        st.error(f"❌ Si è verificato un errore: {str(e)}")
+        st.error(f"❌ An error occurred: {str(e)}")
         if os.getenv('DEBUG') == 'True':
             st.exception(e)
 

@@ -229,16 +229,7 @@ class LLMManager:
         return delay + jitter
 
     def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
-        """
-        Gestisce le chiamate ai modelli o1.
-        
-        Args:
-            messages: Lista di messaggi
-            model: Nome del modello o1
-            
-        Yields:
-            str: Chunks della risposta
-        """
+        """Gestisce le chiamate ai modelli o1."""
         try:
             self._enforce_rate_limit(model)
             
@@ -249,60 +240,50 @@ class LLMManager:
                 max_completion_tokens=32768 if model == "o1-preview" else 65536
             )
             
+            # Track usage at completion
+            if hasattr(completion, 'usage'):
+                tokens = completion.usage.total_tokens
+                # Calculate cost based on model pricing
+                cost = self.calculate_cost(model, completion.usage.prompt_tokens, 
+                                        completion.usage.completion_tokens)
+                SessionManager.update_api_usage('openai', tokens, cost)
+            
             for chunk in completion:
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
                     
         except Exception as e:
-            error_msg = f"Errore con {model}: {str(e)}"
+            error_msg = f"Error with {model}: {str(e)}"
             st.error(error_msg)
             yield error_msg
 
     def _handle_claude_completion_with_user_control(self, messages: List[Dict], 
-                                                  placeholder: st.empty) -> Generator[str, None, None]:
-        """
-        Gestisce le chiamate a Claude con retry controllato dall'utente.
-        
-        Args:
-            messages: Lista di messaggi
-            placeholder: Streamlit placeholder per l'UI
-            
-        Yields:
-            str: Chunks della risposta
-        """
+                                              placeholder: st.empty) -> Generator[str, None, None]:
+        """Gestisce le chiamate a Claude con retry controllato dall'utente."""
         for attempt in range(self.MAX_RETRIES):
             try:
                 self._enforce_rate_limit("claude-3-5-sonnet-20241022")
                 
-                claude_messages = []
-                for msg in messages:
-                    if msg["role"] == "user":
-                        content_msg = {
-                            "role": "user",
-                            "content": [{"type": "text", "text": msg["content"]}]
-                        }
-                        claude_messages.append(content_msg)
-                
                 response = self.anthropic_client.messages.create(
                     model="claude-3-5-sonnet-20241022",
                     max_tokens=4096,
-                    messages=claude_messages,
+                    messages=messages,
                     stream=True
                 )
+                
+                # Track usage from response
+                if hasattr(response, 'usage'):
+                    total_tokens = response.usage.input_tokens + response.usage.output_tokens
+                    cost = self.calculate_cost("claude-3-5-sonnet-20241022", 
+                                            response.usage.input_tokens,
+                                            response.usage.output_tokens)
+                    SessionManager.update_api_usage('anthropic', total_tokens, cost)
                 
                 for chunk in response:
                     if hasattr(chunk, 'type'):
                         if chunk.type == 'content_block_delta':
                             if hasattr(chunk.delta, 'text'):
                                 yield chunk.delta.text
-                        elif chunk.type == 'message_start':
-                            continue
-                        elif chunk.type == 'content_block_start':
-                            continue
-                        elif chunk.type == 'content_block_stop':
-                            continue
-                        elif chunk.type == 'message_stop':
-                            continue
                 return
                 
             except Exception as e:
