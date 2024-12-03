@@ -62,28 +62,57 @@ def render_main_layout():
     clients = init_clients()
     clients['session'].init_session()
     
-    # CSS per posizionamento corretto
+    # Consolidated CSS injection for layout and positioning
     st.markdown("""
         <style>
-        /* Container per input bar e quick prompts */
+        /* Main layout */
+        .main {
+            padding: 0 !important;
+        }
+        
+        .main .block-container {
+            padding-top: 1rem !important;
+            max-width: 100% !important;
+            padding-bottom: 140px !important;
+        }
+        
+        /* Fixed input container */
         .input-container {
             position: fixed;
             bottom: 0;
             left: 0;
             right: 0;
             background: white;
-            z-index: 1000;
+            padding: 16px;
+            border-top: 1px solid rgba(49, 51, 63, 0.2);
+            z-index: 998;
         }
         
-        /* Quick prompts */
-        .stButton button {
-            min-height: 31px !important;
-            line-height: 1.1 !important;
+        /* Quick prompts wrapper */
+        .quick-prompts-wrapper {
+            position: fixed;
+            bottom: 80px;
+            left: 0;
+            right: 0;
+            background: white;
+            padding: 8px 16px;
+            border-top: 1px solid rgba(49, 51, 63, 0.2);
+            z-index: 999;
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
         }
         
-        /* Padding per evitare che il contenuto finisca sotto l'input */
-        .main .block-container {
-            padding-bottom: 120px !important;
+        /* Ensure content doesn't get hidden */
+        #root > div:first-child {
+            padding-bottom: 140px;
+        }
+        
+        @media (max-width: 768px) {
+            .main .block-container {
+                padding: 0.5rem !important;
+                padding-bottom: 160px !important;
+            }
         }
         </style>
     """, unsafe_allow_html=True)
