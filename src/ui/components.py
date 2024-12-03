@@ -230,20 +230,6 @@ class ChatInterface:
         """Renderizza i quick prompts come bottoni."""
         st.markdown("""
             <style>
-            .quick-prompt {
-                margin: 0.2rem;
-                padding: 0.2rem 0.8rem;
-                border-radius: 15px;
-                border: 1px solid #ddd;
-                background-color: white;
-                color: #666;
-                cursor: pointer;
-                transition: all 0.3s;
-            }
-            .quick-prompt:hover {
-                background-color: #f0f0f0;
-                color: #333;
-            }
             .quick-prompts-container {
                 display: flex;
                 flex-wrap: wrap;
@@ -273,8 +259,10 @@ class ChatInterface:
                     key=f"quick_prompt_{prompt}", 
                     use_container_width=True
                 ):
-                    self.process_user_message(prompt)
-        st.markdown('</div>', unsafe_allow_html=True)    
+                    # Invece di processare direttamente, settiamo un flag nella session_state
+                    st.session_state.quick_prompt_selected = prompt
+                    st.session_state.process_quick_prompt = True
+        st.markdown('</div>', unsafe_allow_html=True)
 
     def _process_response(self, prompt: str) -> str:
         """Processa la richiesta e genera una risposta."""
@@ -360,7 +348,7 @@ class ChatInterface:
         """Renderizza l'interfaccia chat con quick prompts."""
         self.render_chat_controls()
         
-        # Aggiungi uploader immagini se Grok Vision è selezionato
+        # Gestione immagini per Grok Vision
         if st.session_state.current_model == 'grok-vision-beta':
             col1, col2 = st.columns([3, 1])
             with col1:
@@ -378,6 +366,13 @@ class ChatInterface:
 
         # Renderizza i quick prompts
         self.render_quick_prompts()
+        
+        # Processa il quick prompt se selezionato
+        if hasattr(st.session_state, 'process_quick_prompt') and st.session_state.process_quick_prompt:
+            prompt = st.session_state.quick_prompt_selected
+            self.process_user_message(prompt)
+            # Resetta il flag dopo il processing
+            st.session_state.process_quick_prompt = False
         
         # Container per i messaggi
         messages_container = st.container()
