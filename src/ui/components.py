@@ -1,15 +1,13 @@
 """
-Componente principale per l'interfaccia chat di Allegro.
-Gestisce la visualizzazione dei messaggi, l'elaborazione delle risposte
-e le statistiche dei token.
+UI components for Allegro IO Code Assistant.
 """
 
 import streamlit as st
 from datetime import datetime
-from typing import Dict, Optional, List, Any
 from src.core.session import SessionManager
+from src.core.files import FileManager
 from src.core.llm import LLMManager
-import pandas as pd
+from typing import Dict, Any
 
 class FileExplorer:
     """Component per l'esplorazione e l'upload dei file."""
@@ -377,7 +375,7 @@ class ChatInterface:
         """Renderizza l'interfaccia chat con quick prompts."""
         self.render_chat_controls()
         self.render_token_stats()
-
+        
         # Gestione immagini per Grok Vision
         if st.session_state.current_model == 'grok-vision-beta':
             col1, col2 = st.columns([3, 1])
