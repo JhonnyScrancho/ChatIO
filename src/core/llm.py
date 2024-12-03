@@ -4,6 +4,7 @@ Manages interactions with OpenAI and Anthropic models with proper error handling
 rate limiting, and model-specific optimizations.
 """
 
+import uuid
 import streamlit as st
 from typing import Dict, Optional, Tuple, Generator, List, Any
 from openai import OpenAI
@@ -440,32 +441,37 @@ class LLMManager:
         # Se siamo in modalità analisi JSON, usa l'handler specifico
         if st.session_state.get('json_analysis_mode', False):
             try:
-                # Verifica se dobbiamo usare l'analisi strutturata o permettere domande aperte
                 if any(keyword in prompt.lower() for keyword in ['analizza', 'calcola', 'trova pattern', 'statistiche']):
                     yield from self._handle_json_analysis(prompt)
                 else:
-                    # Per domande aperte, usa il modello con contesto JSON
                     messages = self._prepare_json_context(prompt)
                     yield from self._handle_claude_completion(messages)
+                return
             except Exception as e:
                 yield f"Errore nell'analisi JSON: {str(e)}"
-            return
+                return
 
-        # Altrimenti procedi con la normale elaborazione
-        requires_file_handling = bool(file_content)
+        # Prepara il contesto completo includendo tutti i file
+        full_context = self._prepare_full_context(file_content, context)
         
+        # Seleziona il modello appropriato
+        requires_file_handling = bool(file_content)
         if analysis_type and file_content:
-            model = self.select_model(analysis_type, len(file_content), requires_file_handling)
+            model = self.select_model(analysis_type, len(full_context), requires_file_handling)
         else:
             model = st.session_state.current_model
+
+        # Prepara i messaggi includendo il contesto
+        messages = [
+            {"role": "system", "content": "Sei un assistente esperto in analisi del codice."}
+        ]
         
-        messages = self.prepare_prompt(
-            prompt=prompt,
-            analysis_type=analysis_type,
-            file_content=file_content,
-            context=context,
-            model=model
-        )
+        # Aggiungi il contesto come messaggio di sistema se presente
+        if full_context:
+            messages.append({"role": "system", "content": full_context})
+        
+        # Aggiungi il prompt dell'utente
+        messages.append({"role": "user", "content": prompt})
         
         placeholder = st.empty()
         
@@ -476,7 +482,6 @@ class LLMManager:
                         yield self._prepare_artifact(chunk)
                     else:
                         yield chunk
-                        
             elif model.startswith('o1'):
                 for chunk in self._handle_o1_completion(messages, model):
                     if isinstance(chunk, dict) and chunk.get('type') in ['artifact', 'code']:
@@ -489,13 +494,44 @@ class LLMManager:
                         yield self._prepare_artifact(chunk)
                     else:
                         yield chunk
-                        
         except Exception as e:
             error_msg = f"Errore generale: {str(e)}"
             st.error(error_msg)
             with placeholder.container():
                 if st.button("🔄 Riprova con modello alternativo"):
                     yield from self._handle_o1_completion(messages, "o1-mini")
+
+    def _prepare_full_context(self, file_content: Optional[str], additional_context: Optional[str]) -> str:
+        """
+        Prepara il contesto completo includendo tutti i file caricati.
+        
+        Args:
+            file_content: Contenuto specifico del file
+            additional_context: Contesto aggiuntivo
+            
+        Returns:
+            str: Contesto completo formattato
+        """
+        context_parts = []
+        
+        # Aggiungi i file caricati al contesto
+        if hasattr(st.session_state, 'uploaded_files'):
+            for filename, file_info in st.session_state.uploaded_files.items():
+                context_parts.append(f"\nFile: {filename}")
+                context_parts.append(f"Type: {file_info.get('language', 'text')}")
+                context_parts.append(f"```{file_info.get('language', '')}\n{file_info['content']}\n```\n")
+        
+        # Aggiungi il file_content specifico se fornito
+        if file_content:
+            context_parts.append("\nSpecific file content:")
+            context_parts.append(f"```\n{file_content}\n```")
+        
+        # Aggiungi il contesto aggiuntivo se presente
+        if additional_context:
+            context_parts.append("\nAdditional context:")
+            context_parts.append(additional_context)
+        
+        return "\n".join(context_parts) if context_parts else ""
 
     def _prepare_artifact(self, chunk: Dict[str, Any]) -> Dict[str, Any]:
         """
