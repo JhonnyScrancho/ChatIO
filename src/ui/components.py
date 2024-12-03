@@ -14,6 +14,9 @@ def load_custom_css():
     """Load unified custom CSS styles."""
     st.markdown("""
         <style>
+           [data-testid="stChatMessageContainer"] > div {
+                gap: 0 !important;
+}
         </style>
     """, unsafe_allow_html=True)
 
