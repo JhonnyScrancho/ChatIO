@@ -9,6 +9,10 @@ from pathlib import Path
 import sys
 import os
 
+# Force cache clear on startup
+st.cache_data.clear()
+st.cache_resource.clear()
+
 # Must be the first Streamlit call
 st.set_page_config(
     page_title="Allegro IO - Code Assistant",
