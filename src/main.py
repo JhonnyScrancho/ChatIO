@@ -154,7 +154,25 @@ def render_main_layout():
     # Header area with title and metrics
     header_container = st.container()
     with header_container:
-        st.title("👲🏿 Allegro l'agente NEGRO")
+        col1, col2, col3 = st.columns([5, 2, 2])
+        
+        with col1:
+            st.title("👲🏿 Allegro")
+        
+        # Get API stats
+        api_stats = SessionManager.get_api_stats()
+        
+        with col2:
+            st.metric(
+                label="Total Tokens",
+                value=f"{api_stats['tokens']:,}"
+            )
+        
+        with col3:
+            st.metric(
+                label="Total Cost",
+                value=f"${api_stats['cost']:.4f}"
+            )
     
     # Sidebar with File Manager and Model Selector
     with st.sidebar:

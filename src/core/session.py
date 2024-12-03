@@ -19,7 +19,7 @@ class SessionManager:
                 'Chat principale': {
                     'messages': [{
                         "role": "assistant",
-                        "content": "Ciao! Carica dei file e fammi delle domande su di essi. Posso aiutarti ad analizzarli."
+                        "content": "SCIAU migo mi dai 1 eurrrrro!"
                     }],
                     'created_at': datetime.now().isoformat()
                 }
@@ -28,12 +28,27 @@ class SessionManager:
             st.session_state.current_model = 'o1-mini'
             st.session_state.files = {}
             st.session_state.current_file = None
-            # Track API usage
-            st.session_state.api_usage = {
-                'openai': {'total_tokens': 0, 'total_cost': 0.0},
-                'anthropic': {'total_tokens': 0, 'total_cost': 0.0}
+            # Nuovo tracking API
+            st.session_state.api_stats = {
+                'tokens': 0,
+                'cost': 0.0
             }
     
+    @staticmethod
+    def update_api_stats(tokens: int, cost: float):
+        """Aggiorna le statistiche delle API."""
+        if 'api_stats' not in st.session_state:
+            st.session_state.api_stats = {'tokens': 0, 'cost': 0.0}
+        st.session_state.api_stats['tokens'] += tokens
+        st.session_state.api_stats['cost'] += cost
+
+    @staticmethod
+    def get_api_stats():
+        """Ottiene le statistiche correnti delle API."""
+        if 'api_stats' not in st.session_state:
+            st.session_state.api_stats = {'tokens': 0, 'cost': 0.0}
+        return st.session_state.api_stats
+
     @staticmethod
     def update_api_usage(provider: str, tokens: int, cost: float):
         """Aggiorna l'utilizzo delle API."""
