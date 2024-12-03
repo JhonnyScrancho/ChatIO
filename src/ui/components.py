@@ -329,6 +329,11 @@ class ChatInterface:
         if not prompt.strip():
             return
 
+        # Controlla se l'ultimo messaggio è uguale per evitare duplicazioni
+        messages = st.session_state.chats[st.session_state.current_chat]['messages']
+        if messages and messages[-1].get("role") == "user" and messages[-1].get("content") == prompt:
+            return
+
         # Gestione immagine corrente se presente
         current_image = st.session_state.get('current_image')
         

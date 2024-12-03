@@ -193,11 +193,8 @@ def render_main_layout():
         st.markdown("<div style='height: 80px'></div>", unsafe_allow_html=True)
     
     # Fixed chat input at bottom
-    if prompt := st.chat_input("Ask something about your code..."):
-        clients['session'].add_message_to_current_chat({
-            "role": "user",
-            "content": prompt
-        })
+    if prompt := st.chat_input("Cazzo vuoi?"):
+        
         chat_interface.process_user_message(prompt)
 
 def main():
