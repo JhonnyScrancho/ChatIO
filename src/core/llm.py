@@ -4,7 +4,7 @@ Manages interactions with OpenAI and Anthropic models with proper error handling
 rate limiting, and model-specific optimizations.
 """
 
-from pandas import pd
+import pandas as pd
 from core.session import SessionManager
 import streamlit as st
 from typing import Dict, Optional, Tuple, Generator, List, Any, Union
