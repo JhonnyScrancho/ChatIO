@@ -277,18 +277,24 @@ class LLMManager:
                 'total_tokens': 0, 
                 'total_cost': 0.0
             }
-            
+        
+        # Calcola i totali dalla history completa
+        total_input = sum(stat['input_tokens'] for stat in st.session_state.message_stats)
+        total_output = sum(stat['output_tokens'] for stat in st.session_state.message_stats)
+        total_tokens = sum(stat['total_tokens'] for stat in st.session_state.message_stats)
+        total_cost = sum(stat['cost'] for stat in st.session_state.message_stats)
+        
         with st.expander("📊 Token Usage Statistics", expanded=False):
             # Mostra i totali aggiornati
             cols = st.columns(4)
             with cols[0]:
-                st.metric("Input Tokens", st.session_state.current_stats['input_tokens'])
+                st.metric("Input Tokens", total_input)
             with cols[1]:
-                st.metric("Output Tokens", st.session_state.current_stats['output_tokens'])
+                st.metric("Output Tokens", total_output)
             with cols[2]:
-                st.metric("Total Tokens", st.session_state.current_stats['total_tokens'])
+                st.metric("Total Tokens", total_tokens)
             with cols[3]:
-                st.metric("Cost ($)", f"${st.session_state.current_stats['total_cost']:.4f}")
+                st.metric("Cost ($)", f"${total_cost:.4f}")
                     
             # Mostra history completa
             if st.session_state.message_stats:
