@@ -68,7 +68,7 @@ def load_custom_css():
         }
 
         .stChatMessage {
-            padding: 0;
+            padding: 0.5rem 0;
             border-radius: 0.5rem;
             margin: 0.5rem 0 !important;
             max-width: none !important;
