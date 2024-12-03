@@ -787,18 +787,21 @@ class ModelSelector:
             if selected != current_model:
                 self.session.set_current_model(selected)
 
-            # Mostra info in un container dedicato
-            with st.container():
-                if selected == 'grok-vision-beta':
-                    st.info("💡 Grok Vision può analizzare immagini e generare descrizioni dettagliate.")
-                elif selected.startswith('claude'):
-                    st.info("💡 Claude eccelle nell'analisi di documenti lunghi e nella generazione di contenuti dettagliati.")
-                elif selected.startswith('o1'):
-                    st.info("💡 I modelli o1 offrono un ottimo bilanciamento tra velocità e qualità.")
-                elif selected.startswith('gpt'):
-                    st.info("💡 I modelli GPT-4 offrono capacità avanzate di ragionamento e analisi.")
-                elif selected.startswith('grok-beta'):
-                    st.info("💡 Grok offre un'intelligenza versatile e adattiva per vari compiti.")
+            # Info con stile corretto per Streamlit
+            info_text = None
+            if selected == 'grok-vision-beta':
+                info_text = "Grok Vision può analizzare immagini e generare descrizioni dettagliate."
+            elif selected.startswith('claude'):
+                info_text = "Claude eccelle nell'analisi di documenti lunghi e nella generazione di contenuti dettagliati."
+            elif selected.startswith('o1'):
+                info_text = "I modelli o1 offrono un ottimo bilanciamento tra velocità e qualità."
+            elif selected.startswith('gpt'):
+                info_text = "I modelli GPT-4 offrono capacità avanzate di ragionamento e analisi."
+            elif selected.startswith('grok-beta'):
+                info_text = "Grok offre un'intelligenza versatile e adattiva per vari compiti."
+
+            if info_text:
+                st.caption(f"💡 {info_text}")
 
 class StatsDisplay:
     """Componente per la visualizzazione delle statistiche."""
