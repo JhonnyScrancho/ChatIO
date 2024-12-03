@@ -17,10 +17,7 @@ class SessionManager:
             st.session_state.initialized = True
             st.session_state.chats = {
                 'Chat principale': {
-                    'messages': [{
-                        "role": "assistant",
-                        "content": "SCIAU migo mi dai 1 eurrrrro!"
-                    }],
+                    'messages': [],
                     'created_at': datetime.now().isoformat()
                 }
             }
