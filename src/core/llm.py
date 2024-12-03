@@ -239,7 +239,7 @@ class LLMManager:
                 model=model,
                 messages=messages,
                 stream=False,
-                max_tokens=32768 if model == "o1-preview" else 65536
+                max_completion_tokens=32768 if model == "o1-preview" else 65536  # Changed from max_tokens
             )
             
             # Aggiorniamo l'usage dai dati ricevuti
@@ -254,7 +254,7 @@ class LLMManager:
                 model=model,
                 messages=messages,
                 stream=True,
-                max_tokens=32768 if model == "o1-preview" else 65536
+                max_completion_tokens=32768 if model == "o1-preview" else 65536  # Changed from max_tokens
             )
             
             for chunk in completion:
