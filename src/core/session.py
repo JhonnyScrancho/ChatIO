@@ -22,7 +22,7 @@ class SessionManager:
                 }
             }
             st.session_state.current_chat = 'Chat principale'
-            st.session_state.current_model = 'o1-mini'
+            st.session_state.current_model = 'gpt-4o-mini'
             st.session_state.files = {}
             st.session_state.current_file = None
             # Nuovo tracking API
