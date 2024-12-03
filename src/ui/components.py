@@ -375,7 +375,6 @@ class FileExplorer:
 
 class ChatInterface:
     """Componente per l'interfaccia chat."""
-    
     def __init__(self):
         self.session = SessionManager()
         self.llm = LLMManager()
@@ -403,58 +402,87 @@ class ChatInterface:
                 "Descrivi questa immagine",
                 "Trova testo nell'immagine",
                 "Analizza i colori",
-                "Identifica gli oggetti",
-                "Analizza la composizione"
+                "Identifica gli oggetti"
             ]
         }
 
-
     def render_quick_prompts(self):
         """Renderizza i quick prompts sopra la chat input bar."""
+        # Inject CSS using markdown
         st.markdown("""
             <style>
-            .quick-prompts-container {
+            div.quick-prompts-wrapper {
                 position: fixed;
-                bottom: 80px;  /* Posiziona sopra la chat input bar */
+                bottom: 80px;
                 left: 0;
                 right: 0;
-                background: var(--background-color);
+                background: white;
                 padding: 8px 16px;
-                border-top: 1px solid var(--secondary-background-color);
-                z-index: 100;
+                border-top: 1px solid rgba(49, 51, 63, 0.2);
+                z-index: 999;
                 display: flex;
                 gap: 8px;
                 overflow-x: auto;
             }
             
-            .quick-prompt-btn {
-                background: var(--primary-color-light);
+            div.quick-prompts-wrapper button {
+                background-color: #f0f2f6;
                 border: none;
                 border-radius: 16px;
                 padding: 6px 12px;
                 font-size: 14px;
-                color: var(--text-color);
+                color: #31333F;
                 cursor: pointer;
                 white-space: nowrap;
                 transition: all 0.2s;
+                min-height: 32px;
+                line-height: 1.1;
+                margin: 0;
             }
             
-            .quick-prompt-btn:hover {
-                background: var(--primary-color);
-                color: white;
+            div.quick-prompts-wrapper button:hover {
+                background-color: #e0e2e6;
+                color: #131415;
+            }
+            
+            div.main .block-container {
+                padding-bottom: 140px;
+            }
+            
+            @media (max-width: 768px) {
+                div.quick-prompts-wrapper {
+                    padding: 8px;
+                }
+                
+                div.quick-prompts-wrapper button {
+                    padding: 4px 8px;
+                    font-size: 12px;
+                }
             }
             </style>
         """, unsafe_allow_html=True)
+
+        # Create container for quick prompts
+        prompts = self.quick_prompts.get(
+            st.session_state.current_model, 
+            self.quick_prompts['default']
+        )
+
+        # Create a container div with our custom class
+        st.markdown('<div class="quick-prompts-wrapper">', unsafe_allow_html=True)
         
-        # Usa columns per il layout
-        container = st.container()
-        with container:
-            cols = st.columns(4)
-            prompts = self.quick_prompts.get(st.session_state.current_model, self.quick_prompts['default'])
-            
-            for i, prompt in enumerate(prompts):
-                if cols[i % 4].button(prompt, key=f"quick_prompt_{i}", use_container_width=True):
+        # Use columns for responsive layout
+        cols = st.columns(len(prompts))
+        for i, prompt in enumerate(prompts):
+            with cols[i]:
+                if st.button(
+                    prompt,
+                    key=f"quick_prompt_{i}",
+                    use_container_width=True
+                ):
                     self.process_user_message(prompt)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
     def render_token_stats(self):
         """Renderizza le statistiche dei token."""
@@ -598,31 +626,16 @@ class ChatInterface:
 
     def render(self):
         """Renderizza l'interfaccia chat."""
+        # Render chat controls
         self.render_chat_controls()
+        
+        # Render token stats
         self.render_token_stats()
         
-        # Gestione immagini per Grok Vision
-        if st.session_state.current_model == 'grok-vision-beta':
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                uploaded_image = st.file_uploader(
-                    "Carica un'immagine da analizzare",
-                    type=['png', 'jpg', 'jpeg', 'gif'],
-                    key="image_uploader"
-                )
-            with col2:
-                if uploaded_image:
-                    st.image(uploaded_image, caption="Immagine caricata", use_column_width=True)
-            
-            if uploaded_image:
-                st.session_state.current_image = uploaded_image
-        
-        # Container per i messaggi
+        # Render messages container
         messages_container = st.container()
-        
         with messages_container:
             messages = st.session_state.chats[st.session_state.current_chat]['messages']
-            
             for message in messages:
                 with st.chat_message(message["role"]):
                     if isinstance(message["content"], str):
@@ -630,6 +643,13 @@ class ChatInterface:
                     elif isinstance(message["content"], dict) and "image" in message["content"]:
                         st.image(message["content"]["image"])
                         st.markdown(message["content"]["text"])
+        
+        # Render quick prompts
+        self.render_quick_prompts()
+        
+        # Render chat input
+        if prompt := st.chat_input("Come posso aiutarti?"):
+            self.process_user_message(prompt)
 
     def handle_user_input(self, prompt: str):
         """
