@@ -82,13 +82,21 @@ def render_main_layout():
         chat_interface = ChatInterface()
         chat_interface.render()
     
-        # Space for fixed input
-        st.markdown("<div style='height: 80px'></div>", unsafe_allow_html=True)
+        # Space for fixed input and quick prompts
+        # Quick prompts container - posizionato proprio sopra la chat input
+        quick_prompts_container = st.container()
+        with quick_prompts_container:
+            cols = st.columns(4)
+            prompts = chat_interface.quick_prompts.get(st.session_state.current_model, 
+                                                     chat_interface.quick_prompts['default'])
+            for i, prompt in enumerate(prompts):
+                if cols[i % 4].button(prompt, key=f"quick_prompt_{i}", 
+                                    use_container_width=True):
+                    chat_interface.process_user_message(prompt)
     
-    # Fixed chat input at bottom
-    if prompt := st.chat_input("Cazzo vuoi?"):
-        
-        chat_interface.process_user_message(prompt)
+        # Fixed chat input at bottom
+        if prompt := st.chat_input("Cazzo vuoi?"):
+            chat_interface.process_user_message(prompt)
 
 def main():
     """Main application function."""

@@ -596,62 +596,14 @@ class ChatInterface:
                 st.exception(e)
             st.rerun()
 
+    
     def render(self):
-        """Renderizza l'interfaccia chat con quick prompts."""
-        # Stile CSS per quick prompts e layout
-        st.markdown("""
-            <style>
-            /* Quick Prompts styling */
-            .quick-prompts {
-                position: fixed;
-                bottom: 80px;
-                left: 0;
-                right: 0;
-                background: white;
-                padding: 8px 16px;
-                border-top: 1px solid #e5e7eb;
-                z-index: 100;
-                margin-left: 15px;
-                margin-right: 15px;
-            }
-            
-            .stButton {
-                margin-right: 8px;
-            }
-            
-            .stButton > button {
-                border-radius: 20px;
-                padding: 2px 12px;
-                font-size: 14px;
-                border: 1px solid #e5e7eb;
-                background: white;
-            }
-            
-            .stButton > button:hover {
-                border-color: #1E88E5;
-                color: #1E88E5;
-                background: white;
-            }
-            
-            /* Padding per evitare sovrapposizioni */
-            .main .block-container {
-                padding-bottom: 160px !important;
-            }
-            
-            /* Stile per il file uploader di Grok Vision */
-            .grok-vision-uploader {
-                margin-bottom: 20px;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-
-        # Controlli chat e statistiche
+        """Renderizza l'interfaccia chat."""
         self.render_chat_controls()
         self.render_token_stats()
         
         # Gestione immagini per Grok Vision
         if st.session_state.current_model == 'grok-vision-beta':
-            st.markdown('<div class="grok-vision-uploader">', unsafe_allow_html=True)
             col1, col2 = st.columns([3, 1])
             with col1:
                 uploaded_image = st.file_uploader(
@@ -662,19 +614,16 @@ class ChatInterface:
             with col2:
                 if uploaded_image:
                     st.image(uploaded_image, caption="Immagine caricata", use_column_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
             
             if uploaded_image:
                 st.session_state.current_image = uploaded_image
-
-        # Container principale per i messaggi
+        
+        # Container per i messaggi
         messages_container = st.container()
         
         with messages_container:
-            # Ottieni tutti i messaggi
             messages = st.session_state.chats[st.session_state.current_chat]['messages']
             
-            # Renderizza i messaggi
             for message in messages:
                 with st.chat_message(message["role"]):
                     if isinstance(message["content"], str):
@@ -682,23 +631,6 @@ class ChatInterface:
                     elif isinstance(message["content"], dict) and "image" in message["content"]:
                         st.image(message["content"]["image"])
                         st.markdown(message["content"]["text"])
-        
-        # Quick Prompts sopra la chat input bar
-        with st.container():
-            st.markdown('<div class="quick-prompts">', unsafe_allow_html=True)
-            cols = st.columns(4)
-            prompts = self.quick_prompts.get(st.session_state.current_model, self.quick_prompts['default'])
-            for i, prompt in enumerate(prompts):
-                if cols[i % 4].button(prompt, key=f"quick_prompt_{i}"):
-                    self.process_user_message(prompt)
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Gestione quick prompt selezionato
-        if hasattr(st.session_state, 'process_quick_prompt') and st.session_state.process_quick_prompt:
-            prompt = st.session_state.quick_prompt_selected
-            self.process_user_message(prompt)
-            # Resetta il flag dopo il processing
-            st.session_state.process_quick_prompt = False
 
     def handle_user_input(self, prompt: str):
         """
