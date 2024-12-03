@@ -242,6 +242,63 @@ class LLMManager:
             'total_tokens': input_tokens + output_tokens,
             'cost': cost
         })
+
+    def update_message_stats(self, model: str, input_tokens: int, output_tokens: int, cost: float):
+        """Aggiorna le statistiche in modo atomico e sincronizzato."""
+        if 'message_stats' not in st.session_state:
+            st.session_state.message_stats = []
+            
+        # Aggiunge nuova entry nella history
+        new_stat = {
+            'timestamp': datetime.now().strftime('%H:%M:%S'),
+            'model': model,
+            'input_tokens': input_tokens,
+            'output_tokens': output_tokens,
+            'total_tokens': input_tokens + output_tokens,
+            'cost': round(cost, 4)  # Arrotondiamo a 4 decimali per consistenza
+        }
+        
+        st.session_state.message_stats.append(new_stat)
+        
+        # Aggiorna i totali
+        st.session_state.current_stats = {
+            'input_tokens': sum(stat['input_tokens'] for stat in st.session_state.message_stats),
+            'output_tokens': sum(stat['output_tokens'] for stat in st.session_state.message_stats),
+            'total_tokens': sum(stat['total_tokens'] for stat in st.session_state.message_stats),
+            'total_cost': round(sum(stat['cost'] for stat in st.session_state.message_stats), 4)
+        }  
+
+    def render_token_stats(self):
+        """Renderizza le statistiche in modo sincronizzato."""
+        if 'message_stats' not in st.session_state:
+            st.session_state.message_stats = []
+            st.session_state.current_stats = {
+                'input_tokens': 0, 
+                'output_tokens': 0,
+                'total_tokens': 0, 
+                'total_cost': 0.0
+            }
+            
+        with st.expander("📊 Token Usage Statistics", expanded=False):
+            # Mostra i totali aggiornati
+            cols = st.columns(4)
+            with cols[0]:
+                st.metric("Input Tokens", st.session_state.current_stats['input_tokens'])
+            with cols[1]:
+                st.metric("Output Tokens", st.session_state.current_stats['output_tokens'])
+            with cols[2]:
+                st.metric("Total Tokens", st.session_state.current_stats['total_tokens'])
+            with cols[3]:
+                st.metric("Cost ($)", f"${st.session_state.current_stats['total_cost']:.4f}")
+                    
+            # Mostra history completa
+            if st.session_state.message_stats:
+                st.markdown("### History")
+                df = pd.DataFrame(st.session_state.message_stats)
+                st.dataframe(
+                    df.sort_values('timestamp', ascending=False),
+                    use_container_width=True
+                )
     
     def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
         """Gestisce le chiamate ai modelli o1."""
