@@ -403,6 +403,40 @@ class ChatInterface:
             ]
         }
 
+    def create_new_chat(self):
+        """Crea una nuova chat."""
+        # Genera un nome unico per la nuova chat
+        base_name = "Nuova chat"
+        counter = 1
+        new_name = base_name
+        while new_name in st.session_state.chats:
+            new_name = f"{base_name} {counter}"
+            counter += 1
+        
+        # Crea la nuova chat
+        st.session_state.chats[new_name] = {
+            'messages': [],
+            'created_at': datetime.now().isoformat()
+        }
+        st.session_state.current_chat = new_name
+        st.rerun()
+
+    def delete_current_chat(self):
+        """Elimina la chat corrente."""
+        if len(st.session_state.chats) > 1:  # Mantieni almeno una chat
+            del st.session_state.chats[st.session_state.current_chat]
+            st.session_state.current_chat = list(st.session_state.chats.keys())[0]
+            st.rerun()
+
+    def rename_chat(self, new_name: str):
+        """Rinomina la chat corrente."""
+        if new_name and new_name != st.session_state.current_chat:
+            if new_name not in st.session_state.chats:
+                st.session_state.chats[new_name] = st.session_state.chats.pop(st.session_state.current_chat)
+                st.session_state.current_chat = new_name
+                st.rerun()
+
+    
     def render_quick_prompts(self):
         """Renderizza i quick prompts sopra la chat input bar."""
         # Inject CSS using markdown
@@ -621,6 +655,41 @@ class ChatInterface:
                 st.exception(e)
             st.rerun()
 
+    def handle_user_input(self, prompt: str):
+        """
+        Gestisce l'input dell'utente in modo sicuro.
+        """
+        if not hasattr(st.session_state, 'processing'):
+            st.session_state.processing = False
+            
+        if not st.session_state.processing and prompt:
+            st.session_state.processing = True
+            self.process_user_message(prompt)
+            st.session_state.processing = False
+
+    def render_chat_controls(self):
+        """Renderizza i controlli della chat."""
+        col1, col2, col3 = st.columns([4, 1, 1])
+        
+        with col1:
+            current_chat = st.selectbox(
+                " ",
+                options=list(st.session_state.chats.keys()),
+                index=list(st.session_state.chats.keys()).index(st.session_state.current_chat),
+                label_visibility="collapsed"
+            )
+            if current_chat != st.session_state.current_chat:
+                st.session_state.current_chat = current_chat
+                st.rerun()
+            
+        with col2:
+            if st.button("🆕", help="Nuova chat"):
+                self.create_new_chat()
+                
+        with col3:
+            if len(st.session_state.chats) > 1 and st.button("🗑️", help="Elimina chat"):
+                self.delete_current_chat()
+
     def render(self):
         """Renderizza l'interfaccia chat."""
         # Render chat controls
@@ -639,39 +708,7 @@ class ChatInterface:
                         st.markdown(message["content"])
                     elif isinstance(message["content"], dict) and "image" in message["content"]:
                         st.image(message["content"]["image"])
-                        st.markdown(message["content"]["text"])
-
-    def handle_user_input(self, prompt: str):
-        """
-        Gestisce l'input dell'utente in modo sicuro.
-        """
-        if not hasattr(st.session_state, 'processing'):
-            st.session_state.processing = False
-            
-        if not st.session_state.processing and prompt:
-            st.session_state.processing = True
-            self.process_user_message(prompt)
-            st.session_state.processing = False
-
-    def render_chat_controls(self):
-        """Renderizza i controlli chat in modo minimale."""
-        col1, col2, col3 = st.columns([4, 1, 1])
-        
-        with col1:
-            current_chat = st.selectbox(
-                " ",
-                options=list(st.session_state.chats.keys()),
-                index=list(st.session_state.chats.keys()).index(st.session_state.current_chat),
-                label_visibility="collapsed"
-            )
-            
-        with col2:
-            if st.button("🆕", help="Nuova chat"):
-                self.create_new_chat()
-                
-        with col3:
-            if len(st.session_state.chats) > 1 and st.button("🗑️", help="Elimina chat"):
-                self.delete_current_chat()
+                        st.markdown(message["content"]["text"])            
 
 class CodeViewer:
     """Componente per la visualizzazione del codice."""
