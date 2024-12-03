@@ -29,6 +29,18 @@ from src.core.llm import LLMManager
 from src.core.files import FileManager
 from src.ui.components import FileExplorer, ChatInterface, ModelSelector, load_custom_css
 
+def reset_app():
+    """Reset the entire application state."""
+    # Clear all caches
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    
+    # Reset session state
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    
+    # Force rerun
+    st.rerun()
 
 def check_environment():
     """Verify required secrets are present."""
@@ -104,7 +116,7 @@ def render_main_layout():
         </style>
     """, unsafe_allow_html=True)
     
-    # Header area
+# Header area
     header_container = st.container()
     with header_container:
         col1, col2 = st.columns([6,1])
@@ -112,9 +124,7 @@ def render_main_layout():
             st.title("👲🏿 Allegro")
         with col2:
             if st.button("🔄 Reset"):
-                st.cache_data.clear()
-                st.cache_resource.clear()
-                st.rerun()
+                reset_app()
         
     # Sidebar
     with st.sidebar:
@@ -132,18 +142,22 @@ def render_main_layout():
         chat_interface.render()
     
     # Footer con quick prompts e input
-    cols = st.columns(4)
-    prompts = chat_interface.quick_prompts.get(st.session_state.current_model, 
-                                             chat_interface.quick_prompts['default'])
-    # Quick prompts all'interno del container di input
-    for i, prompt in enumerate(prompts):
-        if cols[i % 4].button(prompt, key=f"quick_prompt_{i}", 
-                            use_container_width=True):
+    footer_container = st.container()
+    with footer_container:
+        prompts = chat_interface.quick_prompts.get(
+            st.session_state.current_model, 
+            chat_interface.quick_prompts['default']
+        )
+        
+        cols = st.columns(4)
+        for i, prompt in enumerate(prompts):
+            if cols[i % 4].button(prompt, key=f"quick_prompt_{i}", 
+                                use_container_width=True):
+                chat_interface.process_user_message(prompt)
+        
+        # Chat input
+        if prompt := st.chat_input("Tu chiedere, io rispondere"):
             chat_interface.process_user_message(prompt)
-    
-    # Chat input
-    if prompt := st.chat_input("Tu chiedere, io rispondere"):
-        chat_interface.process_user_message(prompt)
 
 def main():
     """Main application function."""

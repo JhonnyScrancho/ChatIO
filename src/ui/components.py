@@ -733,29 +733,70 @@ class ModelSelector:
     
     def render(self):
         """Renderizza il componente."""
+        # Modelli raggruppati per provider
         models = {
-            'o1-mini': '🚀 O1 Mini (Fast)',
-            'o1-preview': '🔍 O1 Preview (Advanced)',
-            'claude-3-5-sonnet-20241022': '🎭 Claude 3.5 Sonnet (Detailed)',
-            'grok-beta': '🤖 Grok Beta (Smart)',
-            'grok-vision-beta': '👁️ Grok Vision (Image Analysis)'
+            "OpenAI": {
+                'o1-mini-2024-09-12': '🚀 o1 Mini (Fast)',
+                'o1-preview-2024-09-12': '🔍 o1 Preview (Advanced)',
+                'gpt-4o': '🧠 GPT-4o (Powerful)',
+                'gpt-4o-mini': '⚡ GPT-4o Mini (Efficient)',
+            },
+            "Anthropic": {
+                'claude-3-5-sonnet-20241022': '🎭 Claude 3.5 Sonnet (Detailed)',
+            },
+            "X.AI": {
+                'grok-beta': '🤖 Grok Beta (Smart)',
+                'grok-vision-beta': '👁️ Grok Vision (Image Analysis)'
+            }
         }
         
+        # Header per la selezione
+        st.markdown("#### Select AI Model")
+        
+        # Ottieni il modello corrente
         current_model = self.session.get_current_model()
+        
+        # Crea una lista piatta di tutti i modelli per il selectbox
+        all_models = []
+        model_options = []
+        
+        for provider, provider_models in models.items():
+            # Aggiungi l'header del provider come opzione non selezionabile
+            all_models.append(f"──── {provider} ────")
+            model_options.append({"label": f"──── {provider} ────", "disabled": True})
+            
+            # Aggiungi i modelli di questo provider
+            for model_id, model_name in provider_models.items():
+                all_models.append(model_id)
+                model_options.append({"label": model_name, "value": model_id})
+        
+        # Trova l'indice del modello corrente
+        try:
+            current_index = all_models.index(current_model)
+        except ValueError:
+            current_index = all_models.index('o1-mini-2024-09-12')  # Default
+        
+        # Crea il selectbox con i gruppi
         selected = st.selectbox(
-            " ",  # Spazio vuoto invece di "Select Model"
-            list(models.keys()),
-            format_func=lambda x: models[x],
-            index=list(models.keys()).index(current_model),
-            label_visibility="collapsed"  # Nasconde il label
+            " ",
+            options=all_models,
+            format_func=lambda x: next((m["label"] for m in model_options if getattr(m, "value", m["label"]) == x), x),
+            index=current_index,
+            label_visibility="collapsed"
         )
         
-        if selected != current_model:
-            self.session.set_current_model(selected)
+        # Aggiorna solo se è stata selezionata un'opzione valida (non un header)
+        if selected and not selected.startswith('────'):
+            if selected != current_model:
+                self.session.set_current_model(selected)
             
-        # Mostra info aggiuntive per Grok Vision
-        if selected == 'grok-vision-beta':
-            st.info("💡 Grok Vision può analizzare immagini.")
+            # Mostra info aggiuntive per modelli specifici
+            if selected == 'grok-vision-beta':
+                st.info("💡 Grok Vision può analizzare immagini e generare descrizioni dettagliate.")
+            elif selected.startswith('claude'):
+                st.info("💡 Claude eccelle nell'analisi di documenti lunghi e nella generazione di contenuti dettagliati.")
+            elif selected.startswith('o1'):
+                st.info("💡 I modelli o1 offrono un ottimo bilanciamento tra velocità e qualità.")
 
 class StatsDisplay:
     """Componente per la visualizzazione delle statistiche."""
