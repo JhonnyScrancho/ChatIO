@@ -107,7 +107,14 @@ def render_main_layout():
     # Header area
     header_container = st.container()
     with header_container:
-        st.title("👲🏿 Allegro")
+        col1, col2 = st.columns([6,1])
+        with col1:
+            st.title("👲🏿 Allegro")
+        with col2:
+            if st.button("🔄 Reset"):
+                st.cache_data.clear()
+                st.cache_resource.clear()
+                st.experimental_rerun()
         
     # Sidebar
     with st.sidebar:
@@ -135,7 +142,7 @@ def render_main_layout():
             chat_interface.process_user_message(prompt)
     
     # Chat input
-    if prompt := st.chat_input("Cazzo vuoi?"):
+    if prompt := st.chat_input("Tu chiedere, io rispondere"):
         chat_interface.process_user_message(prompt)
 
 def main():
