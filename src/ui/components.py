@@ -25,9 +25,9 @@ def load_custom_css():
         
         /* Chat Messages */
         .stChatMessage {
-            padding: 0.75rem 1rem;
+            padding: 0;
             border-radius: 0.5rem;
-            margin: 0.5rem 0;
+            margin: 0;
         }
         
         /* Assistant Message */
