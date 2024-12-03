@@ -34,6 +34,20 @@ class LLMManager:
             api_key=st.secrets["XAI_API_KEY"],
             base_url="https://api.x.ai/v1"
         )
+
+        # Initialize session state for message stats
+        if 'message_stats' not in st.session_state:
+            st.session_state.message_stats = []
+        
+        # Initialize total_stats in session state
+        if 'total_stats' not in st.session_state:
+            st.session_state.total_stats = {
+                'input_tokens': 0,
+                'output_tokens': 0,
+                'total_tokens': 0,
+                'total_cost': 0.0
+            }
+        
         
         # Costi per 1K tokens (in USD)
         self.cost_map = {
@@ -234,64 +248,49 @@ class LLMManager:
         return delay + jitter
 
     def update_message_stats(self, model: str, input_tokens: int, output_tokens: int, cost: float):
-        """Aggiorna le statistiche in modo atomico e sincronizzato."""
-        if 'message_stats' not in st.session_state:
-            st.session_state.message_stats = []
-            
-        # Aggiunge nuova entry nella history
+        """
+        Aggiorna le statistiche dei messaggi in modo atomico e sincronizzato.
+        
+        Args:
+            model: Nome del modello
+            input_tokens: Numero di token in input
+            output_tokens: Numero di token in output
+            cost: Costo della chiamata
+        """
+        # Add new entry to message history
         new_stat = {
             'timestamp': datetime.now().strftime('%H:%M:%S'),
             'model': model,
             'input_tokens': input_tokens,
             'output_tokens': output_tokens,
             'total_tokens': input_tokens + output_tokens,
-            'cost': cost  # Il costo viene già calcolato prima di chiamare questa funzione
+            'cost': cost
         }
         
-        # Salva nella session state
-        if not hasattr(st.session_state, 'message_stats'):
-            st.session_state.message_stats = []
-        
+        # Update message stats
         st.session_state.message_stats.append(new_stat)
         
-        # Calcola e salva i totali
-        st.session_state.total_stats = {
-            'input_tokens': sum(stat['input_tokens'] for stat in st.session_state.message_stats),
-            'output_tokens': sum(stat['output_tokens'] for stat in st.session_state.message_stats),
-            'total_tokens': sum(stat['total_tokens'] for stat in st.session_state.message_stats),
-            'total_cost': sum(stat['cost'] for stat in st.session_state.message_stats)
-        }
+        # Update total stats
+        st.session_state.total_stats['input_tokens'] += input_tokens
+        st.session_state.total_stats['output_tokens'] += output_tokens
+        st.session_state.total_stats['total_tokens'] += (input_tokens + output_tokens)
+        st.session_state.total_stats['total_cost'] += cost
 
     def render_token_stats(self):
         """Renderizza le statistiche in modo sincronizzato."""
-        if 'message_stats' not in st.session_state:
-            st.session_state.message_stats = []
-            st.session_state.current_stats = {
-                'input_tokens': 0, 
-                'output_tokens': 0,
-                'total_tokens': 0, 
-                'total_cost': 0.0
-            }
-        
-        # Calcola i totali dalla history completa
-        total_input = sum(stat['input_tokens'] for stat in st.session_state.message_stats)
-        total_output = sum(stat['output_tokens'] for stat in st.session_state.message_stats)
-        total_tokens = sum(stat['total_tokens'] for stat in st.session_state.message_stats)
-        total_cost = sum(stat['cost'] for stat in st.session_state.message_stats)
-        
         with st.expander("📊 Token Usage Statistics", expanded=False):
-            # Mostra i totali aggiornati
+            # Show current totals
             cols = st.columns(4)
             with cols[0]:
-                st.metric("Input Tokens", total_input)
+                st.metric("Input Tokens", st.session_state.total_stats['input_tokens'])
             with cols[1]:
-                st.metric("Output Tokens", total_output)
+                st.metric("Output Tokens", st.session_state.total_stats['output_tokens'])
             with cols[2]:
-                st.metric("Total Tokens", total_tokens)
+                st.metric("Total Tokens", st.session_state.total_stats['total_tokens'])
             with cols[3]:
-                st.metric("Cost ($)", f"${total_cost:.4f}")
-                    
-            # Mostra history completa
+                st.metric("Cost ($)", f"${st.session_state.total_stats['total_cost']:.4f}")
+            
+            # Show complete history
             if st.session_state.message_stats:
                 st.markdown("### History")
                 df = pd.DataFrame(st.session_state.message_stats)
