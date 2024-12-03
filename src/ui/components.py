@@ -319,16 +319,19 @@ class ChatInterface:
     
 
     def process_user_message(self, prompt: str):
-        """Processa un messaggio utente con supporto per immagini."""
+        """
+        Processa un messaggio utente con supporto per immagini e gestione completa degli errori.
+        
+        Args:
+            prompt: Il messaggio dell'utente da processare
+        """
         if not prompt.strip():
             return
 
-        # Prima mostriamo il messaggio dell'utente
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        # Aggiungi il messaggio utente
+        # Gestione immagine corrente se presente
         current_image = st.session_state.get('current_image')
+        
+        # Prepara il contenuto del messaggio
         if current_image and st.session_state.current_model == 'grok-vision-beta':
             message_content = {
                 "image": current_image,
@@ -337,42 +340,68 @@ class ChatInterface:
         else:
             message_content = prompt
 
+        # Aggiungi il messaggio utente alla chat
         st.session_state.chats[st.session_state.current_chat]['messages'].append({
             "role": "user",
             "content": message_content
         })
 
-        # Container per la risposta
-        response_container = st.empty()
-        
         try:
-            # Processa la richiesta in base al tipo
+            # Prepara il generatore di risposta appropriato
             if current_image and st.session_state.current_model == 'grok-vision-beta':
                 image_bytes = current_image.getvalue()
                 response_generator = self.llm.process_image_request(image_bytes, prompt)
             else:
-                response_generator = self.llm.process_request(prompt=prompt)
+                # Ottieni il contesto dai file se presenti
+                context = ""
+                if hasattr(st.session_state, 'uploaded_files') and st.session_state.uploaded_files:
+                    for filename, file_info in st.session_state.uploaded_files.items():
+                        context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
+                
+                response_generator = self.llm.process_request(
+                    prompt=prompt,
+                    context=context
+                )
 
-            # Accumula e mostra la risposta
+            # Accumula la risposta completa
             response = ""
             with st.spinner("Elaborazione in corso..."):
                 for chunk in response_generator:
                     if chunk:
                         response += chunk
-                        with response_container:
-                            with st.chat_message("assistant"):
-                                st.markdown(response)
-
-            # Aggiungi la risposta completa alla chat
+                        
+            # Aggiungi la risposta completa alla chat solo se non è vuota
             if response.strip():
                 st.session_state.chats[st.session_state.current_chat]['messages'].append({
                     "role": "assistant",
                     "content": response
                 })
+                
+            # Aggiorna le statistiche dei token se disponibili
+            if hasattr(self.llm, 'update_message_stats'):
+                self.llm.update_message_stats(
+                    model=st.session_state.current_model,
+                    input_tokens=len(prompt) // 4,  # Stima approssimativa
+                    output_tokens=len(response) // 4,  # Stima approssimativa
+                    cost=0.0  # Il costo verrà calcolato dal LLMManager
+                )
+                
+            # Forza il rerun di Streamlit per aggiornare l'interfaccia in modo pulito
+            st.rerun()
 
         except Exception as e:
-            error_msg = f"Si è verificato un errore: {str(e)}"
+            error_msg = f"Si è verificato un errore durante l'elaborazione: {str(e)}"
             st.error(error_msg)
+            
+            # Aggiungi il messaggio di errore alla chat
+            st.session_state.chats[st.session_state.current_chat]['messages'].append({
+                "role": "assistant",
+                "content": f"🚨 {error_msg}"
+            })
+            
+            # Log dell'errore per debug
+            if st.session_state.config.get('DEBUG', False):
+                st.exception(e)
 
 
     def render(self):
@@ -408,18 +437,19 @@ class ChatInterface:
         
         # Container per i messaggi
         messages_container = st.container()
-    
+        
         with messages_container:
-            for message in st.session_state.chats[st.session_state.current_chat]['messages']:
-                role = message["role"]
-                content = message["content"]
-                
-                with st.chat_message(role):
-                    if isinstance(content, str):
-                        st.markdown(content)
-                    elif isinstance(content, dict) and "image" in content:
-                        st.image(content["image"])
-                        st.markdown(content["text"])
+            # Ottieni tutti i messaggi
+            messages = st.session_state.chats[st.session_state.current_chat]['messages']
+            
+            # Renderizza i messaggi in ordine inverso
+            for message in messages:
+                with st.chat_message(message["role"]):
+                    if isinstance(message["content"], str):
+                        st.markdown(message["content"])
+                    elif isinstance(message["content"], dict) and "image" in message["content"]:
+                        st.image(message["content"]["image"])
+                        st.markdown(message["content"]["text"])
 
     def handle_user_input(self, prompt: str):
         """
