@@ -257,7 +257,7 @@ class LLMManager:
                 model=model,
                 messages=messages,
                 stream=True,
-                max_tokens=self.model_limits[model]['max_tokens']
+                max_completion_tokens=self.model_limits[model]['max_tokens']  # Cambiato da max_tokens a max_completion_tokens
             )
             
             for chunk in completion:
