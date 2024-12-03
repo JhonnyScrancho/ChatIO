@@ -3,6 +3,7 @@ Allegro IO Code Assistant - Main Application
 Streamlit-based interface for code analysis using LLMs.
 """
 
+import time
 import streamlit as st
 from dotenv import load_dotenv
 from pathlib import Path
@@ -33,12 +34,90 @@ from src.core.files import FileManager
 from src.ui.components import FileExplorer, ChatInterface, ModelSelector, load_custom_css
 
 
+def show_reset_animation():
+    """
+    Mostra un'animazione di reset con progresso.
+    """
+    # Aggiungi stile CSS per l'overlay di reset
+    st.markdown("""
+        <style>
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .reset-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(255, 255, 255, 0.9);
+            z-index: 999999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+        }
+        
+        .reset-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        .reset-text {
+            margin-top: 20px;
+            font-size: 1.2em;
+            color: #2c3e50;
+        }
+        
+        .progress-bar {
+            width: 300px;
+            height: 4px;
+            background-color: #f3f3f3;
+            border-radius: 2px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+        
+        .progress-value {
+            width: 0%;
+            height: 100%;
+            background-color: #3498db;
+            animation: progress 2s ease-in-out forwards;
+        }
+        
+        @keyframes progress {
+            0% { width: 0%; }
+            100% { width: 100%; }
+        }
+        </style>
+        
+        <div class="reset-overlay">
+            <div class="reset-spinner"></div>
+            <div class="reset-text">Resetting Allegro...</div>
+            <div class="progress-bar">
+                <div class="progress-value"></div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Forza un breve delay per mostrare l'animazione
+    time.sleep(2)
+
 def perform_full_reset():
     """
-    Esegue un reset completo dell'applicazione con feedback visivo.
-    Pulisce tutte le cache, lo stato della sessione e reinizializza i manager.
+    Esegue un reset completo dell'applicazione con animazione.
     """
     try:
+        # Mostra l'animazione di reset
+        show_reset_animation()
+        
         # Clear all Streamlit caches
         st.cache_data.clear()
         st.cache_resource.clear()
