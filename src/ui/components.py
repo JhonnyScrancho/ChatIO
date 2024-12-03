@@ -10,6 +10,12 @@ from src.core.files import FileManager
 from src.core.llm import LLMManager
 from typing import Dict, Any
 
+def load_custom_css():
+    """Load unified custom CSS styles."""
+    st.markdown("""
+        <style>
+        </style>
+    """, unsafe_allow_html=True)
 
 class FileExplorer:
     """Component per l'esplorazione e l'upload dei file."""
