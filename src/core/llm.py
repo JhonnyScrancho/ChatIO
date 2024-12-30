@@ -7,7 +7,7 @@ rate limiting, and model-specific optimizations.
 import pandas as pd
 from core.session import SessionManager
 import streamlit as st
-from typing import Dict, Optional, Tuple, Generator, List, Any, Union, AsyncGenerator
+from typing import Dict, Optional, Tuple, Generator, List, Any, Union
 from openai import OpenAI
 from anthropic import Anthropic
 import time
@@ -33,10 +33,6 @@ class LLMManager:
         self.grok_client = OpenAI(
             api_key=st.secrets["XAI_API_KEY"],
             base_url="https://api.x.ai/v1"
-        )
-        self.deepseek_client = OpenAI(
-            api_key=st.secrets["DEEPSEEK_API_KEY"],
-            base_url="https://api.deepseek.com"
         )
 
         # Initialize session state for message stats
@@ -69,10 +65,6 @@ class LLMManager:
             'claude-3-haiku': {'input': 0.00025, 'output': 0.00125},  # $0.25 e $1.25 per milione
             'grok-beta': {'input': 0.0006, 'output': 0.0008},     # $0.60 e $0.80 per milione
             'grok-vision-beta': {'input': 0.00024, 'output': 0.00024},  # $0.24 e $0.24 per milione
-            'deepseek-chat': {
-                'input': 0.014,  # $0.014 per 1M tokens (input)
-                'output': 0.028  # $0.028 per 1M tokens (output)
-            },
         }
         
         # Limiti dei modelli
@@ -126,14 +118,7 @@ class LLMManager:
                 'supports_system_message': True,
                 'supports_functions': True,
                 'supports_vision': True
-            },
-            'deepseek-chat': {
-                'max_tokens': 8192,
-                'context_window': 64000,  # Aggiornato a 64K
-                'supports_files': False,
-                'supports_system_message': True,
-                'supports_functions': True
-            },
+            }
         }
         
         # Template di sistema per diversi tipi di analisi
@@ -184,16 +169,12 @@ class LLMManager:
         if requires_vision:
             return "grok-vision-beta"
         
-        # Stima tokens (1 token ~ 4 caratteri)
-        estimated_tokens = content_length // 4
-        
-        # Aggiungi logica per DeepSeek - spostata qui
-        if task_type in ["code", "programming"] and estimated_tokens <= 8000:
-            return "deepseek-chat"
-        
         # Se richiede gestione file complessa, usa Claude
         if requires_file_handling and content_length > 8000:
             return "claude-3-5-sonnet-20241022"
+        
+        # Stima tokens (1 token ~ 4 caratteri)
+        estimated_tokens = content_length // 4
         
         # Per task più complessi con contesto limitato, usa Grok Beta
         if task_type in ["review", "architecture"] and estimated_tokens <= 8000:
@@ -210,7 +191,7 @@ class LLMManager:
         # Per task più semplici usa o1-mini
         return "o1-mini"
     
-    async def _handle_grok_completion(self, messages: List[Dict], model: str) -> AsyncGenerator[str, None]:
+    def _handle_grok_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
         """
         Gestisce le chiamate ai modelli Grok.
         
@@ -224,14 +205,14 @@ class LLMManager:
         try:
             self._enforce_rate_limit(model)
             
-            completion = await self.grok_client.chat.completions.create(
+            completion = self.grok_client.chat.completions.create(
                 model=model,
                 messages=messages,
                 stream=True,
                 max_tokens=4096
             )
             
-            async for chunk in completion:
+            for chunk in completion:
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
                     
@@ -354,13 +335,13 @@ class LLMManager:
                     use_container_width=True
                 )
     
-    async def _handle_gpt4o_completion(self, messages: List[Dict], model: str) -> AsyncGenerator[str, None]:
+    def _handle_gpt4o_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
         """Gestisce le chiamate ai modelli GPT-4o."""
         try:
             self._enforce_rate_limit(model)
             
             # Prima facciamo una chiamata non-streaming per ottenere l'usage
-            usage_response = await self.openai_client.chat.completions.create(
+            usage_response = self.openai_client.chat.completions.create(
                 model=model,
                 messages=messages,
                 stream=False,
@@ -384,14 +365,14 @@ class LLMManager:
                 )
             
             # Poi facciamo la chiamata streaming per la risposta effettiva
-            completion = await self.openai_client.chat.completions.create(
+            completion = self.openai_client.chat.completions.create(
                 model=model,
                 messages=messages,
                 stream=True,
                 max_tokens=4096
             )
             
-            async for chunk in completion:
+            for chunk in completion:
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
                     
@@ -400,13 +381,13 @@ class LLMManager:
             st.error(error_msg)
             yield error_msg
     
-    async def _handle_o1_completion(self, messages: List[Dict], model: str) -> AsyncGenerator[str, None]:
+    def _handle_o1_completion(self, messages: List[Dict], model: str) -> Generator[str, None, None]:
         """Gestisce le chiamate ai modelli o1."""
         try:
             self._enforce_rate_limit(model)
             
             # Prima facciamo una chiamata non-streaming per ottenere l'usage
-            usage_response = await self.openai_client.chat.completions.create(
+            usage_response = self.openai_client.chat.completions.create(
                 model=model,
                 messages=messages,
                 stream=False,
@@ -430,14 +411,14 @@ class LLMManager:
                 )
             
             # Poi facciamo la chiamata streaming per la risposta effettiva
-            completion = await self.openai_client.chat.completions.create(
+            completion = self.openai_client.chat.completions.create(
                 model=model,
                 messages=messages,
                 stream=True,
                 max_completion_tokens=32768 if model == "o1-preview" else 65536
             )
             
-            async for chunk in completion:
+            for chunk in completion:
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
                     
@@ -446,8 +427,8 @@ class LLMManager:
             st.error(error_msg)
             yield error_msg
 
-    async def _handle_claude_completion_with_user_control(self, messages: List[Dict], 
-                                        placeholder: st.empty) -> AsyncGenerator[str, None]:
+    def _handle_claude_completion_with_user_control(self, messages: List[Dict], 
+                                           placeholder: st.empty) -> Generator[str, None, None]:
         for attempt in range(self.MAX_RETRIES):
             try:
                 self._enforce_rate_limit("claude-3-5-sonnet-20241022")
@@ -465,7 +446,7 @@ class LLMManager:
                         })
                 
                 # Crea la richiesta per Claude con il formato corretto
-                response = await self.anthropic_client.messages.create(
+                response = self.anthropic_client.messages.create(
                     model="claude-3-5-sonnet-20241022",
                     max_tokens=4096,
                     messages=filtered_messages,
@@ -486,7 +467,7 @@ class LLMManager:
                         cost
                     )
                 
-                async for chunk in response:
+                for chunk in response:
                     if chunk.type == 'content_block_delta':
                         yield chunk.delta.text
                         
@@ -511,13 +492,11 @@ class LLMManager:
                             continue
                         elif switch_o1:
                             st.info("Passaggio a O1-preview...")
-                            async for chunk in self._handle_o1_completion(messages, "o1-preview"):
-                                yield chunk
+                            yield from self._handle_o1_completion(messages, "o1-preview")
                             return
                         elif switch_mini:
                             st.info("Passaggio a O1-mini...")
-                            async for chunk in self._handle_o1_completion(messages, "o1-mini"):
-                                yield chunk
+                            yield from self._handle_o1_completion(messages, "o1-mini")
                             return
                         else:
                             st.stop()
@@ -664,8 +643,11 @@ class LLMManager:
 
         return messages
 
-    async def process_image_request(self, image: Union[str, bytes, Image.Image], 
-                        prompt: str) -> AsyncGenerator[str, None]:
+    def process_image_request(self, image: Union[str, bytes, Image.Image], 
+                        prompt: str) -> Generator[str, None, None]:
+        """
+        Processa una richiesta specifica per l'analisi di immagini.
+        """
         messages = self.prepare_prompt(
             prompt=prompt,
             model="grok-vision-beta",
@@ -673,13 +655,13 @@ class LLMManager:
         )
 
         try:
-            completion = await self.grok_client.chat.completions.create(
+            completion = self.grok_client.chat.completions.create(
                 model="grok-vision-beta",
                 messages=messages,
                 stream=True
             )
             
-            async for chunk in completion:
+            for chunk in completion:
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
                     
@@ -688,10 +670,10 @@ class LLMManager:
             st.error(error_msg)
             yield error_msg
     
-    async def process_request(self, prompt: str, analysis_type: Optional[str] = None,
+    def process_request(self, prompt: str, analysis_type: Optional[str] = None,
                    file_content: Optional[str] = None, 
                    context: Optional[str] = None,
-                   image: Optional[str] = None) -> AsyncGenerator[str, None]:
+                   image: Optional[str] = None) -> Generator[str, None, None]:
         """Processa una richiesta completa con controllo utente sul retry e fallback."""
         model = st.session_state.current_model
         messages = self.prepare_prompt(
@@ -707,34 +689,21 @@ class LLMManager:
         placeholder = st.empty()
         
         try:
-            if model == "deepseek-chat":
-                provider = LLMProvider(
-                    api_key=st.secrets["DEEPSEEK_API_KEY"],
-                    model="deepseek-chat",
-                    base_url="https://api.deepseek.com"
-                )
-                async for chunk in await provider.generate_response(messages, stream=True):
-                    yield chunk
-            elif model.startswith('grok'):
-                async for chunk in self._handle_grok_completion(messages, model):
-                    yield chunk
+            if model.startswith('grok'):
+                yield from self._handle_grok_completion(messages, model)
             elif model.startswith('o1'):
-                async for chunk in self._handle_o1_completion(messages, model):
-                    yield chunk
+                yield from self._handle_o1_completion(messages, model)
             elif model.startswith('gpt-4o'):
-                async for chunk in self._handle_gpt4o_completion(messages, model):
-                    yield chunk
+                yield from self._handle_gpt4o_completion(messages, model)
             else:
-                async for chunk in self._handle_claude_completion_with_user_control(messages, placeholder):
-                    yield chunk
+                yield from self._handle_claude_completion_with_user_control(messages, placeholder)
                 
         except Exception as e:
             error_msg = f"Errore generale: {str(e)}"
             st.error(error_msg)
             with placeholder.container():
                 if st.button("🔄 Riprova con un altro modello"):
-                    async for chunk in self._handle_o1_completion(messages, "o1-mini"):
-                        yield chunk
+                    yield from self._handle_o1_completion(messages, "o1-mini")
 
     def calculate_cost(self, model: str, input_tokens: int, 
                       output_tokens: int) -> float:
@@ -781,40 +750,3 @@ class LLMManager:
                 ).strftime('%Y-%m-%d %H:%M:%S')
             }
         }
-
-class LLMProvider:
-    def __init__(self, api_key: str, model: str = None, base_url: str = None):
-        self.api_key = api_key
-        self.model = model
-        self.base_url = base_url
-        
-        if "deepseek" in (model or ""):
-            self.client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-        else:
-            self.client = OpenAI(api_key=api_key)
-
-    async def generate_response(self, messages: list, stream: bool = False) -> Union[str, AsyncGenerator]:
-        try:
-            if "deepseek" in (self.model or ""):
-                model = "deepseek-chat"
-            else:
-                model = self.model or "gpt-3.5-turbo"
-
-            response = await self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-                stream=stream
-            )
-            
-            if stream:
-                async def response_generator():
-                    async for chunk in response:
-                        if chunk.choices[0].delta.content:
-                            yield chunk.choices[0].delta.content
-                return response_generator()
-            else:
-                return response.choices[0].message.content
-                
-        except Exception as e:
-            error_msg = f"Errore con {model}: {str(e)}"
-            raise Exception(error_msg)

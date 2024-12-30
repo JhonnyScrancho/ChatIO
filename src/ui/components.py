@@ -400,50 +400,66 @@ class ChatInterface:
             st.error(error_msg)
             return error_msg
     
-    async def process_user_message(self, prompt: str):
+    def process_user_message(self, prompt: str):
         """Processa un messaggio utente."""
         if not prompt.strip():
             return
 
+        # Controlla duplicazioni
         messages = st.session_state.chats[st.session_state.current_chat]['messages']
         if messages and messages[-1].get("role") == "user" and messages[-1].get("content") == prompt:
             return
 
+        # Gestione immagine corrente se presente
+        current_image = st.session_state.get('current_image')
+        
+        # Prepara il contenuto del messaggio
+        if current_image and st.session_state.current_model == 'grok-vision-beta':
+            message_content = {
+                "image": current_image,
+                "text": prompt
+            }
+        else:
+            message_content = prompt
+
         # Aggiungi il messaggio utente alla chat
         messages.append({
             "role": "user",
-            "content": prompt
+            "content": message_content
         })
 
         try:
-            # Ottieni il contesto dai file se presenti
-            context = ""
-            if hasattr(st.session_state, 'uploaded_files') and st.session_state.uploaded_files:
-                for filename, file_info in st.session_state.uploaded_files.items():
-                    context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
-            
-            # Inizializza la risposta
-            response = ""
-            
-            # Usa asyncio per gestire il generatore asincrono
-            async for chunk in self.llm.process_request(
-                prompt=prompt,
-                context=context
-            ):
-                if chunk:
-                    response += chunk
-                    # Aggiorna l'interfaccia in tempo reale
-                    st.markdown(response)
-                    st.experimental_rerun()
+            # Prepara il generatore di risposta appropriato
+            if current_image and st.session_state.current_model == 'grok-vision-beta':
+                image_bytes = current_image.getvalue()
+                response_generator = self.llm.process_image_request(image_bytes, prompt)
+            else:
+                # Ottieni il contesto dai file se presenti
+                context = ""
+                if hasattr(st.session_state, 'uploaded_files') and st.session_state.uploaded_files:
+                    for filename, file_info in st.session_state.uploaded_files.items():
+                        context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
+                
+                response_generator = self.llm.process_request(
+                    prompt=prompt,
+                    context=context
+                )
 
-            # Aggiungi la risposta completa alla chat
+            # Accumula la risposta completa
+            response = ""
+            with st.spinner("Elaborazione in corso..."):
+                for chunk in response_generator:
+                    if chunk:
+                        response += chunk
+                        
+            # Aggiungi la risposta completa alla chat solo se non è vuota
             if response.strip():
                 messages.append({
                     "role": "assistant",
                     "content": response
                 })
-
-            # Aggiorna le statistiche
+                
+            # Aggiorna le statistiche dei token se disponibili
             if hasattr(self.llm, 'update_message_stats'):
                 self.llm.update_message_stats(
                     model=st.session_state.current_model,
@@ -451,25 +467,32 @@ class ChatInterface:
                     output_tokens=len(response) // 4,
                     cost=0.0
                 )
+                
+            st.rerun()
 
         except Exception as e:
             error_msg = f"Si è verificato un errore durante l'elaborazione: {str(e)}"
             st.error(error_msg)
+            
             messages.append({
                 "role": "assistant",
                 "content": f"🚨 {error_msg}"
             })
+            
+            if st.session_state.config.get('DEBUG', False):
+                st.exception(e)
+            st.rerun()
 
     def handle_user_input(self, prompt: str):
-        """Gestisce l'input dell'utente in modo sicuro."""
+        """
+        Gestisce l'input dell'utente in modo sicuro.
+        """
         if not hasattr(st.session_state, 'processing'):
             st.session_state.processing = False
             
         if not st.session_state.processing and prompt:
             st.session_state.processing = True
-            # Usa asyncio per eseguire la funzione asincrona
-            import asyncio
-            asyncio.run(self.process_user_message(prompt))
+            self.process_user_message(prompt)
             st.session_state.processing = False
 
     def render_chat_controls(self):
@@ -551,46 +574,6 @@ class ModelSelector:
     
     def __init__(self):
         self.session = SessionManager()
-        self.model_groups = {
-            "Anthropic": {
-                "claude-3-5-sonnet-20241022": {
-                    "description": "Modello versatile con ampio contesto",
-                    "max_tokens": 4096,
-                    "context_window": 200000
-                }
-            },
-            "OpenAI": {
-                "o1-preview": {
-                    "description": "Modello avanzato per task complessi",
-                    "max_tokens": 32768,
-                    "context_window": 128000
-                },
-                "o1-mini": {
-                    "description": "Modello leggero per task semplici",
-                    "max_tokens": 65536,
-                    "context_window": 128000
-                }
-            },
-            "X.AI": {
-                "grok-beta": {
-                    "description": "Modello specializzato per analisi del codice",
-                    "max_tokens": 4096,
-                    "context_window": 8192
-                },
-                "grok-vision-beta": {
-                    "description": "Modello per analisi di immagini e codice",
-                    "max_tokens": 4096,
-                    "context_window": 8192
-                }
-            },
-            "DeepSeek": {
-                "deepseek-chat": {
-                    "description": "Modello ottimizzato per programmazione con contesto fino a 64K tokens",
-                    "max_tokens": 8192,
-                    "context_window": 64000
-                }
-            }
-        }
     
     def render(self):
         """Renderizza il componente."""
@@ -608,9 +591,6 @@ class ModelSelector:
             "X.AI": {
                 'grok-beta': '🤖 Grok Beta (Smart)',
                 'grok-vision-beta': '👁️ Grok Vision (Image Analysis)'
-            },
-            "DeepSeek": {
-                'deepseek-chat': '🎯 DeepSeek Chat (Code Expert)'
             }
         }
 
@@ -665,8 +645,6 @@ class ModelSelector:
             info_text = "I modelli GPT-4 offrono capacità avanzate di ragionamento e analisi."
         elif selected.startswith('grok-beta'):
             info_text = "Grok offre un'intelligenza versatile e adattiva per vari compiti."
-        elif selected == 'deepseek-chat':
-            info_text = "DeepSeek Chat è specializzato nell'analisi e generazione di codice con un contesto fino a 64K tokens."
 
         if info_text:
             st.caption(f"💡 {info_text}")
