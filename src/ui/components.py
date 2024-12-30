@@ -400,66 +400,50 @@ class ChatInterface:
             st.error(error_msg)
             return error_msg
     
-    def process_user_message(self, prompt: str):
+    async def process_user_message(self, prompt: str):
         """Processa un messaggio utente."""
         if not prompt.strip():
             return
 
-        # Controlla duplicazioni
         messages = st.session_state.chats[st.session_state.current_chat]['messages']
         if messages and messages[-1].get("role") == "user" and messages[-1].get("content") == prompt:
             return
 
-        # Gestione immagine corrente se presente
-        current_image = st.session_state.get('current_image')
-        
-        # Prepara il contenuto del messaggio
-        if current_image and st.session_state.current_model == 'grok-vision-beta':
-            message_content = {
-                "image": current_image,
-                "text": prompt
-            }
-        else:
-            message_content = prompt
-
         # Aggiungi il messaggio utente alla chat
         messages.append({
             "role": "user",
-            "content": message_content
+            "content": prompt
         })
 
         try:
-            # Prepara il generatore di risposta appropriato
-            if current_image and st.session_state.current_model == 'grok-vision-beta':
-                image_bytes = current_image.getvalue()
-                response_generator = self.llm.process_image_request(image_bytes, prompt)
-            else:
-                # Ottieni il contesto dai file se presenti
-                context = ""
-                if hasattr(st.session_state, 'uploaded_files') and st.session_state.uploaded_files:
-                    for filename, file_info in st.session_state.uploaded_files.items():
-                        context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
-                
-                response_generator = self.llm.process_request(
-                    prompt=prompt,
-                    context=context
-                )
-
-            # Accumula la risposta completa
+            # Ottieni il contesto dai file se presenti
+            context = ""
+            if hasattr(st.session_state, 'uploaded_files') and st.session_state.uploaded_files:
+                for filename, file_info in st.session_state.uploaded_files.items():
+                    context += f"\nFile: {filename}\n```{file_info['language']}\n{file_info['content']}\n```\n"
+            
+            # Inizializza la risposta
             response = ""
-            with st.spinner("Elaborazione in corso..."):
-                for chunk in response_generator:
-                    if chunk:
-                        response += chunk
-                        
-            # Aggiungi la risposta completa alla chat solo se non è vuota
+            
+            # Usa asyncio per gestire il generatore asincrono
+            async for chunk in self.llm.process_request(
+                prompt=prompt,
+                context=context
+            ):
+                if chunk:
+                    response += chunk
+                    # Aggiorna l'interfaccia in tempo reale
+                    st.markdown(response)
+                    st.experimental_rerun()
+
+            # Aggiungi la risposta completa alla chat
             if response.strip():
                 messages.append({
                     "role": "assistant",
                     "content": response
                 })
-                
-            # Aggiorna le statistiche dei token se disponibili
+
+            # Aggiorna le statistiche
             if hasattr(self.llm, 'update_message_stats'):
                 self.llm.update_message_stats(
                     model=st.session_state.current_model,
@@ -467,32 +451,25 @@ class ChatInterface:
                     output_tokens=len(response) // 4,
                     cost=0.0
                 )
-                
-            st.rerun()
 
         except Exception as e:
             error_msg = f"Si è verificato un errore durante l'elaborazione: {str(e)}"
             st.error(error_msg)
-            
             messages.append({
                 "role": "assistant",
                 "content": f"🚨 {error_msg}"
             })
-            
-            if st.session_state.config.get('DEBUG', False):
-                st.exception(e)
-            st.rerun()
 
     def handle_user_input(self, prompt: str):
-        """
-        Gestisce l'input dell'utente in modo sicuro.
-        """
+        """Gestisce l'input dell'utente in modo sicuro."""
         if not hasattr(st.session_state, 'processing'):
             st.session_state.processing = False
             
         if not st.session_state.processing and prompt:
             st.session_state.processing = True
-            self.process_user_message(prompt)
+            # Usa asyncio per eseguire la funzione asincrona
+            import asyncio
+            asyncio.run(self.process_user_message(prompt))
             st.session_state.processing = False
 
     def render_chat_controls(self):

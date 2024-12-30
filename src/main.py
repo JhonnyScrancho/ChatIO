@@ -33,6 +33,12 @@ from src.core.llm import LLMManager
 from src.core.files import FileManager
 from src.ui.components import FileExplorer, ChatInterface, ModelSelector, load_custom_css
 
+# Inizializza la configurazione
+if 'config' not in st.session_state:
+    st.session_state.config = {
+        'DEBUG': False,
+        # altre configurazioni...
+    }
 
 def show_reset_animation():
     """
