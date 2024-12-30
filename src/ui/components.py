@@ -574,6 +574,46 @@ class ModelSelector:
     
     def __init__(self):
         self.session = SessionManager()
+        self.model_groups = {
+            "Anthropic": {
+                "claude-3-5-sonnet-20241022": {
+                    "description": "Modello versatile con ampio contesto",
+                    "max_tokens": 4096,
+                    "context_window": 200000
+                }
+            },
+            "OpenAI": {
+                "o1-preview": {
+                    "description": "Modello avanzato per task complessi",
+                    "max_tokens": 32768,
+                    "context_window": 128000
+                },
+                "o1-mini": {
+                    "description": "Modello leggero per task semplici",
+                    "max_tokens": 65536,
+                    "context_window": 128000
+                }
+            },
+            "X.AI": {
+                "grok-beta": {
+                    "description": "Modello specializzato per analisi del codice",
+                    "max_tokens": 4096,
+                    "context_window": 8192
+                },
+                "grok-vision-beta": {
+                    "description": "Modello per analisi di immagini e codice",
+                    "max_tokens": 4096,
+                    "context_window": 8192
+                }
+            },
+            "DeepSeek": {
+                "deepseek-chat": {
+                    "description": "Modello ottimizzato per programmazione con contesto fino a 64K tokens",
+                    "max_tokens": 8192,
+                    "context_window": 64000
+                }
+            }
+        }
     
     def render(self):
         """Renderizza il componente."""
