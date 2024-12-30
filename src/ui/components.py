@@ -631,6 +631,9 @@ class ModelSelector:
             "X.AI": {
                 'grok-beta': '🤖 Grok Beta (Smart)',
                 'grok-vision-beta': '👁️ Grok Vision (Image Analysis)'
+            },
+            "DeepSeek": {
+                'deepseek-chat': '🎯 DeepSeek Chat (Code Expert)'
             }
         }
 
@@ -685,6 +688,8 @@ class ModelSelector:
             info_text = "I modelli GPT-4 offrono capacità avanzate di ragionamento e analisi."
         elif selected.startswith('grok-beta'):
             info_text = "Grok offre un'intelligenza versatile e adattiva per vari compiti."
+        elif selected == 'deepseek-chat':
+            info_text = "DeepSeek Chat è specializzato nell'analisi e generazione di codice con un contesto fino a 64K tokens."
 
         if info_text:
             st.caption(f"💡 {info_text}")
